@@ -1,0 +1,97 @@
+import React from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import Operations from './pages/Operations';
+import SkuManagement from './pages/SkuManagement';
+import BranchManagement from './pages/BranchManagement';
+import UserManagement from './pages/UserManagement';
+import Wastage from './pages/Wastage';
+import Logs from './pages/Logs';
+import Inventory from './pages/Inventory';
+import Reconciliation from './pages/Reconciliation';
+import Orders from './pages/Orders';
+import Login from './pages/Login';
+import ProtectedRoute from './components/ProtectedRoute';
+import { StoreProvider } from './context/StoreContext';
+import { AuthProvider } from './context/AuthContext';
+
+function App() {
+  return (
+    <AuthProvider>
+      <StoreProvider>
+        <HashRouter>
+          <Layout>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              
+              <Route path="/" element={
+                <ProtectedRoute requiredPermission="VIEW_DASHBOARD">
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/orders" element={
+                <ProtectedRoute requiredPermission="VIEW_ORDERS">
+                  <Orders />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/operations" element={
+                <ProtectedRoute requiredPermission="MANAGE_OPERATIONS">
+                  <Operations />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/inventory" element={
+                <ProtectedRoute requiredPermission="MANAGE_INVENTORY">
+                  <Inventory />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/reconciliation" element={
+                <ProtectedRoute requiredPermission="MANAGE_RECONCILIATION">
+                  <Reconciliation />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/wastage" element={
+                <ProtectedRoute requiredPermission="MANAGE_WASTAGE">
+                  <Wastage />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/skus" element={
+                <ProtectedRoute requiredPermission="MANAGE_SKUS">
+                  <SkuManagement />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/branches" element={
+                <ProtectedRoute requiredPermission="MANAGE_BRANCHES">
+                  <BranchManagement />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/users" element={
+                <ProtectedRoute requiredPermission="MANAGE_USERS">
+                  <UserManagement />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/logs" element={
+                <ProtectedRoute requiredPermission="VIEW_LOGS">
+                  <Logs />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        </HashRouter>
+      </StoreProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;
