@@ -68,10 +68,11 @@ const Reconciliation: React.FC = () => {
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        if (typeof reader.result !== 'string') return;
-        const base64 = reader.result;
+        const result = reader.result;
+        if (typeof result !== 'string') return;
+        
         try {
-          const parsedData = await parseSalesReportImage(base64, skus);
+          const parsedData = await parseSalesReportImage(result, skus);
           
           // Merge parsed data into inputs
           const newInputs = { ...inputs };
