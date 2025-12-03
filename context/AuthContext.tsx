@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Permission } from '../types';
 import { INITIAL_ADMIN_USER } from '../constants';
+import { supabase } from '../services/supabaseClient';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -8,9 +9,9 @@ interface AuthContextType {
   login: (code: string) => Promise<boolean>;
   logout: () => void;
   hasPermission: (permission: Permission) => boolean;
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (user: User) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  updateUser: (user: User) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,81 +20,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
-  // Initialize Users & Handle Auto-Auth
   useEffect(() => {
-    let loadedUsers: User[] = [INITIAL_ADMIN_USER];
-    const storedUsers = localStorage.getItem('pakaja_users');
-    
-    if (storedUsers) {
-      const parsed = JSON.parse(storedUsers);
-      // Migration: Map old 'pin' to 'code' if 'code' doesn't exist
-      loadedUsers = parsed.map((u: any) => ({
-        ...u,
-        code: u.code || u.pin || '0000' // Fallback for migration
-      }));
-      setUsers(loadedUsers);
-    } else {
-      // First time setup
-      setUsers(loadedUsers);
-      localStorage.setItem('pakaja_users', JSON.stringify(loadedUsers));
-    }
+    fetchUsers();
+  }, []);
 
-    // --- SECURE AUTO AUTHENTICATION FOR ANDROID APP ---
-    
-    // Method 1: Global Variable Injection
-    // The Android WebView can inject: window.PAKAJA_AUTH_CODE = 'mycode';
-    if (window.PAKAJA_AUTH_CODE) {
-      const autoUser = loadedUsers.find(u => u.code === window.PAKAJA_AUTH_CODE);
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase.from('users').select('*');
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setUsers(data);
+      } else {
+        // First run? Add default admin to DB
+        await supabase.from('users').insert(INITIAL_ADMIN_USER);
+        setUsers([INITIAL_ADMIN_USER]);
+      }
+    } catch (e) {
+      console.error("Failed to load users", e);
+      // Fallback if DB fails
+      setUsers([INITIAL_ADMIN_USER]);
+    }
+  };
+
+  // --- Auto Auth Logic ---
+  useEffect(() => {
+    // Check Global Variable
+    if (window.PAKAJA_AUTH_CODE && users.length > 0) {
+      const autoUser = users.find(u => u.code === window.PAKAJA_AUTH_CODE);
       if (autoUser) {
         setCurrentUser(autoUser);
         sessionStorage.setItem('pakaja_session_user', autoUser.id);
-        // Security: Clear the variable immediately so it cannot be read by other scripts
         delete window.PAKAJA_AUTH_CODE;
       }
-    } 
-    // Method 2: Check Existing Session (if no injection)
-    else {
+    } else {
+      // Check Session Storage
       const sessionUserId = sessionStorage.getItem('pakaja_session_user');
-      if (sessionUserId) {
-        const found = loadedUsers.find(u => u.id === sessionUserId);
+      if (sessionUserId && users.length > 0) {
+        const found = users.find(u => u.id === sessionUserId);
         if (found) setCurrentUser(found);
       }
     }
 
-    // Method 3: PostMessage Listener (Async Injection)
-    // The Android App can send a message: window.postMessage({ type: 'PAKAJA_LOGIN', code: '...' }, '*')
+    // PostMessage Listener
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'PAKAJA_LOGIN' && event.data.code) {
-        // We must re-fetch users from state or use the closure's loadedUsers
-        // Using loadedUsers is safe here as this effect runs on mount
-        const autoUser = loadedUsers.find(u => u.code === event.data.code);
+        const autoUser = users.find(u => u.code === event.data.code);
         if (autoUser) {
           setCurrentUser(autoUser);
           sessionStorage.setItem('pakaja_session_user', autoUser.id);
         }
       }
     };
-
     window.addEventListener('message', handleMessage);
-    
-    // Cleanup
-    return () => {
-      window.removeEventListener('message', handleMessage);
-    };
-  }, []);
-
-  // Save users when changed
-  useEffect(() => {
-    if (users.length > 0) {
-      localStorage.setItem('pakaja_users', JSON.stringify(users));
-    }
+    return () => window.removeEventListener('message', handleMessage);
   }, [users]);
 
   const login = async (code: string) => {
-    // Artificial delay for UX
     await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Case-insensitive check
     const user = users.find(u => u.code.toLowerCase() === code.toLowerCase());
     if (user) {
       setCurrentUser(user);
@@ -113,28 +97,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return currentUser.permissions.includes(permission);
   };
 
-  const addUser = (userData: Omit<User, 'id'>) => {
-    const newUser: User = {
-      ...userData,
-      id: `user-${Date.now()}`
+  const addUser = async (userData: Omit<User, 'id'>) => {
+    const newUser = {
+      id: `user-${Date.now()}`,
+      ...userData
     };
-    setUsers(prev => [...prev, newUser]);
-  };
-
-  const updateUser = (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    // If updating current user, update session too
-    if (currentUser && currentUser.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
+    const { error } = await supabase.from('users').insert(newUser);
+    if (!error) {
+        setUsers(prev => [...prev, newUser]);
     }
   };
 
-  const deleteUser = (id: string) => {
+  const updateUser = async (updatedUser: User) => {
+    const { error } = await supabase.from('users').update({
+        name: updatedUser.name,
+        code: updatedUser.code,
+        role: updatedUser.role,
+        permissions: updatedUser.permissions
+    }).eq('id', updatedUser.id);
+
+    if (!error) {
+        setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        if (currentUser && currentUser.id === updatedUser.id) {
+          setCurrentUser(updatedUser);
+        }
+    }
+  };
+
+  const deleteUser = async (id: string) => {
     if (currentUser?.id === id) {
       alert("You cannot delete yourself.");
       return;
     }
-    setUsers(prev => prev.filter(u => u.id !== id));
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (!error) {
+        setUsers(prev => prev.filter(u => u.id !== id));
+    }
   };
 
   return (

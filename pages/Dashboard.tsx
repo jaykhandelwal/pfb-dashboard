@@ -12,6 +12,53 @@ const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280'
 
 type TimeRange = 'TODAY' | 'YESTERDAY' | '7D' | '30D';
 
+interface InventoryTileProps {
+  skuName: string;
+  quantity: number;
+  piecesPerPacket: number;
+  isLow?: boolean;
+}
+
+const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, isLow = false }) => {
+  const packets = Math.floor(quantity / piecesPerPacket);
+  const loose = quantity % piecesPerPacket;
+
+  return (
+    <div 
+      className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${
+        isLow ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
+      }`}
+    >
+       <div className="mb-0.5">
+          <h3 className={`font-bold text-xs leading-tight truncate ${isLow ? 'text-red-900' : 'text-slate-700'}`}>
+            {skuName}
+          </h3>
+       </div>
+       
+       <div className="flex items-end gap-2">
+          <div className="flex items-baseline gap-1">
+              <span className={`text-lg font-bold leading-none ${isLow ? 'text-red-600' : 'text-slate-800'}`}>
+                {packets}
+              </span>
+              <span className={`text-[10px] font-medium ${isLow ? 'text-red-400' : 'text-slate-400'}`}>
+                pkts
+              </span>
+          </div>
+          {loose !== 0 && (
+            <div className="flex items-baseline gap-1">
+                <span className={`text-sm font-semibold leading-none ${isLow ? 'text-red-500' : 'text-slate-600'}`}>
+                  {loose}
+                </span>
+                <span className={`text-[10px] font-medium ${isLow ? 'text-red-300' : 'text-slate-400'}`}>
+                  pcs
+                </span>
+            </div>
+          )}
+       </div>
+    </div>
+  );
+};
+
 const Dashboard: React.FC = () => {
   const { transactions, salesRecords, skus, branches } = useStore();
   const { hasPermission } = useAuth();
@@ -209,47 +256,6 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     setAiInsight(null);
   }, [timeRange]);
-
-  // Helper Component for Inventory Tile
-  const InventoryTile = ({ skuName, quantity, piecesPerPacket, isLow = false }: { skuName: string, quantity: number, piecesPerPacket: number, isLow?: boolean }) => {
-    const packets = Math.floor(quantity / piecesPerPacket);
-    const loose = quantity % piecesPerPacket;
-
-    return (
-      <div 
-        className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${
-          isLow ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
-        }`}
-      >
-         <div className="mb-0.5">
-            <h3 className={`font-bold text-xs leading-tight truncate ${isLow ? 'text-red-900' : 'text-slate-700'}`}>
-              {skuName}
-            </h3>
-         </div>
-         
-         <div className="flex items-end gap-2">
-            <div className="flex items-baseline gap-1">
-                <span className={`text-lg font-bold leading-none ${isLow ? 'text-red-600' : 'text-slate-800'}`}>
-                  {packets}
-                </span>
-                <span className={`text-[10px] font-medium ${isLow ? 'text-red-400' : 'text-slate-400'}`}>
-                  pkts
-                </span>
-            </div>
-            {loose !== 0 && (
-              <div className="flex items-baseline gap-1">
-                  <span className={`text-sm font-semibold leading-none ${isLow ? 'text-red-500' : 'text-slate-600'}`}>
-                    {loose}
-                  </span>
-                  <span className={`text-[10px] font-medium ${isLow ? 'text-red-300' : 'text-slate-400'}`}>
-                    pcs
-                  </span>
-              </div>
-            )}
-         </div>
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-8 pb-10">

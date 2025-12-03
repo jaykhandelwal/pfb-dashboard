@@ -68,7 +68,8 @@ const Reconciliation: React.FC = () => {
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64 = reader.result as string;
+        if (typeof reader.result !== 'string') return;
+        const base64 = reader.result;
         try {
           const parsedData = await parseSalesReportImage(base64, skus);
           
