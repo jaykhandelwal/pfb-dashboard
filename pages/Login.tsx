@@ -27,10 +27,10 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#eff2e7] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="p-8 pb-6 text-center border-b border-slate-100">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-[#95a77c]/20 text-[#95a77c] rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock size={32} />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Welcome Back</h1>
@@ -54,7 +54,7 @@ const Login: React.FC = () => {
                     setCode(e.target.value);
                     setError('');
                   }}
-                  className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-lg tracking-widest transition-all"
+                  className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#95a77c] focus:outline-none text-lg tracking-widest transition-all"
                   placeholder="Enter code"
                   autoFocus
                 />
@@ -70,7 +70,7 @@ const Login: React.FC = () => {
             <button
               type="submit"
               disabled={loading || code.length < 3}
-              className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
+              className="w-full h-14 rounded-xl bg-[#95a77c] hover:bg-[#85966d] active:bg-[#75855e] text-white font-bold text-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
             >
               {loading ? (
                 <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />

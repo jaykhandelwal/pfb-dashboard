@@ -8,7 +8,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
 
-const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280'];
+// Updated palette for charts to match warm theme
+const COLORS = ['#95a77c', '#6b7280', '#eab308', '#ef4444', '#8b5cf6', '#d97706'];
 
 type TimeRange = 'TODAY' | 'YESTERDAY' | '7D' | '30D';
 
@@ -26,30 +27,30 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
   return (
     <div 
       className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${
-        isLow ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'
+        isLow ? 'bg-red-50 border-red-200' : 'bg-white border-[#403424]/10'
       }`}
     >
        <div className="mb-0.5">
-          <h3 className={`font-bold text-xs leading-tight truncate ${isLow ? 'text-red-900' : 'text-slate-700'}`}>
+          <h3 className={`font-bold text-xs leading-tight truncate ${isLow ? 'text-red-900' : 'text-[#403424]/80'}`}>
             {skuName}
           </h3>
        </div>
        
        <div className="flex items-end gap-2">
           <div className="flex items-baseline gap-1">
-              <span className={`text-lg font-bold leading-none ${isLow ? 'text-red-600' : 'text-slate-800'}`}>
+              <span className={`text-lg font-bold leading-none ${isLow ? 'text-red-600' : 'text-[#403424]'}`}>
                 {packets}
               </span>
-              <span className={`text-[10px] font-medium ${isLow ? 'text-red-400' : 'text-slate-400'}`}>
+              <span className={`text-[10px] font-medium ${isLow ? 'text-red-400' : 'text-[#403424]/50'}`}>
                 pkts
               </span>
           </div>
           {loose !== 0 && (
             <div className="flex items-baseline gap-1">
-                <span className={`text-sm font-semibold leading-none ${isLow ? 'text-red-500' : 'text-slate-600'}`}>
+                <span className={`text-sm font-semibold leading-none ${isLow ? 'text-red-500' : 'text-[#403424]/70'}`}>
                   {loose}
                 </span>
-                <span className={`text-[10px] font-medium ${isLow ? 'text-red-300' : 'text-slate-400'}`}>
+                <span className={`text-[10px] font-medium ${isLow ? 'text-red-300' : 'text-[#403424]/50'}`}>
                   pcs
                 </span>
             </div>
@@ -118,7 +119,7 @@ const Dashboard: React.FC = () => {
 
   // --- 3. Analytics Calculation (Based on Range) ---
   const { reportData, trendData, reconciliationData } = useMemo(() => {
-    if (!hasPermission('VIEW_ANALYTICS')) return { reportData: [], filteredTxs: [], trendData: [], reconciliationData: [] };
+    if (!hasPermission('VIEW_ANALYTICS')) return { reportData: [], trendData: [], reconciliationData: [] };
 
     const report: Record<string, DailyReportItem> = {};
     const trendMap: Record<string, { date: string, incoming: number, outgoing: number, waste: number, diff: number }> = {};
@@ -263,22 +264,22 @@ const Dashboard: React.FC = () => {
       {/* 1. Last Checkout Section */}
       <div className="space-y-6">
         <div className="text-center mb-4">
-           <h2 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Last Checkout</h2>
+           <h2 className="text-xl font-bold text-[#403424] uppercase tracking-wide">Last Checkout</h2>
         </div>
         
-        {branches.length === 0 && <p className="text-center text-slate-400 italic text-sm">No branches configured.</p>}
+        {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
 
         {branches.map(branch => {
            const checkoutData = lastCheckouts[branch.id];
            if (!checkoutData) return null;
 
            return (
-             <div key={branch.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+             <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10">
                 <div className="flex flex-col items-center mb-3">
-                   <h3 className="font-bold text-emerald-800 flex items-center gap-2">
+                   <h3 className="font-bold text-[#95a77c] flex items-center gap-2">
                       <Store size={16} /> {branch.name}
                    </h3>
-                   <span className="text-xs text-slate-500 font-medium">{checkoutData.date}</span>
+                   <span className="text-xs text-[#403424]/50 font-medium">{checkoutData.date}</span>
                 </div>
                 
                 <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -296,11 +297,11 @@ const Dashboard: React.FC = () => {
         })}
       </div>
 
-      <hr className="border-slate-200" />
+      <hr className="border-[#403424]/10" />
       
       {/* 2. Live Inventory Section */}
       <div>
-        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Current Fridge Stock</h3>
+        <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mb-3">Current Fridge Stock</h3>
         <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
              {skus.map(sku => {
                 const balance = stockLevels[sku.id] || 0;
@@ -319,26 +320,26 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <hr className="border-slate-200" />
+      <hr className="border-[#403424]/10" />
 
       {/* 3. Analytics Section (Restricted) */}
       {hasPermission('VIEW_ANALYTICS') && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-             <div className="flex items-center gap-2 text-slate-800 font-bold text-lg">
-                <TrendingUp className="text-emerald-600" /> Business Intelligence
+             <div className="flex items-center gap-2 text-[#403424] font-bold text-lg">
+                <TrendingUp className="text-[#95a77c]" /> Business Intelligence
              </div>
              
              {/* Time Range Selector */}
-             <div className="flex bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+             <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm">
                 {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
                    <button
                      key={range}
                      onClick={() => setTimeRange(range)}
                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
                        timeRange === range 
-                         ? 'bg-emerald-100 text-emerald-700' 
-                         : 'text-slate-500 hover:bg-slate-50'
+                         ? 'bg-[#eff2e7] text-[#403424]' 
+                         : 'text-[#403424]/50 hover:bg-[#f9faf7]'
                      }`}
                    >
                      {range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}
@@ -352,7 +353,7 @@ const Dashboard: React.FC = () => {
             <StatCard 
               title="Total Check-Outs" 
               value={totalTaken} 
-              icon={<Package size={20} className="text-blue-500" />} 
+              icon={<Package size={20} className="text-[#95a77c]" />} 
               color="bg-white"
             />
             <StatCard 
@@ -370,39 +371,39 @@ const Dashboard: React.FC = () => {
             <StatCard 
               title="Net Consumed" 
               value={totalSold} 
-              icon={<ShoppingBag size={20} className="text-emerald-500" />} 
+              icon={<ShoppingBag size={20} className="text-[#95a77c]" />} 
               color="bg-white"
             />
           </div>
 
           {/* Reconciliation Chart (New) */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-600 mb-4 flex items-center gap-2">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+            <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
                <Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation
             </h3>
             <div className="h-64">
                {reconciliationData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={reconciliationData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
                     <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
                     <YAxis stroke="#94a3b8" fontSize={10} />
                     <Tooltip 
-                      contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      labelStyle={{ fontWeight: 'bold', color: '#334155' }}
+                      contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
+                      labelStyle={{ fontWeight: 'bold', color: '#403424' }}
                     />
                     <Legend iconSize={10} fontSize={10} verticalAlign="top" height={36}/>
                     <Bar dataKey="physicalUsage" name="Physical Usage (CheckOut - Returns)" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="recordedSales" name="Recorded Sales (POS + Online)" fill="#10B981" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="recordedSales" name="Recorded Sales (POS + Online)" fill="#95a77c" radius={[4, 4, 0, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
                ) : (
-                 <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                 <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">
                    No data for reconciliation.
                  </div>
                )}
             </div>
-            <p className="text-xs text-slate-400 mt-2 text-center italic">
+            <p className="text-xs text-[#403424]/40 mt-2 text-center italic">
                Blue Bar should match Green Bar. If Blue is higher, potential theft/loss occurred.
             </p>
           </div>
@@ -410,26 +411,26 @@ const Dashboard: React.FC = () => {
           {/* Charts Row 1 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Consumption by SKU */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="text-sm font-bold text-slate-600 mb-4">Volume (Net Consumed Pcs)</h3>
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+              <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Volume (Net Consumed Pcs)</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={reportData.filter(i => i.sold > 0).sort((a,b) => b.sold - a.sold).slice(0, 10)} layout="vertical" margin={{ left: 10, right: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e5e5" />
                     <XAxis type="number" stroke="#94a3b8" fontSize={10} />
-                    <YAxis dataKey="skuName" type="category" width={100} style={{ fontSize: '10px', fill: '#64748b' }} stroke="#e2e8f0" />
+                    <YAxis dataKey="skuName" type="category" width={100} style={{ fontSize: '10px', fill: '#403424' }} stroke="#e5e5e5" />
                     <Tooltip 
                        contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     />
-                    <Bar dataKey="sold" name="Consumed" fill="#10b981" radius={[0, 4, 4, 0]} barSize={16} />
+                    <Bar dataKey="sold" name="Consumed" fill="#95a77c" radius={[0, 4, 4, 0]} barSize={16} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* Category Distribution */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="text-sm font-bold text-slate-600 mb-4">Category Share</h3>
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+              <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Category Share</h3>
               <div className="h-64 flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -461,27 +462,27 @@ const Dashboard: React.FC = () => {
 
       {/* 4. Gemini Analyst Section */}
       {hasPermission('VIEW_ANALYTICS') && (
-        <div className="bg-slate-900 rounded-xl p-6 text-white shadow-lg mt-8">
+        <div className="bg-[#403424] rounded-xl p-6 text-white shadow-lg mt-8">
             <div className="flex items-start gap-4">
               <div className="p-3 bg-white/10 rounded-full">
-                <Sparkles className="text-amber-400" size={24} />
+                <Sparkles className="text-[#95a77c]" size={24} />
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold mb-2">Gemini Analyst</h3>
                 {!aiInsight ? (
-                   <p className="text-slate-300 mb-4 text-sm">
+                   <p className="text-white/60 mb-4 text-sm">
                      Get intelligent insights about consumption patterns, waste, and category popularity for the selected period.
                    </p>
                 ) : (
                   <div className="prose prose-invert max-w-none text-sm bg-white/5 p-4 rounded-lg mb-4">
-                    <pre className="whitespace-pre-wrap font-sans text-slate-200">{aiInsight}</pre>
+                    <pre className="whitespace-pre-wrap font-sans text-white/80">{aiInsight}</pre>
                   </div>
                 )}
                 
                 <button 
                   onClick={handleAskAI}
                   disabled={loadingAi}
-                  className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+                  className="bg-[#95a77c] hover:bg-[#85966d] disabled:bg-[#95a77c]/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
                 >
                   {loadingAi ? 'Analyzing...' : 'Generate Insights'}
                 </button>
