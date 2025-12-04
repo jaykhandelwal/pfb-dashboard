@@ -1,6 +1,7 @@
 
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem } from '../types';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -13,6 +14,7 @@ interface StoreContextType {
   customers: Customer[];
   membershipRules: MembershipRule[];
   deletedTransactions: ArchivedTransaction[];
+  attendanceRecords: AttendanceRecord[];
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -38,6 +40,8 @@ interface StoreContextType {
   addMembershipRule: (rule: Omit<MembershipRule, 'id'>) => Promise<void>;
   deleteMembershipRule: (id: string) => Promise<void>;
 
+  addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
+
   resetData: () => Promise<void>;
 }
 
@@ -52,6 +56,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [salesRecords, setSalesRecords] = useState<SalesRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [membershipRules, setMembershipRules] = useState<MembershipRule[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
 
   // --- Fetch Initial Data from Supabase ---
   useEffect(() => {
@@ -197,6 +202,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMembershipRules(mappedRules);
       } else {
         setMembershipRules(INITIAL_MEMBERSHIP_RULES);
+      }
+
+      // 9. Fetch Attendance
+      const { data: attData, error: attError } = await supabase.from('attendance').select('*').order('timestamp', { ascending: false });
+      if (!attError && attData) {
+          const mappedAtt = attData.map((a: any) => ({
+            id: a.id,
+            userId: a.user_id,
+            userName: a.user_name,
+            branchId: a.branch_id,
+            date: a.date,
+            timestamp: a.timestamp,
+            imageUrl: a.image_url
+          }));
+          setAttendanceRecords(mappedAtt);
       }
 
     } catch (error) {
@@ -653,6 +673,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
      setMembershipRules(prev => prev.filter(r => r.id !== id));
   };
 
+  // --- Attendance ---
+  const addAttendance = async (record: Omit<AttendanceRecord, 'id'>) => {
+      const newRecord: AttendanceRecord = {
+          id: generateId(),
+          ...record
+      };
+
+      if (isSupabaseConfigured()) {
+          const { error } = await supabase.from('attendance').insert({
+             id: newRecord.id,
+             user_id: newRecord.userId,
+             user_name: newRecord.userName,
+             branch_id: newRecord.branchId,
+             date: newRecord.date,
+             timestamp: newRecord.timestamp,
+             image_url: newRecord.imageUrl
+          });
+          if (error) console.error("Error adding attendance", error);
+      }
+      setAttendanceRecords(prev => [newRecord, ...prev]);
+  };
+
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
@@ -663,6 +705,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('deleted_transactions').delete().neq('id', '0');
         await supabase.from('customers').delete().neq('id', '0');
         await supabase.from('membership_rules').delete().neq('id', '0');
+        await supabase.from('attendance').delete().neq('id', '0');
     }
     setTransactions([]);
     setSalesRecords([]);
@@ -672,15 +715,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDeletedTransactions([]);
     setCustomers([]);
     setMembershipRules([]);
+    setAttendanceRecords([]);
   };
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, branches, transactions, salesRecords, deletedTransactions, customers, membershipRules,
+      skus, menuItems, branches, transactions, salesRecords, deletedTransactions, customers, membershipRules, attendanceRecords,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addBranch, updateBranch, deleteBranch,
-      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, resetData 
+      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, resetData 
     }}>
       {children}
     </StoreContext.Provider>

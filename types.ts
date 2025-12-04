@@ -1,4 +1,5 @@
 
+
 export enum TransactionType {
   CHECK_OUT = 'CHECK_OUT', // Freezer -> Branch
   CHECK_IN = 'CHECK_IN',    // Branch -> Freezer (Returns)
@@ -67,6 +68,18 @@ export interface Transaction {
 export interface ArchivedTransaction extends Transaction {
   deletedAt: string; // ISO Date of deletion
   deletedBy: string; // Name of user who deleted it
+}
+
+// --- Attendance ---
+
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  branchId: string;
+  date: string; // YYYY-MM-DD
+  timestamp: number;
+  imageUrl?: string;
 }
 
 // --- Sales & Reconciliation ---
@@ -142,9 +155,10 @@ export type Permission =
   | 'VIEW_LOGS'
   | 'MANAGE_RECONCILIATION'
   | 'VIEW_ORDERS'
-  | 'MANAGE_CUSTOMERS' // New
-  | 'MANAGE_MEMBERSHIP' // New
-  | 'MANAGE_MENU'; // New
+  | 'MANAGE_CUSTOMERS'
+  | 'MANAGE_MEMBERSHIP'
+  | 'MANAGE_MENU'
+  | 'MANAGE_ATTENDANCE'; // New
 
 export interface User {
   id: string;
@@ -152,6 +166,7 @@ export interface User {
   code: string; // Changed from 'pin' to 'code' to support alphanumeric
   role: Role;
   permissions: Permission[];
+  defaultBranchId?: string; // Optional default location for this user
 }
 
 // Add global window extension for Android Bridge

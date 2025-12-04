@@ -35,7 +35,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (error) throw error;
             
             if (data && data.length > 0) {
-              fetchedUsers = data;
+              fetchedUsers = data.map((u: any) => ({
+                 id: u.id,
+                 name: u.name,
+                 code: u.code,
+                 role: u.role,
+                 permissions: u.permissions,
+                 defaultBranchId: u.default_branch_id
+              }));
             } else {
               // If DB is empty, seed with Initial Admin (First Run)
               const { error: seedError } = await supabase.from('users').insert(INITIAL_ADMIN_USER);
@@ -155,7 +162,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     
     if (isSupabaseConfigured()) {
-        const { error } = await supabase.from('users').insert(newUser);
+        const { error } = await supabase.from('users').insert({
+            id: newUser.id,
+            name: newUser.name,
+            code: newUser.code,
+            role: newUser.role,
+            permissions: newUser.permissions,
+            default_branch_id: newUser.defaultBranchId
+        });
         if (!error) {
             setUsers(prev => [...prev, newUser]);
         }
@@ -171,7 +185,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: updatedUser.name,
             code: updatedUser.code,
             role: updatedUser.role,
-            permissions: updatedUser.permissions
+            permissions: updatedUser.permissions,
+            default_branch_id: updatedUser.defaultBranchId
         }).eq('id', updatedUser.id);
 
         if (!error) {

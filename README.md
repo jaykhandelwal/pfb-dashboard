@@ -7,8 +7,12 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 
 *   **Dashboard**: Real-time view of fridge inventory and last checkout status across branches.
 *   **Operations**: Streamlined interface for Staff to Check-Out (take stock to cart) and Return (bring stock back) items.
-*   **Wastage Reporting**: Camera-integrated reporting system to log spoiled items with photo evidence.
+*   **Wastage Reporting**: Camera-integrated reporting system to log spoiled items with photo evidence (stored on BunnyCDN).
 *   **Inventory Management**: Admin interface to add restock (incoming from supplier) and perform stocktakes (adjustments).
+*   **Sales Reconciliation**: Compare physical inventory usage against reported sales from POS, Zomato, and Swiggy.
+*   **CRM & Loyalty**: Track customer purchase history automatically and manage membership rewards (Discounts/Freebies).
+*   **Menu Management**: specific recipes linked to raw SKUs to automate consumption calculations.
+*   **Staff Attendance**: Geolocation and Selfie-based check-in system for staff.
 *   **Analytics**: Visual charts for consumption, category splits, and wastage trends.
 *   **AI Insights**: Integrated with **Google Gemini 2.5 Flash** to provide daily operational summaries and anomaly detection.
 *   **User Management**: Role-based access control (Admin, Manager, Staff) with secure alphanumeric access codes.
@@ -21,32 +25,52 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 *   **Charts**: Recharts
 *   **AI**: @google/genai SDK
 *   **State Management**: React Context API + LocalStorage persistence
-*   **Storage**: BunnyCDN (for Wastage Images)
+*   **Storage**: BunnyCDN (for Wastage/Attendance Images)
+*   **Database**: Supabase (PostgreSQL)
 
 ---
 
 ## 🔌 POS / External Data Integration (Window Bridge)
 
-To automate sales entry, your POS system or Android Wrapper can inject sales data directly into the app using the `window.postMessage` API.
+To automate sales entry and populate the CRM/Loyalty system, your POS system or Android Wrapper can inject sales data directly into the app using the `window.postMessage` API.
 
 ### Finding IDs
 1.  **Branch IDs**: Go to "Branches" page. The ID is listed (e.g., `branch-171092...`).
-2.  **SKU IDs**: Go to "SKU Management". The ID is listed next to each item (e.g., `sku-171092...`). Click the ID to copy.
+2.  **SKU/Menu IDs**: Go to "SKU Management" or "Menu Management". The ID is listed next to each item. Click the ID to copy.
 
 ### How to send data
-Run this JavaScript code from your POS system or WebView when you want to sync sales:
+Run this JavaScript code from your POS system or WebView when you want to sync sales. 
+**Note:** Including the `customer` object is essential for the Loyalty Program to track total spend and order counts.
 
 ```javascript
 window.postMessage({
   type: 'PAKAJA_IMPORT_SALES',
   payload: {
+    // Required Fields
     date: '2024-03-20',       // Date YYYY-MM-DD
     branchId: 'branch-1',     // Must match the ID in Pakaja > Branches
     platform: 'POS',          // Options: 'POS', 'ZOMATO', 'SWIGGY'
-    timestamp: 1710933300000, // Optional: Unix Timestamp (ms) of the order. Defaults to NOW if omitted.
+    
+    // Optional Fields
+    timestamp: 1710933300000, // Unix Timestamp (ms). Orders with same timestamp are grouped in History.
+    totalAmount: 450,         // Total Order Value (₹). Used for CRM stats. If omitted, system sums up menu item prices.
+    
+    // CRM / Customer Data (Optional but Recommended)
+    customer: {
+        name: "Rahul Sharma",
+        phoneNumber: "9876543210" // REQUIRED if sending customer. Used as Unique ID for loyalty tracking.
+    },
+
+    // Order Items
     items: [
-      { skuId: 'sku-1', quantity: 50 }, // skuId must match ID in Pakaja > SKUs
-      { skuId: 'sku-2', quantity: 12 }
+      { 
+        skuId: 'menu-1',      // Match ID from "Menu Management" (Preferred) OR "SKU Management"
+        quantity: 2           // Quantity sold
+      }, 
+      { 
+        skuId: 'sku-12', 
+        quantity: 1 
+      }
     ]
   }
 }, '*');
@@ -54,9 +78,10 @@ window.postMessage({
 
 **Behavior:**
 *   The app listens for this message continuously.
+*   **Customer Logic**: If `customer.phoneNumber` is provided, the system checks if they exist. If yes, it updates their `totalSpend` and `orderCount`. If no, it creates a new Customer record.
 *   **Timestamp Logic**: If you send multiple items with the same `timestamp`, they will be grouped into a single "Order Ticket" on the Orders page.
 *   The Dashboard and Reconciliation Variance reports update instantly.
-*   **IMPORTANT**: Orders sent via this API do **not** deduct from the main Fridge Inventory. They are used for Reconciliation (comparing Sales vs. Staff Usage).
+*   **IMPORTANT**: Orders sent via this API do **not** deduct from the main Fridge Inventory automatically. They are used for Reconciliation (comparing Sales vs. Staff Usage).
 
 ---
 
@@ -117,10 +142,12 @@ webView.evaluateJavascript(js, null)
     VITE_SUPABASE_URL=your_supabase_url
     VITE_SUPABASE_ANON_KEY=your_supabase_key
 
-    # BunnyCDN (For Wastage Images)
+    # BunnyCDN (For Wastage/Attendance Images)
     VITE_BUNNY_STORAGE_KEY=your_storage_password
     VITE_BUNNY_STORAGE_ZONE=pakaja
     VITE_BUNNY_PULL_ZONE=https://your-zone.b-cdn.net
+    # Optional: Override host if not using default
+    # VITE_BUNNY_STORAGE_HOST=sg.storage.bunnycdn.com
     ```
 4.  **Run Development Server**:
     ```bash
@@ -144,14 +171,16 @@ When launching the app for the first time, use the default admin credentials:
     *   `Operations.tsx`: Main staff interface for daily logging.
     *   `Wastage.tsx`: Camera interface for reporting loss.
     *   `Dashboard.tsx`: Analytics and AI summaries.
+    *   `Attendance.tsx`: Staff check-in with selfie.
+    *   `Reconciliation.tsx`: Sales vs Inventory checks.
 *   `/types`: TypeScript interfaces for Data Models (User, Transaction, SKU).
-*   `/services`: API integrations (Gemini AI, BunnyCDN).
+*   `/services`: API integrations (Gemini AI, BunnyCDN, Supabase).
 
 ## 🤖 AI Features
 
-The **Gemini Analyst** (found in Dashboard) analyzes:
+The **Gemini Analyst** (found in Dashboard) and **Vision Tools** (Reconciliation) help with:
 1.  **Consumption Data**: Compares sales vs. returns.
-2.  **Wastage Patterns**: Identifies high-waste items.
+2.  **Vision Analysis**: Parses screenshots of Zomato/Swiggy reports into data.
 3.  **Trends**: Highlights top-selling categories (Steam vs. Fry etc).
 
 Ensure `process.env.API_KEY` is set to enable these features.

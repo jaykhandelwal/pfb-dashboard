@@ -1,4 +1,5 @@
 
+
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -91,6 +92,7 @@ export const MOCK_HISTORY_DAYS = 7;
 export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
   { id: 'VIEW_DASHBOARD', label: 'View Dashboard (Inventory Status)' },
   { id: 'VIEW_ANALYTICS', label: 'View Analytics & Reports' },
+  { id: 'MANAGE_ATTENDANCE', label: 'Submit & View Attendance' },
   { id: 'MANAGE_OPERATIONS', label: 'Manage Operations (Check Out/Return)' },
   { id: 'MANAGE_INVENTORY', label: 'Manage Fridge Inventory' },
   { id: 'MANAGE_WASTAGE', label: 'Report Wastage' },
@@ -107,8 +109,8 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
 
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   ADMIN: ALL_PERMISSIONS.map(p => p.id),
-  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU'],
-  STAFF: ['VIEW_DASHBOARD', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS'], 
+  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE'],
+  STAFF: ['VIEW_DASHBOARD', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'], 
 };
 
 export const INITIAL_ADMIN_USER: User = {

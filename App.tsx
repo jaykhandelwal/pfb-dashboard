@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -15,6 +16,7 @@ import Orders from './pages/Orders';
 import CustomerManagement from './pages/CustomerManagement';
 import MembershipSettings from './pages/MembershipSettings';
 import MenuManagement from './pages/MenuManagement';
+import Attendance from './pages/Attendance';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
@@ -56,6 +58,12 @@ function App() {
               <Route path="/operations" element={
                 <ProtectedRoute requiredPermission="MANAGE_OPERATIONS">
                   <Operations />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/attendance" element={
+                <ProtectedRoute requiredPermission="MANAGE_ATTENDANCE">
+                  <Attendance />
                 </ProtectedRoute>
               } />
               
