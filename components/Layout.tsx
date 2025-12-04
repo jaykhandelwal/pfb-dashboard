@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
-import { LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, Users, LogOut, Menu, X, Scale, Receipt } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
+  Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
+  ChevronDown, ChevronRight, Settings, TrendingUp
+} from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Permission } from '../types';
@@ -8,33 +13,142 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+type NavItem = {
+  label: string;
+  icon?: React.ReactNode;
+  path?: string;
+  permission?: Permission;
+  children?: NavItem[];
+  id?: string; // Unique ID for collapsible sections
+};
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, logout, hasPermission } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Track expanded state of dropdowns - Default collapsed
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (id: string) => {
+    setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // If no user (e.g. login page), render simple layout
   if (!currentUser) {
      return <main className="bg-[#eff2e7] min-h-screen">{children}</main>;
   }
 
-  const allNavItems = [
+  const navStructure: NavItem[] = [
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
-    { path: '/orders', label: 'Orders & Sales', icon: <Receipt size={20} />, permission: 'VIEW_ORDERS' },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
+    { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },
     { path: '/inventory', label: 'Fridge Inventory', icon: <Snowflake size={20} />, permission: 'MANAGE_INVENTORY' },
     { path: '/reconciliation', label: 'Reconciliation', icon: <Scale size={20} />, permission: 'MANAGE_RECONCILIATION' },
-    { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },
-    { path: '/skus', label: 'SKU Management', icon: <Package size={20} />, permission: 'MANAGE_SKUS' },
-    { path: '/branches', label: 'Branches', icon: <Store size={20} />, permission: 'MANAGE_BRANCHES' },
-    { path: '/users', label: 'User Management', icon: <Users size={20} />, permission: 'MANAGE_USERS' },
+    
+    // Sales Group
+    {
+      id: 'sales',
+      label: 'Sales',
+      icon: <TrendingUp size={20} />,
+      children: [
+        { path: '/orders', label: 'Orders & Sales', icon: <Receipt size={18} />, permission: 'VIEW_ORDERS' },
+        { path: '/customers', label: 'Customers', icon: <Contact size={18} />, permission: 'MANAGE_CUSTOMERS' },
+        { path: '/membership', label: 'Membership Plan', icon: <Award size={18} />, permission: 'MANAGE_MEMBERSHIP' },
+      ]
+    },
+
+    // Manage Group
+    {
+      id: 'manage',
+      label: 'Manage',
+      icon: <Settings size={20} />,
+      children: [
+        { path: '/menu', label: 'Menu & Pricing', icon: <Utensils size={18} />, permission: 'MANAGE_MENU' },
+        { path: '/skus', label: 'Raw SKUs', icon: <Package size={18} />, permission: 'MANAGE_SKUS' },
+        { path: '/branches', label: 'Branches', icon: <Store size={18} />, permission: 'MANAGE_BRANCHES' },
+        { path: '/users', label: 'User Management', icon: <Users size={18} />, permission: 'MANAGE_USERS' },
+      ]
+    },
+
     { path: '/logs', label: 'Transaction Logs', icon: <History size={20} />, permission: 'VIEW_LOGS' },
   ];
 
-  const navItems = allNavItems.filter(item => hasPermission(item.permission as Permission));
+  // Helper to filter nav items based on permission
+  const getFilteredNav = (items: NavItem[]): NavItem[] => {
+    return items.reduce((acc: NavItem[], item) => {
+      if (item.children) {
+        const filteredChildren = getFilteredNav(item.children);
+        if (filteredChildren.length > 0) {
+          acc.push({ ...item, children: filteredChildren });
+        }
+      } else if (item.permission) {
+        if (hasPermission(item.permission)) {
+          acc.push(item);
+        }
+      } else {
+        // No permission required (unlikely in this app, but good for safety)
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+  };
+
+  const visibleNav = getFilteredNav(navStructure);
 
   const handleMobileNavClick = () => {
     setIsMobileMenuOpen(false);
+  };
+
+  // Render a single nav item (recursive for children)
+  const renderNavItem = (item: NavItem, depth = 0) => {
+    // If it's a Group (Parent)
+    if (item.children && item.id) {
+       const isExpanded = expandedSections[item.id];
+       const isActiveParent = item.children.some(child => child.path === location.pathname);
+
+       return (
+         <div key={item.id} className="mb-1">
+            <button
+               onClick={() => toggleSection(item.id!)}
+               className={`w-full flex items-center justify-between px-4 h-12 rounded-lg transition-colors font-medium text-base ${
+                  isActiveParent ? 'text-[#403424] bg-[#403424]/5' : 'text-[#403424] hover:bg-[#403424]/5'
+               }`}
+            >
+               <div className="flex items-center gap-3">
+                  {item.icon}
+                  <span>{item.label}</span>
+               </div>
+               {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+            
+            {/* Children Container */}
+            <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
+               <div className="flex flex-col space-y-1 ml-4 border-l border-[#403424]/10 pl-2">
+                  {item.children.map(child => renderNavItem(child, depth + 1))}
+               </div>
+            </div>
+         </div>
+       );
+    }
+
+    // If it's a Link (Leaf)
+    const isActive = location.pathname === item.path;
+    return (
+      <Link
+        key={item.path}
+        to={item.path!}
+        onClick={handleMobileNavClick}
+        className={`flex items-center space-x-3 px-4 h-12 rounded-lg transition-colors font-medium text-base ${
+          isActive 
+            ? 'bg-[#95a77c] text-white shadow-md' 
+            : 'text-[#403424] hover:bg-[#403424]/5'
+        }`}
+      >
+        {item.icon}
+        <span>{item.label}</span>
+      </Link>
+    );
   };
 
   return (
@@ -56,30 +170,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-[#403424]/10">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive 
-                    ? 'bg-[#95a77c] text-white shadow-md' 
-                    : 'text-[#403424] hover:bg-[#403424]/10 hover:text-[#403424]'
-                }`}
-              >
-                {item.icon}
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin scrollbar-thumb-[#403424]/10">
+          {visibleNav.map(item => renderNavItem(item))}
         </nav>
         
         <div className="p-4 border-t border-[#403424]/10">
           <button 
             onClick={logout}
-            className="flex items-center space-x-3 px-4 py-2 w-full text-[#403424] hover:text-red-600 hover:bg-[#403424]/5 rounded-lg transition-colors"
+            className="flex items-center space-x-3 px-4 h-12 w-full text-[#403424] hover:text-red-600 hover:bg-[#403424]/5 rounded-lg transition-colors"
           >
             <LogOut size={20} />
             <span className="font-medium">Sign Out</span>
@@ -119,24 +217,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               {/* Navigation Links */}
               <nav className="flex flex-col p-2 space-y-1">
-                  {navItems.map((item) => {
-                      const isActive = location.pathname === item.path;
-                      return (
-                          <Link
-                              key={item.path}
-                              to={item.path}
-                              onClick={handleMobileNavClick}
-                              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                              isActive 
-                                  ? 'bg-[#95a77c] text-white' 
-                                  : 'text-[#403424] hover:bg-[#403424]/5 hover:text-[#403424]'
-                              }`}
-                          >
-                              {item.icon}
-                              <span className="font-medium">{item.label}</span>
-                          </Link>
-                      );
-                  })}
+                  {visibleNav.map(item => renderNavItem(item))}
               </nav>
 
               {/* Logout (Mobile) */}

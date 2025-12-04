@@ -30,6 +30,21 @@ export interface SKU {
   order: number; // For custom sorting
 }
 
+// New: Recipe/Ingredient definition
+export interface MenuIngredient {
+  skuId: string;
+  quantity: number; // Number of pieces used
+}
+
+// Updated: Sellable Products (Menu)
+export interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+  ingredients: MenuIngredient[]; // List of SKUs and quantities needed
+}
+
 export interface Branch {
   id: string;
   name: string;
@@ -67,6 +82,8 @@ export interface SalesRecord {
   skuId: string;
   quantitySold: number; // In pieces/plates
   timestamp: number;
+  customerId?: string; // Optional link to a customer
+  orderAmount?: number; // Snapshot of value for this specific line item (optional)
 }
 
 export interface DailyReportItem {
@@ -86,13 +103,36 @@ export interface DashboardStats {
   branchPerformance: Record<string, number>; // BranchID -> Pieces Sold
 }
 
+// --- Customer & Membership ---
+
+export interface Customer {
+  id: string;
+  name: string;
+  phoneNumber: string;
+  totalSpend: number;
+  orderCount: number;
+  joinedAt: string; // ISO Date
+  lastOrderDate: string; // ISO Date
+}
+
+export type MembershipRewardType = 'DISCOUNT_PERCENT' | 'FREE_ITEM';
+
+export interface MembershipRule {
+  id: string;
+  triggerOrderCount: number; // e.g. 5th order, 10th order
+  type: MembershipRewardType;
+  value: string | number; // e.g. 20 (percent) or 'sku-1' (item ID)
+  description: string;
+  timeFrameDays?: number; // Optional: "Within 30 days"
+}
+
 // --- Auth & User Management ---
 
 export type Role = 'ADMIN' | 'MANAGER' | 'STAFF';
 
 export type Permission = 
   | 'VIEW_DASHBOARD'
-  | 'VIEW_ANALYTICS' // New: Permission to see sales reports/charts
+  | 'VIEW_ANALYTICS' 
   | 'MANAGE_OPERATIONS'
   | 'MANAGE_INVENTORY'
   | 'MANAGE_WASTAGE'
@@ -100,8 +140,11 @@ export type Permission =
   | 'MANAGE_BRANCHES'
   | 'MANAGE_USERS'
   | 'VIEW_LOGS'
-  | 'MANAGE_RECONCILIATION' // New: Permission for sales matching
-  | 'VIEW_ORDERS'; // New: View individual sales orders
+  | 'MANAGE_RECONCILIATION'
+  | 'VIEW_ORDERS'
+  | 'MANAGE_CUSTOMERS' // New
+  | 'MANAGE_MEMBERSHIP' // New
+  | 'MANAGE_MENU'; // New
 
 export interface User {
   id: string;

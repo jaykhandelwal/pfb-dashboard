@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -11,6 +12,9 @@ import Logs from './pages/Logs';
 import Inventory from './pages/Inventory';
 import Reconciliation from './pages/Reconciliation';
 import Orders from './pages/Orders';
+import CustomerManagement from './pages/CustomerManagement';
+import MembershipSettings from './pages/MembershipSettings';
+import MenuManagement from './pages/MenuManagement';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
@@ -34,6 +38,18 @@ function App() {
               <Route path="/orders" element={
                 <ProtectedRoute requiredPermission="VIEW_ORDERS">
                   <Orders />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/customers" element={
+                <ProtectedRoute requiredPermission="MANAGE_CUSTOMERS">
+                  <CustomerManagement />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/membership" element={
+                <ProtectedRoute requiredPermission="MANAGE_MEMBERSHIP">
+                  <MembershipSettings />
                 </ProtectedRoute>
               } />
               
@@ -61,6 +77,12 @@ function App() {
                 </ProtectedRoute>
               } />
               
+              <Route path="/menu" element={
+                <ProtectedRoute requiredPermission="MANAGE_MENU">
+                  <MenuManagement />
+                </ProtectedRoute>
+              } />
+
               <Route path="/skus" element={
                 <ProtectedRoute requiredPermission="MANAGE_SKUS">
                   <SkuManagement />

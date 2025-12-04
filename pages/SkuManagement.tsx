@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SKU, SKUCategory, SKUDietary } from '../types';
@@ -13,7 +14,7 @@ const SkuManagement: React.FC = () => {
     name: '',
     category: SKUCategory.STEAM,
     dietary: SKUDietary.VEG,
-    piecesPerPacket: 50,
+    piecesPerPacket: 50
   };
 
   const handleAddNew = () => {
@@ -56,7 +57,7 @@ const SkuManagement: React.FC = () => {
       <div className="mb-6 flex justify-between items-center">
         <div>
            <h2 className="text-2xl font-bold text-slate-800">SKU Management</h2>
-           <p className="text-slate-500 text-sm md:text-base">Configure inventory items. Copy IDs below for POS integration.</p>
+           <p className="text-slate-500 text-sm md:text-base">Configure raw inventory items.</p>
         </div>
         {!isEditing && (
           <button 
