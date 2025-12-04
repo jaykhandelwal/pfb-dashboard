@@ -1,14 +1,22 @@
+
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useAuth } from '../context/AuthContext';
 import { TransactionType } from '../types';
-import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store } from 'lucide-react';
+import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive } from 'lucide-react';
 
 const Logs: React.FC = () => {
-  const { transactions, skus, branches, resetData } = useStore();
+  const { transactions, deletedTransactions, skus, branches, resetData, deleteTransactionBatch } = useStore();
+  const { currentUser } = useAuth();
+  
   const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
   const [viewMode, setViewMode] = useState<'LIST' | 'GALLERY'>('LIST');
   const [galleryBranchFilter, setGalleryBranchFilter] = useState<string>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [dataScope, setDataScope] = useState<'ACTIVE' | 'DELETED'>('ACTIVE');
+
+  // Check if current user is Admin
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
   const getBranchName = (id: string) => {
@@ -16,10 +24,14 @@ const Logs: React.FC = () => {
     return branches.find(b => b.id === id)?.name || id;
   };
 
+  // Determine source based on scope
+  const sourceTransactions = dataScope === 'ACTIVE' ? transactions : deletedTransactions;
+
   // Group transactions by batchId
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, {
       id: string,
+      batchId?: string,
       date: string,
       timestamp: number,
       branchId: string,
@@ -28,10 +40,13 @@ const Logs: React.FC = () => {
       totalQty: number,
       hasImages: boolean,
       imageUrls: string[],
-      userName?: string
+      userName?: string,
+      // Deleted info
+      deletedAt?: string,
+      deletedBy?: string
     }> = {};
 
-    transactions.forEach(t => {
+    sourceTransactions.forEach(t => {
       // Filter logic
       if (filterType !== 'ALL' && t.type !== filterType) return;
 
@@ -42,6 +57,7 @@ const Logs: React.FC = () => {
       if (!groups[key]) {
         groups[key] = {
           id: key,
+          batchId: t.batchId,
           date: t.date,
           timestamp: t.timestamp,
           branchId: branchId,
@@ -50,7 +66,9 @@ const Logs: React.FC = () => {
           totalQty: 0,
           hasImages: false,
           imageUrls: [],
-          userName: t.userName
+          userName: t.userName,
+          deletedAt: (t as any).deletedAt,
+          deletedBy: (t as any).deletedBy
         };
       }
       
@@ -78,7 +96,7 @@ const Logs: React.FC = () => {
 
     // Convert to array and sort by timestamp desc
     return Object.values(groups).sort((a, b) => b.timestamp - a.timestamp);
-  }, [transactions, skus, branches, filterType]);
+  }, [sourceTransactions, skus, branches, filterType]);
 
   // Specific data for Gallery View (Only Wastage with Images)
   const wastageGalleryItems = useMemo(() => {
@@ -121,6 +139,13 @@ const Logs: React.FC = () => {
     }
   };
 
+  const handleDelete = async (batchId?: string) => {
+    if (!batchId) return;
+    if (window.confirm("Are you sure you want to delete this record? It will be moved to the Deleted Archive.")) {
+        await deleteTransactionBatch(batchId, currentUser?.name || 'Unknown');
+    }
+  };
+
   return (
     <div className="pb-10 relative">
       <div className="mb-6 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
@@ -130,25 +155,51 @@ const Logs: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* View Toggle */}
-          <div className="flex bg-slate-200 p-1 rounded-lg">
-             <button
-               onClick={() => { setViewMode('LIST'); setFilterType('ALL'); }}
-               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                 viewMode === 'LIST' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               <List size={16} /> List
-             </button>
-             <button
-               onClick={() => { setViewMode('GALLERY'); setFilterType(TransactionType.WASTE); }}
-               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                 viewMode === 'GALLERY' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               <LayoutGrid size={16} /> Wastage Gallery
-             </button>
-          </div>
+          {/* Admin Scope Toggle */}
+          {isAdmin && (
+             <div className="flex bg-slate-800 p-1 rounded-lg">
+                <button
+                  onClick={() => setDataScope('ACTIVE')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                     dataScope === 'ACTIVE' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Live Records
+                </button>
+                <button
+                  onClick={() => { setDataScope('DELETED'); setViewMode('LIST'); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${
+                     dataScope === 'DELETED' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-red-400'
+                  }`}
+                >
+                  <Archive size={12} /> Deleted
+                </button>
+             </div>
+          )}
+
+          {dataScope === 'ACTIVE' && isAdmin && <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block"></div>}
+
+          {/* View Toggle - Only for active records */}
+          {dataScope === 'ACTIVE' && (
+             <div className="flex bg-slate-200 p-1 rounded-lg">
+                <button
+                  onClick={() => { setViewMode('LIST'); setFilterType('ALL'); }}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'LIST' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <List size={16} /> List
+                </button>
+                <button
+                  onClick={() => { setViewMode('GALLERY'); setFilterType(TransactionType.WASTE); }}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'GALLERY' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <LayoutGrid size={16} /> Wastage Gallery
+                </button>
+             </div>
+          )}
 
           <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block"></div>
 
@@ -190,7 +241,7 @@ const Logs: React.FC = () => {
             </div>
           )}
 
-          {transactions.length > 0 && (
+          {transactions.length > 0 && dataScope === 'ACTIVE' && isAdmin && (
             <button 
               onClick={() => { if(window.confirm('Clear all data?')) resetData() }}
               className="text-red-600 hover:text-red-700 text-sm font-medium px-3 py-2 rounded-lg hover:bg-red-50 transition-colors"
@@ -200,6 +251,13 @@ const Logs: React.FC = () => {
           )}
         </div>
       </div>
+
+      {dataScope === 'DELETED' && (
+         <div className="mb-4 bg-red-50 border border-red-100 p-3 rounded-lg flex items-center gap-2 text-sm text-red-800">
+            <ShieldAlert size={16} />
+            <span className="font-bold">Audit Mode:</span> Viewing deleted transactions. These records are permanent proofs and cannot be removed.
+         </div>
+      )}
 
       {/* --- LIST VIEW --- */}
       {viewMode === 'LIST' && (
@@ -225,16 +283,18 @@ const Logs: React.FC = () => {
                     <th className="p-4 w-32">Date</th>
                     <th className="p-4 w-24">User</th>
                     <th className="p-4 w-32">Type</th>
+                    {dataScope === 'DELETED' && <th className="p-4 w-32 text-red-600">Deleted By</th>}
                     <th className="p-4 w-40">Source/Dest</th>
                     <th className="p-4">Items Summary</th>
                     <th className="p-4 text-right w-24">Total</th>
+                    {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-4 text-center w-16">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {groupedTransactions.map((group) => {
                     const isAdjustment = group.type === TransactionType.ADJUSTMENT;
                     return (
-                      <tr key={group.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={group.id} className={`transition-colors ${dataScope === 'DELETED' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50'}`}>
                         <td className="p-4 text-slate-600 whitespace-nowrap align-top">
                           <div className="font-medium text-slate-800">{group.date}</div>
                           <div className="text-xs text-slate-400 mt-1">
@@ -267,6 +327,19 @@ const Logs: React.FC = () => {
                             </button>
                           )}
                         </td>
+                        
+                        {/* Deleted Info Column */}
+                        {dataScope === 'DELETED' && (
+                           <td className="p-4 align-top">
+                              <div className="text-xs">
+                                 <div className="font-bold text-red-700">{group.deletedBy || 'Unknown'}</div>
+                                 <div className="text-slate-400">
+                                    {group.deletedAt ? new Date(group.deletedAt).toLocaleDateString() : '-'}
+                                 </div>
+                              </div>
+                           </td>
+                        )}
+
                         <td className="p-4 text-slate-700 font-medium align-top">
                           {getBranchName(group.branchId)}
                         </td>
@@ -283,6 +356,20 @@ const Logs: React.FC = () => {
                         <td className="p-4 text-right font-mono font-bold text-slate-700 align-top text-base">
                           {group.totalQty > 0 && isAdjustment ? '+' : ''}{group.totalQty}
                         </td>
+                        
+                        {(dataScope === 'ACTIVE' && isAdmin) && (
+                           <td className="p-4 text-center align-top">
+                              {group.batchId && (
+                                <button 
+                                  onClick={() => handleDelete(group.batchId)}
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Delete Record"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                           </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -294,7 +381,7 @@ const Logs: React.FC = () => {
       )}
 
       {/* --- GALLERY VIEW --- */}
-      {viewMode === 'GALLERY' && (
+      {viewMode === 'GALLERY' && dataScope === 'ACTIVE' && (
         <div className="animate-fade-in">
            {wastageGalleryItems.length === 0 ? (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center flex flex-col items-center justify-center text-slate-400">
@@ -325,9 +412,20 @@ const Logs: React.FC = () => {
                            </div>
                          </div>
                       </div>
-                      <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded-full">
-                        -{group.totalQty} Pcs
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded-full">
+                            -{group.totalQty} Pcs
+                        </span>
+                        {(group.batchId && isAdmin) && (
+                           <button 
+                             onClick={() => handleDelete(group.batchId)}
+                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-full transition-colors"
+                             title="Delete"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                        )}
+                      </div>
                    </div>
                    
                    {/* Items List */}

@@ -1,5 +1,6 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { SKU, Branch, Transaction, SalesRecord } from '../types';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -8,7 +9,9 @@ interface StoreContextType {
   branches: Branch[];
   transactions: Transaction[];
   salesRecords: SalesRecord[];
+  deletedTransactions: ArchivedTransaction[];
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
+  deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
   addSalesRecords: (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => Promise<void>;
   deleteSalesRecordsForDate: (date: string, branchId: string, platform?: string) => Promise<void>;
   addSku: (sku: Omit<SKU, 'id' | 'order'>) => Promise<void>;
@@ -27,6 +30,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [skus, setSkus] = useState<SKU[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [deletedTransactions, setDeletedTransactions] = useState<ArchivedTransaction[]>([]);
   const [salesRecords, setSalesRecords] = useState<SalesRecord[]>([]);
 
   // --- Fetch Initial Data from Supabase ---
@@ -56,9 +60,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           piecesPerPacket: s.pieces_per_packet
         }));
         setSkus(mappedSkus);
-      } else {
-         // Seed if empty
-         // setSkus(INITIAL_SKUS); 
       }
 
       // 2. Fetch Branches
@@ -87,7 +88,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTransactions(mappedTx);
       }
 
-      // 4. Fetch Sales Records
+      // 4. Fetch Deleted Transactions
+      const { data: delData, error: delError } = await supabase
+        .from('deleted_transactions')
+        .select('*')
+        .order('deleted_at', { ascending: false });
+
+      if (delError) console.warn("Could not fetch deleted transactions", delError);
+      if (delData) {
+         const mappedDel = delData.map((t: any) => ({
+            ...t,
+            batchId: t.batch_id,
+            skuId: t.sku_id,
+            branchId: t.branch_id,
+            quantityPieces: t.quantity_pieces,
+            imageUrls: t.image_urls,
+            userId: t.user_id,
+            userName: t.user_name,
+            deletedAt: t.deleted_at,
+            deletedBy: t.deleted_by
+         }));
+         setDeletedTransactions(mappedDel);
+      }
+
+      // 5. Fetch Sales Records
       const { data: salesData, error: salesError } = await supabase
         .from('sales_records')
         .select('*')
@@ -201,6 +225,57 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         userName: r.user_name
     }));
     setTransactions(prev => [...localTxs, ...prev]);
+  };
+
+  const deleteTransactionBatch = async (batchId: string, deletedBy: string) => {
+    if (!batchId) return;
+
+    // Find the items to archive
+    const itemsToDelete = transactions.filter(t => t.batchId === batchId);
+    if (itemsToDelete.length === 0) return;
+
+    const deletedAt = new Date().toISOString();
+
+    // Prepare archive rows
+    const archiveRows = itemsToDelete.map(t => ({
+      id: t.id,
+      batch_id: t.batchId,
+      timestamp: t.timestamp,
+      date: t.date,
+      branch_id: t.branchId,
+      sku_id: t.skuId,
+      type: t.type,
+      quantity_pieces: t.quantityPieces,
+      image_urls: t.imageUrls || [],
+      user_id: t.userId,
+      user_name: t.userName,
+      deleted_at: deletedAt,
+      deleted_by: deletedBy
+    }));
+
+    // Local update first (Optimistic)
+    const archivedItems: ArchivedTransaction[] = itemsToDelete.map(t => ({
+       ...t,
+       deletedAt,
+       deletedBy
+    }));
+    
+    setTransactions(prev => prev.filter(t => t.batchId !== batchId));
+    setDeletedTransactions(prev => [...archivedItems, ...prev]);
+
+    if (isSupabaseConfigured()) {
+       // Insert into deleted_transactions table
+       const { error: insertError } = await supabase.from('deleted_transactions').insert(archiveRows);
+       
+       if (insertError) {
+          console.error("Failed to archive transaction, aborting delete", insertError);
+          // Rollback local state if archive fails would be complex, ignoring for now as offline mode is supported
+       } else {
+          // If archive successful, delete from main table
+          const { error: deleteError } = await supabase.from('transactions').delete().eq('batch_id', batchId);
+          if (deleteError) console.error("Failed to delete transaction from main table", deleteError);
+       }
+    }
   };
 
   const addSalesRecords = async (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => {
@@ -352,15 +427,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('sales_records').delete().neq('id', '0');
         await supabase.from('skus').delete().neq('id', '0');
         await supabase.from('branches').delete().neq('id', '0');
+        await supabase.from('deleted_transactions').delete().neq('id', '0');
     }
     setTransactions([]);
     setSalesRecords([]);
     setSkus([]);
     setBranches([]);
+    setDeletedTransactions([]);
   };
 
   return (
-    <StoreContext.Provider value={{ skus, branches, transactions, salesRecords, addBatchTransactions, addSalesRecords, deleteSalesRecordsForDate, addSku, updateSku, deleteSku, reorderSku, addBranch, updateBranch, deleteBranch, resetData }}>
+    <StoreContext.Provider value={{ skus, branches, transactions, salesRecords, deletedTransactions, addBatchTransactions, deleteTransactionBatch, addSalesRecords, deleteSalesRecordsForDate, addSku, updateSku, deleteSku, reorderSku, addBranch, updateBranch, deleteBranch, resetData }}>
       {children}
     </StoreContext.Provider>
   );

@@ -1,3 +1,4 @@
+
 export enum TransactionType {
   CHECK_OUT = 'CHECK_OUT', // Freezer -> Branch
   CHECK_IN = 'CHECK_IN',    // Branch -> Freezer (Returns)
@@ -46,6 +47,11 @@ export interface Transaction {
   imageUrls?: string[]; // Optional: Array of Base64 strings of wastage photos
   userId?: string; // ID of the user who performed the action
   userName?: string; // Name of the user at the time of action
+}
+
+export interface ArchivedTransaction extends Transaction {
+  deletedAt: string; // ISO Date of deletion
+  deletedBy: string; // Name of user who deleted it
 }
 
 // --- Sales & Reconciliation ---
