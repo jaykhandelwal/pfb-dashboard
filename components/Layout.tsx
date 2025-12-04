@@ -42,7 +42,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-[#eff2e7] text-[#403424] flex-shrink-0 hidden md:flex flex-col shadow-xl z-20 border-r border-[#403424]/5">
         <div className="p-6 border-b border-[#403424]/10 flex flex-col items-center">
-          <img src="/logo.png" alt="Pakaja" className="h-16 w-auto object-contain mb-2" />
+          <img src="https://pakaja.b-cdn.net/assets/logo.png" alt="Pakaja" className="h-16 w-auto object-contain mb-2" />
           <p className="text-xs text-[#403424] tracking-widest uppercase mt-1">Inventory Ops</p>
         </div>
         
@@ -92,7 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* Header Bar */}
         <div className="bg-[#eff2e7] text-[#403424] px-4 h-16 flex justify-between items-center shadow-md relative z-50 border-b border-[#403424]/5">
            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Pakaja" className="h-8 w-auto object-contain" />
+              <img src="https://pakaja.b-cdn.net/assets/logo.png" alt="Pakaja" className="h-8 w-auto object-contain" />
            </div>
            
            <button 
