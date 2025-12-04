@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SKU, Branch, Transaction, SalesRecord } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS } from '../constants';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface StoreContextType {
   skus: SKU[];
@@ -35,6 +35,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const fetchData = async () => {
+    if (!isSupabaseConfigured()) {
+        // Fallback to initial constants if no DB
+        if (skus.length === 0) setSkus(INITIAL_SKUS);
+        if (branches.length === 0) setBranches(INITIAL_BRANCHES);
+        return; 
+    }
+
     try {
       // 1. Fetch SKUs
       const { data: skusData, error: skuError } = await supabase
@@ -44,17 +51,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       if (skuError) throw skuError;
       if (skusData && skusData.length > 0) {
-        // Map DB snake_case to TS camelCase if necessary (Supabase returns object keys as in DB)
-        // Since we created DB columns matching our need (but snake_case), we map:
         const mappedSkus = skusData.map((s: any) => ({
           ...s,
           piecesPerPacket: s.pieces_per_packet
         }));
         setSkus(mappedSkus);
       } else {
-        // If empty DB, seed initial data? Or just leave empty. 
-        // For migration, we might want to manually seed or keep empty.
-        // setSkus(INITIAL_SKUS); 
+         // Seed if empty
+         // setSkus(INITIAL_SKUS); 
       }
 
       // 2. Fetch Branches
@@ -62,7 +66,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (branchError) throw branchError;
       if (branchData) setBranches(branchData);
 
-      // 3. Fetch Transactions (Last 30 days to keep it light? Or all for now)
+      // 3. Fetch Transactions (Last 30 days)
       const { data: txData, error: txError } = await supabase
         .from('transactions')
         .select('*')
@@ -101,11 +105,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
     } catch (error) {
-      console.error("Error fetching data from Supabase:", error);
+      console.warn("StoreContext: Error fetching data (Offline Mode):", error);
     }
   };
 
-  // --- POS LISTENER (Keep logic but save to DB) ---
+  // --- POS LISTENER ---
   useEffect(() => {
     const handlePosMessage = async (event: MessageEvent) => {
       if (event.data && event.data.type === 'PAKAJA_IMPORT_SALES' && event.data.payload) {
@@ -126,8 +130,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              quantity_sold: Number(item.quantity)
           }));
 
-          const { error } = await supabase.from('sales_records').insert(recordsToInsert);
-          if (error) throw error;
+          if (isSupabaseConfigured()) {
+            const { error } = await supabase.from('sales_records').insert(recordsToInsert);
+            if (error) throw error;
+          }
 
           // Optimistic Update
           const newRecordsLocal = recordsToInsert.map((r: any) => ({
@@ -175,27 +181,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       user_name: t.userName
     }));
 
-    const { error } = await supabase.from('transactions').insert(dbRows);
-    
-    if (!error) {
-        // Prepare for Local State
-        const localTxs: Transaction[] = dbRows.map(r => ({
-            id: r.id,
-            batchId: r.batch_id,
-            timestamp: r.timestamp,
-            date: r.date,
-            branchId: r.branch_id,
-            skuId: r.sku_id,
-            type: r.type as any,
-            quantityPieces: r.quantity_pieces,
-            imageUrls: r.image_urls,
-            userId: r.user_id,
-            userName: r.user_name
-        }));
-        setTransactions(prev => [...localTxs, ...prev]);
-    } else {
-        console.error("Error adding transactions:", error);
+    if (isSupabaseConfigured()) {
+       const { error } = await supabase.from('transactions').insert(dbRows);
+       if (error) console.error("Error adding transactions:", error);
     }
+    
+    // Prepare for Local State (Optimistic)
+    const localTxs: Transaction[] = dbRows.map(r => ({
+        id: r.id,
+        batchId: r.batch_id,
+        timestamp: r.timestamp,
+        date: r.date,
+        branchId: r.branch_id,
+        skuId: r.sku_id,
+        type: r.type as any,
+        quantityPieces: r.quantity_pieces,
+        imageUrls: r.image_urls,
+        userId: r.user_id,
+        userName: r.user_name
+    }));
+    setTransactions(prev => [...localTxs, ...prev]);
   };
 
   const addSalesRecords = async (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => {
@@ -212,40 +217,38 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        quantity_sold: r.quantitySold
      }));
 
-     const { error } = await supabase.from('sales_records').insert(dbRows);
-
-     if (!error) {
-         const localRecords: SalesRecord[] = dbRows.map(r => ({
-             id: r.id,
-             timestamp: r.timestamp,
-             date: r.date,
-             branchId: r.branch_id,
-             platform: r.platform as any,
-             skuId: r.sku_id,
-             quantitySold: r.quantity_sold
-         }));
-         setSalesRecords(prev => [...prev, ...localRecords]);
-     } else {
-         console.error("Error adding sales records:", error);
+     if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('sales_records').insert(dbRows);
+        if (error) console.error("Error adding sales records:", error);
      }
+
+     const localRecords: SalesRecord[] = dbRows.map(r => ({
+         id: r.id,
+         timestamp: r.timestamp,
+         date: r.date,
+         branchId: r.branch_id,
+         platform: r.platform as any,
+         skuId: r.sku_id,
+         quantitySold: r.quantity_sold
+     }));
+     setSalesRecords(prev => [...prev, ...localRecords]);
   };
 
   const deleteSalesRecordsForDate = async (date: string, branchId: string, platform?: string) => {
-    let query = supabase.from('sales_records').delete().eq('date', date).eq('branch_id', branchId);
-    if (platform) {
-        query = query.eq('platform', platform);
+    if (isSupabaseConfigured()) {
+        let query = supabase.from('sales_records').delete().eq('date', date).eq('branch_id', branchId);
+        if (platform) {
+            query = query.eq('platform', platform);
+        }
+        const { error } = await query;
+        if (error) console.error("Error deleting sales records", error);
     }
-    
-    const { error } = await query;
-    if (!error) {
-        setSalesRecords(prev => prev.filter(r => {
-            if (r.date !== date || r.branchId !== branchId) return true;
-            if (platform && r.platform !== platform) return true;
-            return false;
-        }));
-    } else {
-        console.error("Error deleting sales records", error);
-    }
+
+    setSalesRecords(prev => prev.filter(r => {
+        if (r.date !== date || r.branchId !== branchId) return true;
+        if (platform && r.platform !== platform) return true;
+        return false;
+    }));
   };
 
   const addSku = async (skuData: Omit<SKU, 'id' | 'order'>) => {
@@ -255,45 +258,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       order: skus.length,
     };
     
-    const dbRow = {
-        id: newSku.id,
-        name: newSku.name,
-        category: newSku.category,
-        dietary: newSku.dietary,
-        pieces_per_packet: newSku.piecesPerPacket,
-        order: newSku.order
-    };
-
-    const { error } = await supabase.from('skus').insert(dbRow);
-    if (!error) {
-        setSkus(prev => [...prev, newSku as SKU]);
+    if (isSupabaseConfigured()) {
+        const dbRow = {
+            id: newSku.id,
+            name: newSku.name,
+            category: newSku.category,
+            dietary: newSku.dietary,
+            pieces_per_packet: newSku.piecesPerPacket,
+            order: newSku.order
+        };
+        const { error } = await supabase.from('skus').insert(dbRow);
+        if (error) console.error(error);
     }
+
+    setSkus(prev => [...prev, newSku as SKU]);
   };
 
   const updateSku = async (updatedSku: SKU) => {
-    const dbRow = {
-        name: updatedSku.name,
-        category: updatedSku.category,
-        dietary: updatedSku.dietary,
-        pieces_per_packet: updatedSku.piecesPerPacket,
-        order: updatedSku.order
-    };
-
-    const { error } = await supabase.from('skus').update(dbRow).eq('id', updatedSku.id);
-    if (!error) {
-        setSkus(prev => prev.map(s => s.id === updatedSku.id ? updatedSku : s));
+    if (isSupabaseConfigured()) {
+        const dbRow = {
+            name: updatedSku.name,
+            category: updatedSku.category,
+            dietary: updatedSku.dietary,
+            pieces_per_packet: updatedSku.piecesPerPacket,
+            order: updatedSku.order
+        };
+        const { error } = await supabase.from('skus').update(dbRow).eq('id', updatedSku.id);
+        if (error) console.error(error);
     }
+    setSkus(prev => prev.map(s => s.id === updatedSku.id ? updatedSku : s));
   };
 
   const deleteSku = async (id: string) => {
-    const { error } = await supabase.from('skus').delete().eq('id', id);
-    if (!error) {
-        setSkus(prev => prev.filter(s => s.id !== id));
+    if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('skus').delete().eq('id', id);
+        if (error) console.error(error);
     }
+    setSkus(prev => prev.filter(s => s.id !== id));
   };
 
   const reorderSku = async (id: string, direction: 'up' | 'down') => {
-    // Optimistic update locally
     const index = skus.findIndex(s => s.id === id);
     if (index === -1) return;
     if (direction === 'up' && index === 0) return;
@@ -303,14 +307,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     [newSkus[index], newSkus[targetIndex]] = [newSkus[targetIndex], newSkus[index]];
     
-    // Remap order
     const reordered = newSkus.map((s, idx) => ({ ...s, order: idx }));
     setSkus(reordered);
 
-    // Update DB (Batch update not trivial in simple REST, doing loop for simplicity or RPC)
-    // For now, looping updates. In production, use an RPC function.
-    for (const s of reordered) {
-       await supabase.from('skus').update({ order: s.order }).eq('id', s.id);
+    if (isSupabaseConfigured()) {
+        for (const s of reordered) {
+            await supabase.from('skus').update({ order: s.order }).eq('id', s.id);
+        }
     }
   };
 
@@ -320,33 +323,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...branchData
     };
 
-    const { error } = await supabase.from('branches').insert(newBranch);
-    if (!error) {
-        setBranches(prev => [...prev, newBranch]);
+    if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('branches').insert(newBranch);
+        if (error) console.error(error);
     }
+    setBranches(prev => [...prev, newBranch]);
   };
 
   const updateBranch = async (updatedBranch: Branch) => {
-    const { error } = await supabase.from('branches').update({ name: updatedBranch.name }).eq('id', updatedBranch.id);
-    if (!error) {
-        setBranches(prev => prev.map(b => b.id === updatedBranch.id ? updatedBranch : b));
+    if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('branches').update({ name: updatedBranch.name }).eq('id', updatedBranch.id);
+        if (error) console.error(error);
     }
+    setBranches(prev => prev.map(b => b.id === updatedBranch.id ? updatedBranch : b));
   };
 
   const deleteBranch = async (id: string) => {
-    const { error } = await supabase.from('branches').delete().eq('id', id);
-    if (!error) {
-        setBranches(prev => prev.filter(b => b.id !== id));
+    if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('branches').delete().eq('id', id);
+        if (error) console.error(error);
     }
+    setBranches(prev => prev.filter(b => b.id !== id));
   };
 
   const resetData = async () => {
-    // DANGEROUS: Wipes DB
-    await supabase.from('transactions').delete().neq('id', '0');
-    await supabase.from('sales_records').delete().neq('id', '0');
-    await supabase.from('skus').delete().neq('id', '0');
-    await supabase.from('branches').delete().neq('id', '0');
-    // Seed initial?
+    if (isSupabaseConfigured()) {
+        await supabase.from('transactions').delete().neq('id', '0');
+        await supabase.from('sales_records').delete().neq('id', '0');
+        await supabase.from('skus').delete().neq('id', '0');
+        await supabase.from('branches').delete().neq('id', '0');
+    }
     setTransactions([]);
     setSalesRecords([]);
     setSkus([]);

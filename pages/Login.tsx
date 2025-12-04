@@ -82,10 +82,6 @@ const Login: React.FC = () => {
               )}
             </button>
           </form>
-          
-          <div className="text-center mt-6">
-             <p className="text-xs text-slate-400">Default Admin Code: <strong>admin</strong></p>
-          </div>
         </div>
       </div>
     </div>

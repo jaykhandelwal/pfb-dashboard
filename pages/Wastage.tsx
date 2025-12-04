@@ -1,9 +1,11 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType, SKUCategory, SKUDietary, SKU } from '../types';
-import { Trash2, Calendar, Store, AlertTriangle, Camera, X, Search, ChevronDown, ChevronUp, Snowflake, CheckCircle2 } from 'lucide-react';
+import { Trash2, Calendar, Store, AlertTriangle, Camera, X, Search, ChevronDown, ChevronUp, Snowflake, CheckCircle2, Loader2 } from 'lucide-react';
 import { getLocalISOString } from '../constants';
+import { uploadImageToBunny } from '../services/bunnyStorage';
 
 const Wastage: React.FC = () => {
   const { branches, skus, addBatchTransactions } = useStore();
@@ -29,6 +31,7 @@ const Wastage: React.FC = () => {
 
   // Modal State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Auto-expand consumables when searching
   useEffect(() => {
@@ -137,7 +140,24 @@ const Wastage: React.FC = () => {
     setIsConfirmOpen(true);
   };
 
-  const confirmSubmit = () => {
+  const confirmSubmit = async () => {
+    setIsSubmitting(true);
+    
+    // 1. Upload Images to BunnyCDN
+    // We upload all attached images in parallel
+    const uploadedUrls: string[] = [];
+    
+    try {
+      const uploadPromises = capturedImages.map(base64 => uploadImageToBunny(base64));
+      const results = await Promise.all(uploadPromises);
+      uploadedUrls.push(...results);
+    } catch (e) {
+      console.error("Error during image upload, using fallbacks", e);
+      // If upload fails entirely, use original base64 to prevent data loss
+      uploadedUrls.push(...capturedImages); 
+    }
+
+    // 2. Prepare Transactions
     const transactionsToSave: any[] = [];
     
     skus.forEach(sku => {
@@ -149,21 +169,24 @@ const Wastage: React.FC = () => {
           skuId: sku.id,
           type: TransactionType.WASTE,
           quantityPieces: qty,
-          imageUrls: capturedImages, // Attach all images to transaction
+          imageUrls: uploadedUrls, // Attach the CDN URLs (or Base64 fallbacks)
           userId: currentUser?.id,
           userName: currentUser?.name
         });
       }
     });
 
+    // 3. Save to Store/DB
     if (transactionsToSave.length > 0) {
-      addBatchTransactions(transactionsToSave);
+      await addBatchTransactions(transactionsToSave);
       setSuccessMsg(`Successfully recorded wastage for ${transactionsToSave.length} items.`);
       setInputs({});
       setCapturedImages([]);
       setIsConfirmOpen(false);
       setTimeout(() => setSuccessMsg(''), 3000);
     }
+    
+    setIsSubmitting(false);
   };
 
   const getCategoryColor = (category: SKUCategory) => {
@@ -535,23 +558,34 @@ const Wastage: React.FC = () => {
 
                  <div className="mt-4 p-3 bg-red-50 rounded-lg text-xs text-red-800 flex items-start gap-2 border border-red-100">
                     <Camera size={14} className="mt-0.5 flex-shrink-0"/>
-                    <p>Evidence: <strong>{capturedImages.length} photos</strong> attached. This action cannot be undone.</p>
+                    <p>Evidence: <strong>{capturedImages.length} photos</strong> attached. They will be uploaded to Pakaja Cloud (BunnyCDN).</p>
                  </div>
               </div>
 
               <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end gap-3">
                  <button 
                    onClick={() => setIsConfirmOpen(false)}
-                   className="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors"
+                   disabled={isSubmitting}
+                   className="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors disabled:opacity-50"
                  >
                    Edit
                  </button>
                  <button 
                    onClick={confirmSubmit}
-                   className="px-6 py-2.5 rounded-lg text-white font-bold transition-colors shadow-sm flex items-center gap-2 bg-red-600 hover:bg-red-700"
+                   disabled={isSubmitting}
+                   className="px-6 py-2.5 rounded-lg text-white font-bold transition-colors shadow-sm flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-70 disabled:cursor-not-allowed"
                  >
-                   <CheckCircle2 size={18} />
-                   Confirm Wastage
+                   {isSubmitting ? (
+                     <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Uploading...
+                     </>
+                   ) : (
+                     <>
+                        <CheckCircle2 size={18} />
+                        Confirm Wastage
+                     </>
+                   )}
                  </button>
               </div>
            </div>

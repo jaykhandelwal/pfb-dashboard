@@ -1,3 +1,4 @@
+
 # Pakaja Inventory & Analytics System
 
 A comprehensive inventory management PWA (Progressive Web App) designed for Momo/Food carts. This application handles stock tracking, daily operations (check-in/check-out), wastage reporting, and provides AI-powered analytics.
@@ -20,6 +21,7 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 *   **Charts**: Recharts
 *   **AI**: @google/genai SDK
 *   **State Management**: React Context API + LocalStorage persistence
+*   **Storage**: BunnyCDN (for Wastage Images)
 
 ---
 
@@ -110,6 +112,15 @@ webView.evaluateJavascript(js, null)
     Create a `.env` file in the root directory:
     ```env
     API_KEY=your_google_gemini_api_key
+    
+    # Supabase (Optional for Database)
+    VITE_SUPABASE_URL=your_supabase_url
+    VITE_SUPABASE_ANON_KEY=your_supabase_key
+
+    # BunnyCDN (For Wastage Images)
+    VITE_BUNNY_STORAGE_KEY=your_storage_password
+    VITE_BUNNY_STORAGE_ZONE=pakaja
+    VITE_BUNNY_PULL_ZONE=https://your-zone.b-cdn.net
     ```
 4.  **Run Development Server**:
     ```bash
@@ -134,7 +145,7 @@ When launching the app for the first time, use the default admin credentials:
     *   `Wastage.tsx`: Camera interface for reporting loss.
     *   `Dashboard.tsx`: Analytics and AI summaries.
 *   `/types`: TypeScript interfaces for Data Models (User, Transaction, SKU).
-*   `/services`: API integrations (Gemini AI).
+*   `/services`: API integrations (Gemini AI, BunnyCDN).
 
 ## 🤖 AI Features
 
