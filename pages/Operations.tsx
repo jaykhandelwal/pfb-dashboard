@@ -1,12 +1,13 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { TransactionType, SKUCategory, SKUDietary } from '../types';
-import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock } from 'lucide-react';
+import { TransactionType, SKUCategory, SKUDietary, SKU } from '../types';
+import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock, Calculator, PackageCheck, Utensils } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Operations: React.FC = () => {
-  const { branches, skus, addBatchTransactions, transactions } = useStore();
+  const { branches, skus, addBatchTransactions, transactions, menuItems } = useStore();
   const { currentUser } = useAuth();
   
   // Form State
@@ -71,6 +72,23 @@ const Operations: React.FC = () => {
     return (isNaN(packets) ? 0 : packets) * packetSize + (isNaN(loose) ? 0 : loose);
   };
 
+  // Helper to find "Standard Plate Size" for an SKU based on Category defaults
+  // HARDCODED CONFIGURATION: Edit values here to change plate calculation logic
+  const getPlateSize = (sku: SKU) => {
+    // Priority 1: Category Defaults (Hardcoded)
+    if (sku.category === SKUCategory.STEAM) return 8;   // 8 pcs per plate
+    if (sku.category === SKUCategory.KURKURE) return 6; // 6 pcs per plate
+    if (sku.category === SKUCategory.ROLL) return 2;    // 2 pcs per plate
+    
+    // Priority 2: Menu Lookup (Fallback for other categories)
+    const menuItem = menuItems.find(m => m.ingredients && m.ingredients.some(i => i.skuId === sku.id));
+    if (menuItem) {
+        const ingredient = menuItem.ingredients.find(i => i.skuId === sku.id);
+        return ingredient?.quantity || 0;
+    }
+    return 0; 
+  };
+
   // Fetch the last return transaction for each SKU for the selected Branch (Only for Check Out enhancements)
   const latestReturns = useMemo(() => {
     const returns: Record<string, { qty: number, date: string }> = {};
@@ -95,8 +113,11 @@ const Operations: React.FC = () => {
 
   // Calculate Limits (Total Taken per SKU for this Date/Branch)
   const maxTransactionLimits = useMemo(() => {
-    if (type === TransactionType.CHECK_OUT) return {};
     const limits: Record<string, number> = {};
+    
+    // We need limits for BOTH calculations now (not just limits)
+    // For Check-out: used for history? (Not really needed)
+    // For Check-in: needed for "Total Taken" display
     
     skus.forEach(sku => {
       const totalTaken = transactions
@@ -371,12 +392,22 @@ const Operations: React.FC = () => {
                 
                 // Max Limit Data (Check Out Limit for Returns)
                 const maxLimit = maxTransactionLimits[sku.id] || 0;
-                const isOverLimit = (type !== TransactionType.CHECK_OUT) && total > maxLimit && maxLimit > 0;
+                const isReturnOverLimit = (type === TransactionType.CHECK_IN) && total > maxLimit && maxLimit > 0;
 
                 const categoryColor = getCategoryColor(sku.category);
                 
+                // Plate Calculation Logic (Only for Returns View)
+                const plateSize = getPlateSize(sku);
+                const netConsumed = Math.max(0, maxLimit - total); // Taken - Returned
+                const platesSold = plateSize > 0 ? Math.floor(netConsumed / plateSize) : 0;
+                const pcsSold = plateSize > 0 ? netConsumed % plateSize : netConsumed;
+
+                // Packet Calculation for Green Bar
+                const checkedOutPkts = Math.floor(maxLimit / sku.piecesPerPacket);
+                const checkedOutLoose = maxLimit % sku.piecesPerPacket;
+
                 return (
-                <div key={sku.id} className={`rounded-xl border transition-all ${hasValue ? (isOverLimit ? 'bg-red-50 border-red-200' : `${activeBgColor} ${activeBorderColor}`) : 'bg-white border-slate-200'} p-3 md:p-3 shadow-sm`}>
+                <div key={sku.id} className={`rounded-xl border transition-all ${hasValue ? (isReturnOverLimit ? 'bg-red-50 border-red-200' : `${activeBgColor} ${activeBorderColor}`) : 'bg-white border-slate-200'} p-3 md:p-3 shadow-sm`}>
                   
                   {/* Desktop Layout */}
                   <div className="hidden md:grid md:grid-cols-12 md:gap-4 md:items-center">
@@ -390,55 +421,73 @@ const Operations: React.FC = () => {
                         )}
                       </div>
                       <p className="font-bold text-slate-700">{sku.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-slate-400">
-                          {sku.piecesPerPacket} pcs/pkt
-                        </span>
-                      </div>
                     </div>
                     
-                    <div className="col-span-3 px-2">
-                       <div className="relative">
-                          <input 
-                            type="number" 
-                            min="0"
-                            placeholder="0"
-                            value={inputs[sku.id]?.packets || ''}
-                            onChange={(e) => handleInputChange(sku.id, 'packets', e.target.value)}
-                            className={`w-full text-center border rounded-lg h-10 focus:outline-none focus:ring-2 focus:ring-slate-400 ${hasValue ? `${activeBorderColor} bg-white` : 'border-slate-200'}`}
-                          />
-                          <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pkts</span>
-                        </div>
-                    </div>
+                    {/* INPUT SECTION (Merged cols for cleaner UI in Returns mode) */}
+                    <div className="col-span-6 px-2">
+                       {/* GREEN BAR: Checked Out (Only in Returns Mode) */}
+                       {type === TransactionType.CHECK_IN && maxLimit > 0 && (
+                          <div className="mb-2 bg-emerald-50 border border-emerald-100 rounded-md py-1 px-3 text-xs text-emerald-800 flex justify-between items-center font-medium">
+                             <div className="flex items-center gap-1.5"><PackageCheck size={12}/> Checked Out</div>
+                             <div className="flex items-baseline gap-2">
+                                <span className="text-[10px] font-normal opacity-80">{checkedOutPkts} pkts, {checkedOutLoose} loose</span>
+                                <span className="font-bold">{maxLimit} pcs</span>
+                             </div>
+                          </div>
+                       )}
 
-                    <div className="col-span-3 px-2 relative">
-                        <div className="relative">
-                          <input 
-                            type="number" 
-                            min="0"
-                            placeholder="0"
-                            value={inputs[sku.id]?.loose || ''}
-                            onChange={(e) => handleInputChange(sku.id, 'loose', e.target.value)}
-                            className={`w-full text-center border rounded-lg h-10 focus:outline-none focus:ring-2 focus:ring-slate-400 ${hasValue ? `${activeBorderColor} bg-white` : 'border-slate-200'}`}
-                          />
-                          <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pcs</span>
+                       <div className="flex gap-2 items-center">
+                          <div className="flex-1 relative">
+                              <input 
+                                type="number" 
+                                min="0"
+                                placeholder="0"
+                                value={inputs[sku.id]?.packets || ''}
+                                onChange={(e) => handleInputChange(sku.id, 'packets', e.target.value)}
+                                className={`w-full text-center border rounded-lg h-10 focus:outline-none focus:ring-2 focus:ring-slate-400 ${hasValue ? `${activeBorderColor} bg-white` : 'border-slate-200'}`}
+                              />
+                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pkts</span>
+                          </div>
                           
-                          {/* Smart Return Button (Desktop) - Only for Check Out */}
-                          {type === TransactionType.CHECK_OUT && lastReturnQty > 0 && !isApplied && (
-                            <button
-                              type="button"
-                              onClick={() => useLastReturn(sku.id, lastReturnQty)}
-                              className="absolute -top-7 right-0 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors whitespace-nowrap z-10 shadow-sm"
-                              title="Add return from last check-in"
-                            >
-                              <Plus size={10} /> Add Return: {lastReturnQty}
-                            </button>
-                          )}
-                        </div>
+                          <div className="flex-1 relative">
+                              <input 
+                                type="number" 
+                                min="0"
+                                placeholder="0"
+                                value={inputs[sku.id]?.loose || ''}
+                                onChange={(e) => handleInputChange(sku.id, 'loose', e.target.value)}
+                                className={`w-full text-center border rounded-lg h-10 focus:outline-none focus:ring-2 focus:ring-slate-400 ${hasValue ? `${activeBorderColor} bg-white` : 'border-slate-200'}`}
+                              />
+                              <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pcs</span>
+                              
+                              {/* Smart Return Button (Desktop) - Only for Check Out */}
+                              {type === TransactionType.CHECK_OUT && lastReturnQty > 0 && !isApplied && (
+                                <button
+                                  type="button"
+                                  onClick={() => useLastReturn(sku.id, lastReturnQty)}
+                                  className="absolute -top-7 right-0 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors whitespace-nowrap z-10 shadow-sm"
+                                  title="Add return from last check-in"
+                                >
+                                  <Plus size={10} /> Add Return: {lastReturnQty}
+                                </button>
+                              )}
+                          </div>
+                       </div>
+
+                       {/* RED BAR: Approx Plates (Only in Returns Mode) */}
+                       {type === TransactionType.CHECK_IN && maxLimit > 0 && (
+                          <div className="mt-2 bg-red-50 border border-red-100 rounded-md py-1 px-3 text-xs text-red-800 flex justify-between items-center font-medium">
+                             <div className="flex items-center gap-1.5"><Utensils size={12}/> Sold</div>
+                             <div className="font-bold flex gap-1">
+                                <span>{platesSold} Plates</span>
+                                {pcsSold > 0 && <span className="opacity-70 text-[10px] mt-0.5">+{pcsSold} pcs</span>}
+                             </div>
+                          </div>
+                       )}
                     </div>
 
                     <div className="col-span-2 text-right">
-                       <p className={`font-mono font-bold text-lg ${isOverLimit ? 'text-red-600' : (hasValue ? activeTextColor : 'text-slate-300')}`}>
+                       <p className={`font-mono font-bold text-lg ${isReturnOverLimit ? 'text-red-600' : (hasValue ? activeTextColor : 'text-slate-300')}`}>
                          {total}
                        </p>
                     </div>
@@ -466,12 +515,23 @@ const Operations: React.FC = () => {
                             <div>
                                 <h3 className="font-bold text-slate-700 text-base truncate leading-tight">{sku.name}</h3>
                             </div>
-                            <div className={`font-mono font-bold text-lg ${isOverLimit ? 'text-red-600' : (hasValue ? activeTextColor : 'text-transparent')}`}>
+                            <div className={`font-mono font-bold text-lg ${isReturnOverLimit ? 'text-red-600' : (hasValue ? activeTextColor : 'text-transparent')}`}>
                                 {total}
                             </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Green Bar (Mobile) */}
+                    {type === TransactionType.CHECK_IN && maxLimit > 0 && (
+                       <div className="mb-2 bg-emerald-50 border border-emerald-100 rounded-md py-1 px-3 text-xs text-emerald-800 flex justify-between items-center font-medium">
+                          <div className="flex items-center gap-1.5"><PackageCheck size={12}/> Checked Out</div>
+                          <div className="flex items-baseline gap-2">
+                             <span className="text-[10px] font-normal opacity-80">{checkedOutPkts} pkts, {checkedOutLoose} loose</span>
+                             <span className="font-bold">{maxLimit} pcs</span>
+                          </div>
+                       </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -501,6 +561,17 @@ const Operations: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Red Bar (Mobile) */}
+                    {type === TransactionType.CHECK_IN && maxLimit > 0 && (
+                       <div className="mt-2 bg-red-50 border border-red-100 rounded-md py-1 px-3 text-xs text-red-800 flex justify-between items-center font-medium">
+                          <div className="flex items-center gap-1.5"><Utensils size={12}/> Sold</div>
+                          <div className="font-bold flex gap-1">
+                             <span>{platesSold} Plates</span>
+                             {pcsSold > 0 && <span className="opacity-70 text-[10px] mt-0.5">+{pcsSold} pcs</span>}
+                          </div>
+                       </div>
+                    )}
 
                     {/* Mobile Smart Return Button */}
                     {type === TransactionType.CHECK_OUT && lastReturnQty > 0 && !isApplied && (
@@ -613,7 +684,7 @@ const Operations: React.FC = () => {
                  <button 
                    onClick={() => setIsConfirmOpen(false)}
                    className="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors"
-                 >
+                  >
                    Back to Edit
                  </button>
                  <button 

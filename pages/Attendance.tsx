@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Camera, CheckCircle2, UserCheck, MapPin, Calendar, Clock, Loader2, X, RotateCcw } from 'lucide-react';
+import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw } from 'lucide-react';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { getLocalISOString } from '../constants';
 
@@ -101,8 +102,8 @@ const Attendance: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // Upload image
-      const imageUrl = await uploadImageToBunny(capturedImage);
+      // Upload image to 'attendance' folder
+      const imageUrl = await uploadImageToBunny(capturedImage, 'attendance');
 
       await addAttendance({
          userId: currentUser.id,
@@ -193,86 +194,79 @@ const Attendance: React.FC = () => {
                      <Camera size={32} />
                   </div>
                   <span className="font-bold text-sm">Tap to Take Selfie</span>
-                  <span className="text-xs mt-1">Photo evidence required</span>
                </button>
             )}
 
             {isCameraOpen && (
-               <div className="relative w-full rounded-xl overflow-hidden shadow-lg aspect-[3/4] md:aspect-video bg-black">
-                  <video 
-                     ref={videoRef} 
-                     autoPlay 
-                     playsInline 
-                     muted 
-                     className="w-full h-full object-cover transform -scale-x-100" // Mirror effect
-                  />
-                  <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-6">
-                     <button 
-                        onClick={stopCamera}
-                        className="p-3 rounded-full bg-white/20 backdrop-blur-md text-white hover:bg-white/30"
-                     >
-                        <X size={24} />
-                     </button>
-                     <button 
-                        onClick={capturePhoto}
-                        className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center bg-transparent hover:bg-white/20 active:scale-95 transition-all"
-                     >
-                        <div className="w-12 h-12 bg-white rounded-full"></div>
-                     </button>
-                  </div>
-               </div>
+              <div className="relative w-full aspect-[3/4] md:aspect-video bg-black rounded-xl overflow-hidden shadow-lg flex flex-col">
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="w-full h-full object-cover flex-1 scale-x-[-1]"
+                />
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
+                   <button 
+                    onClick={stopCamera}
+                    className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-bold"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                    onClick={capturePhoto}
+                    className="w-14 h-14 bg-white rounded-full border-4 border-slate-200 shadow-lg active:scale-95 transition-transform"
+                   />
+                </div>
+              </div>
             )}
 
             {capturedImage && (
-               <div className="relative w-full rounded-xl overflow-hidden shadow-md aspect-[3/4] md:aspect-video bg-black">
-                  <img src={capturedImage} alt="Attendance" className="w-full h-full object-cover" />
-                  <button 
-                     onClick={() => setCapturedImage(null)}
-                     className="absolute top-3 right-3 p-2 rounded-full bg-black/50 text-white hover:bg-red-500 transition-colors"
-                  >
-                     <RotateCcw size={16} />
-                  </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                     <div className="text-white text-xs font-mono flex items-center gap-2">
-                        <Clock size={12} /> {new Date().toLocaleTimeString()}
-                        <span className="opacity-50">|</span>
-                        <Calendar size={12} /> {today}
-                     </div>
+               <div className="w-full">
+                  <div className="relative aspect-[3/4] md:aspect-video bg-slate-100 rounded-xl overflow-hidden mb-4 border border-slate-200">
+                     <img src={capturedImage} alt="Selfie" className="w-full h-full object-cover" />
+                     <button 
+                       onClick={() => setCapturedImage(null)}
+                       className="absolute top-2 right-2 bg-slate-800/50 text-white p-2 rounded-full hover:bg-slate-800"
+                     >
+                       <RotateCcw size={16} />
+                     </button>
                   </div>
+                  
+                  {errorMsg && (
+                     <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center mb-4 flex items-center justify-center gap-2">
+                        <X size={16} /> {errorMsg}
+                     </div>
+                  )}
+
+                  <button 
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                     {isSubmitting ? (
+                        <>
+                           <Loader2 size={20} className="animate-spin" /> Checking In...
+                        </>
+                     ) : (
+                        <>
+                           <CheckCircle2 size={20} /> Confirm Attendance
+                        </>
+                     )}
+                  </button>
                </div>
             )}
          </div>
-
-         {errorMsg && (
-            <div className="px-5 pb-2 text-red-600 text-sm font-medium text-center animate-fade-in">
-               {errorMsg}
-            </div>
-         )}
-         
-         {successMsg && (
-            <div className="px-5 pb-2 text-emerald-600 text-sm font-medium text-center animate-fade-in">
-               {successMsg}
-            </div>
-         )}
-
-         <div className="p-5 border-t border-slate-100 bg-slate-50">
-            <button
-               onClick={handleSubmit}
-               disabled={!capturedImage || isSubmitting}
-               className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-               {isSubmitting ? (
-                  <>
-                     <Loader2 size={20} className="animate-spin" /> Check In...
-                  </>
-               ) : (
-                  <>
-                     Check In
-                  </>
-               )}
-            </button>
-         </div>
       </div>
+      
+      {successMsg && (
+        <div className="fixed bottom-4 left-4 right-4 z-50">
+          <div className="bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-lg text-center font-bold animate-fade-in-up flex items-center justify-center gap-2">
+            <CheckCircle2 size={24} />
+            {successMsg}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

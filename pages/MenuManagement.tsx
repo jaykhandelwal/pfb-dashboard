@@ -1,8 +1,11 @@
 
+
+
+
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, MenuIngredient } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Copy, Check, KeyRound } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Copy, Check, KeyRound, Columns, Divide } from 'lucide-react';
 
 const MenuManagement: React.FC = () => {
   const { menuItems, skus, addMenuItem, updateMenuItem, deleteMenuItem } = useStore();
@@ -12,16 +15,22 @@ const MenuManagement: React.FC = () => {
   
   // Local state for ingredients editing
   const [ingredients, setIngredients] = useState<MenuIngredient[]>([]);
+  const [halfIngredients, setHalfIngredients] = useState<MenuIngredient[]>([]);
+  const [recipeTab, setRecipeTab] = useState<'FULL' | 'HALF'>('FULL');
 
   const handleAddNew = () => {
     setCurrentItem({ name: '', price: 0 });
     setIngredients([]);
+    setHalfIngredients([]);
+    setRecipeTab('FULL');
     setIsEditing(true);
   };
 
   const handleEdit = (item: MenuItem) => {
     setCurrentItem({ ...item });
     setIngredients(item.ingredients ? [...item.ingredients] : []);
+    setHalfIngredients(item.halfIngredients ? [...item.halfIngredients] : []);
+    setRecipeTab('FULL');
     setIsEditing(true);
   };
 
@@ -37,7 +46,8 @@ const MenuManagement: React.FC = () => {
 
     const payload = {
        ...currentItem,
-       ingredients
+       ingredients,
+       halfIngredients
     };
 
     if (currentItem.id && menuItems.some(i => i.id === currentItem.id)) {
@@ -50,6 +60,7 @@ const MenuManagement: React.FC = () => {
     setIsEditing(false);
     setCurrentItem({});
     setIngredients([]);
+    setHalfIngredients([]);
   };
 
   const getSkuName = (skuId?: string) => {
@@ -58,20 +69,35 @@ const MenuManagement: React.FC = () => {
      return sku ? sku.name : 'Unknown SKU';
   };
 
+  // Generic Ingredient Functions (Work on both Full and Half lists)
+  const getCurrentList = () => recipeTab === 'FULL' ? ingredients : halfIngredients;
+  const setList = (list: MenuIngredient[]) => recipeTab === 'FULL' ? setIngredients(list) : setHalfIngredients(list);
+
   const addIngredient = () => {
      if(skus.length === 0) return;
      // Add first available SKU as default
-     setIngredients([...ingredients, { skuId: skus[0].id, quantity: 1 }]);
+     const current = getCurrentList();
+     setList([...current, { skuId: skus[0].id, quantity: 1 }]);
   };
 
   const updateIngredient = (index: number, field: keyof MenuIngredient, value: string | number) => {
-     const newIngredients = [...ingredients];
+     const newIngredients = [...getCurrentList()];
      newIngredients[index] = { ...newIngredients[index], [field]: value };
-     setIngredients(newIngredients);
+     setList(newIngredients);
   };
 
   const removeIngredient = (index: number) => {
-     setIngredients(ingredients.filter((_, i) => i !== index));
+     setList(getCurrentList().filter((_, i) => i !== index));
+  };
+
+  const copyFullToHalf = () => {
+      // Logic: Auto-calculate 0.5x of Full Plate ingredients and set to Half Plate
+      const calculated = ingredients.map(ing => ({
+          skuId: ing.skuId,
+          quantity: ing.quantity * 0.5
+      }));
+      setHalfIngredients(calculated);
+      setRecipeTab('HALF'); // Switch tab to show user
   };
 
   const copyToClipboard = (text: string) => {
@@ -126,18 +152,34 @@ const MenuManagement: React.FC = () => {
                   />
                </div>
 
-               <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Selling Price</label>
-                  <div className="relative">
-                     <input 
-                       type="number" 
-                       required
-                       min="0"
-                       value={currentItem.price || ''}
-                       onChange={e => setCurrentItem({...currentItem, price: parseFloat(e.target.value)})}
-                       className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                     />
-                     <IndianRupee size={14} className="absolute left-3 top-3 text-slate-400" />
+               <div className="flex gap-3">
+                  <div className="flex-1">
+                     <label className="block text-sm font-medium text-slate-700 mb-1">Selling Price (Full)</label>
+                     <div className="relative">
+                        <input 
+                          type="number" 
+                          required
+                          min="0"
+                          value={currentItem.price || ''}
+                          onChange={e => setCurrentItem({...currentItem, price: parseFloat(e.target.value)})}
+                          className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                        <IndianRupee size={14} className="absolute left-3 top-3 text-slate-400" />
+                     </div>
+                  </div>
+                  <div className="flex-1">
+                     <label className="block text-sm font-medium text-slate-700 mb-1">Half Price (Optional)</label>
+                     <div className="relative">
+                        <input 
+                          type="number" 
+                          min="0"
+                          value={currentItem.halfPrice || ''}
+                          onChange={e => setCurrentItem({...currentItem, halfPrice: e.target.value ? parseFloat(e.target.value) : undefined})}
+                          className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          placeholder="e.g. 60"
+                        />
+                        <IndianRupee size={14} className="absolute left-3 top-3 text-slate-400" />
+                     </div>
                   </div>
                </div>
             </div>
@@ -176,30 +218,64 @@ const MenuManagement: React.FC = () => {
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4">
                <div className="flex justify-between items-center mb-3">
                   <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                     <ChefHat size={16} className="text-slate-500"/> Recipe / Ingredients
+                     <ChefHat size={16} className="text-slate-500"/> Recipe Configuration
                   </label>
-                  <button 
-                     type="button" 
-                     onClick={addIngredient}
-                     className="text-xs flex items-center gap-1 text-emerald-600 font-bold hover:bg-emerald-50 px-2 py-1 rounded"
-                  >
-                     <Plus size={12} /> Add Ingredient
-                  </button>
                </div>
                
-               {ingredients.length === 0 ? (
-                  <div className="text-center text-slate-400 text-sm py-4 italic">
-                     No ingredients defined. Add SKUs to link this menu item to inventory.
+               {/* Recipe Tabs */}
+               <div className="flex gap-1 bg-slate-200 p-1 rounded-lg mb-4">
+                  <button 
+                     type="button"
+                     onClick={() => setRecipeTab('FULL')}
+                     className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${
+                        recipeTab === 'FULL' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-emerald-700'
+                     }`}
+                  >
+                     Full Plate Recipe
+                  </button>
+                  <button 
+                     type="button"
+                     onClick={() => setRecipeTab('HALF')}
+                     className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${
+                        recipeTab === 'HALF' ? 'bg-white text-orange-700 shadow-sm' : 'text-slate-500 hover:text-orange-700'
+                     }`}
+                  >
+                     Half Plate Recipe
+                  </button>
+               </div>
+
+               {/* Quick Action: Copy Full to Half */}
+               {recipeTab === 'HALF' && ingredients.length > 0 && halfIngredients.length === 0 && (
+                   <button 
+                     type="button"
+                     onClick={copyFullToHalf}
+                     className="w-full py-2 mb-4 border border-dashed border-orange-300 bg-orange-50 text-orange-700 rounded-lg text-xs font-bold hover:bg-orange-100 flex items-center justify-center gap-2"
+                   >
+                       <Divide size={14} /> Auto-fill from Full Plate (0.5x)
+                   </button>
+               )}
+               
+               {getCurrentList().length === 0 ? (
+                  <div className="text-center text-slate-400 text-sm py-4 italic border border-dashed border-slate-200 rounded-lg">
+                     No ingredients defined for {recipeTab === 'FULL' ? 'Full' : 'Half'} Plate.
+                     <br />
+                     <button 
+                        type="button"
+                        onClick={addIngredient}
+                        className="mt-2 text-emerald-600 font-bold hover:underline"
+                     >
+                        + Add First Ingredient
+                     </button>
                   </div>
                ) : (
                   <div className="space-y-2">
-                     {ingredients.map((ing, idx) => (
+                     {getCurrentList().map((ing, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                            <div className="flex-1">
                               <select 
                                  value={ing.skuId}
                                  onChange={(e) => updateIngredient(idx, 'skuId', e.target.value)}
-                                 className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+                                 className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-emerald-500"
                               >
                                  {skus.map(s => (
                                     <option key={s.id} value={s.id}>{s.name} ({s.piecesPerPacket} pcs/pkt)</option>
@@ -210,9 +286,10 @@ const MenuManagement: React.FC = () => {
                               <input 
                                  type="number" 
                                  min="0"
+                                 step="0.01"
                                  value={ing.quantity}
-                                 onChange={(e) => updateIngredient(idx, 'quantity', parseInt(e.target.value))}
-                                 className="w-full border border-slate-300 rounded-lg pl-2 pr-7 py-1.5 text-sm text-center"
+                                 onChange={(e) => updateIngredient(idx, 'quantity', parseFloat(e.target.value))}
+                                 className="w-full border border-slate-300 rounded-lg pl-2 pr-7 py-1.5 text-sm text-center focus:outline-none focus:border-emerald-500"
                               />
                               <span className="absolute right-2 top-1.5 text-xs text-slate-400 pointer-events-none">pcs</span>
                            </div>
@@ -225,13 +302,24 @@ const MenuManagement: React.FC = () => {
                            </button>
                         </div>
                      ))}
+                     
+                     <button 
+                        type="button" 
+                        onClick={addIngredient}
+                        className="text-xs flex items-center gap-1 text-emerald-600 font-bold hover:bg-emerald-50 px-2 py-1 rounded mt-2"
+                     >
+                        <Plus size={12} /> Add Ingredient
+                     </button>
                   </div>
                )}
                
                <div className="mt-3 flex items-start gap-2 text-xs text-blue-700 bg-blue-50 p-2 rounded border border-blue-100">
                   <Info size={14} className="mt-0.5 flex-shrink-0" />
                   <p>
-                     Define the exact number of pieces used. For example, a <strong>Veg Steam Plate</strong> might use <strong>10 pieces</strong> of <em>Veg Steam Raw SKU</em>. A <strong>Platter</strong> might use <strong>4 pcs</strong> of 3 different SKUs.
+                     {recipeTab === 'FULL' 
+                        ? "Define ingredients for a Full Plate. If no Half Plate recipe is set, the system will use 50% of these values for half plates."
+                        : "Define specific ingredients for a Half Plate. This overrides the automatic 50% calculation."
+                     }
                   </p>
                </div>
             </div>
@@ -264,8 +352,8 @@ const MenuManagement: React.FC = () => {
                 <th className="p-4 w-12 text-center">#</th>
                 <th className="p-4">Item Name</th>
                 <th className="p-4">System ID</th>
-                <th className="p-4">Recipe (Ingredients)</th>
-                <th className="p-4 text-right">Price</th>
+                <th className="p-4">Recipe Summary</th>
+                <th className="p-4 text-right">Price (Full / Half)</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -296,20 +384,38 @@ const MenuManagement: React.FC = () => {
                   <td className="p-4">
                      {item.ingredients && item.ingredients.length > 0 ? (
                         <div className="flex flex-col gap-1">
+                           <div className="text-[10px] text-slate-400 font-bold uppercase">Full Plate:</div>
                            {item.ingredients.map((ing, idx) => (
                               <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-700 border border-slate-200 w-fit">
                                  <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
                               </span>
                            ))}
+                           {item.halfIngredients && item.halfIngredients.length > 0 && (
+                               <>
+                                   <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">Half Plate:</div>
+                                   {item.halfIngredients.map((ing, idx) => (
+                                      <span key={`half-${idx}`} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-orange-50 text-xs text-orange-800 border border-orange-200 w-fit">
+                                         <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
+                                      </span>
+                                   ))}
+                               </>
+                           )}
                         </div>
                      ) : (
                         <span className="text-xs text-slate-300 italic">No recipe defined</span>
                      )}
                   </td>
                   <td className="p-4 text-right">
-                    <span className="font-mono font-bold text-slate-800 flex items-center justify-end gap-1">
-                       <IndianRupee size={12} /> {item.price}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                        <span className="font-mono font-bold text-slate-800 flex items-center justify-end gap-1">
+                           <IndianRupee size={12} /> {item.price}
+                        </span>
+                        {item.halfPrice && (
+                           <span className="text-xs text-slate-500 font-mono flex items-center">
+                              Half: <IndianRupee size={10} /> {item.halfPrice}
+                           </span>
+                        )}
+                    </div>
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">

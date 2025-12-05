@@ -19,7 +19,7 @@ const Inventory: React.FC = () => {
   const [isReviewOpen, setIsReviewOpen] = useState(false); // Stocktake
   const [isRestockConfirmOpen, setIsRestockConfirmOpen] = useState(false); // Restock
 
-  // Calculate Current Stock Levels
+  // Calculate Current Stock Levels (Fridge Only)
   const stockLevels = useMemo(() => {
     const levels: Record<string, { in: number, out: number, balance: number }> = {};
     

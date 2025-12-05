@@ -1,19 +1,21 @@
 
+
 # Pakaja Inventory & Analytics System
 
-A comprehensive inventory management PWA (Progressive Web App) designed for Momo/Food carts. This application handles stock tracking, daily operations (check-in/check-out), wastage reporting, and provides AI-powered analytics.
+A comprehensive inventory management PWA (Progressive Web App) designed for Momo/Food carts. This application handles stock tracking, daily operations (check-in/check-out), wastage reporting, staff attendance, sales reconciliation, and customer loyalty.
 
 ## 🚀 Features
 
 *   **Dashboard**: Real-time view of fridge inventory and last checkout status across branches.
+*   **POS & Order Entry**: Full-featured Point of Sale interface to create orders, link customers, and track revenue directly within the app.
 *   **Operations**: Streamlined interface for Staff to Check-Out (take stock to cart) and Return (bring stock back) items.
-*   **Wastage Reporting**: Camera-integrated reporting system to log spoiled items with photo evidence (stored on BunnyCDN).
+*   **Wastage Reporting**: Camera-integrated reporting system to log spoiled items. Evidence photos are stored in the `wastage/` folder on BunnyCDN.
 *   **Inventory Management**: Admin interface to add restock (incoming from supplier) and perform stocktakes (adjustments).
 *   **Sales Reconciliation**: Compare physical inventory usage against reported sales from POS, Zomato, and Swiggy.
-*   **CRM & Loyalty**: Track customer purchase history automatically and manage membership rewards (Discounts/Freebies).
-*   **Menu Management**: specific recipes linked to raw SKUs to automate consumption calculations.
-*   **Staff Attendance**: Geolocation and Selfie-based check-in system for staff.
-*   **Analytics**: Visual charts for consumption, category splits, and wastage trends.
+*   **CRM & Loyalty**: Track customer purchase history automatically and manage membership rewards (Discounts/Freebies). Customers are uniquely identified by their **Phone Number**.
+*   **Menu Management**: Define recipes linked to raw SKUs to automate consumption calculations based on sales. Supports **Half Plates** with explicit recipe definitions.
+*   **Staff Attendance**: Selfie-based check-in system for staff with location tagging context. Selfies are stored in the `attendance/` folder on BunnyCDN.
+*   **Analytics**: Visual charts for consumption, category splits, variance reports, and wastage trends.
 *   **AI Insights**: Integrated with **Google Gemini 2.5 Flash** to provide daily operational summaries and anomaly detection.
 *   **User Management**: Role-based access control (Admin, Manager, Staff) with secure alphanumeric access codes.
 
@@ -25,104 +27,194 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 *   **Charts**: Recharts
 *   **AI**: @google/genai SDK
 *   **State Management**: React Context API + LocalStorage persistence
-*   **Storage**: BunnyCDN (for Wastage/Attendance Images)
+*   **Storage**: BunnyCDN (Separated folders: `/wastage` and `/attendance`)
 *   **Database**: Supabase (PostgreSQL)
 
 ---
 
-## 🔌 POS / External Data Integration (Window Bridge)
+## ⚙️ Logic Configuration (Hardcoded)
 
-To automate sales entry and populate the CRM/Loyalty system, your POS system or Android Wrapper can inject sales data directly into the app using the `window.postMessage` API.
+Certain operational logic is hardcoded for performance and simplicity. If you need to change **Plate Sizes** (used to calculate approximate sales in the Returns view), edit the following file:
 
-### Finding IDs
-1.  **Branch IDs**: Go to "Branches" page. The ID is listed (e.g., `branch-171092...`).
-2.  **SKU/Menu IDs**: Go to "SKU Management" or "Menu Management". The ID is listed next to each item. Click the ID to copy.
+**File:** `src/pages/Operations.tsx`
 
-### How to send data
-Run this JavaScript code from your POS system or WebView when you want to sync sales. 
-**Note:** Including the `customer` object is essential for the Loyalty Program to track total spend and order counts.
+**Function:** `getPlateSize`
 
-```javascript
-window.postMessage({
-  type: 'PAKAJA_IMPORT_SALES',
-  payload: {
-    // Required Fields
-    date: '2024-03-20',       // Date YYYY-MM-DD
-    branchId: 'branch-1',     // Must match the ID in Pakaja > Branches
-    platform: 'POS',          // Options: 'POS', 'ZOMATO', 'SWIGGY'
+```typescript
+// To change plate sizes, update the return values below:
+const getPlateSize = (sku: SKU) => {
+    // Priority 1: Category Defaults (Hardcoded)
+    if (sku.category === SKUCategory.STEAM) return 8;   // Change 8 to new size
+    if (sku.category === SKUCategory.KURKURE) return 6; // Change 6 to new size
+    if (sku.category === SKUCategory.ROLL) return 2;    // Change 2 to new size
     
-    // Optional Fields
-    timestamp: 1710933300000, // Unix Timestamp (ms). Orders with same timestamp are grouped in History.
-    totalAmount: 450,         // Total Order Value (₹). Used for CRM stats. If omitted, system sums up menu item prices.
-    
-    // CRM / Customer Data (Optional but Recommended)
-    customer: {
-        name: "Rahul Sharma",
-        phoneNumber: "9876543210" // REQUIRED if sending customer. Used as Unique ID for loyalty tracking.
-    },
-
-    // Order Items
-    items: [
-      { 
-        skuId: 'menu-1',      // Match ID from "Menu Management" (Preferred) OR "SKU Management"
-        quantity: 2           // Quantity sold
-      }, 
-      { 
-        skuId: 'sku-12', 
-        quantity: 1 
-      }
-    ]
-  }
-}, '*');
+    // Priority 2: Menu Lookup (Fallback)
+    // ...
+};
 ```
-
-**Behavior:**
-*   The app listens for this message continuously.
-*   **Customer Logic**: If `customer.phoneNumber` is provided, the system checks if they exist. If yes, it updates their `totalSpend` and `orderCount`. If no, it creates a new Customer record.
-*   **Timestamp Logic**: If you send multiple items with the same `timestamp`, they will be grouped into a single "Order Ticket" on the Orders page.
-*   The Dashboard and Reconciliation Variance reports update instantly.
-*   **IMPORTANT**: Orders sent via this API do **not** deduct from the main Fridge Inventory automatically. They are used for Reconciliation (comparing Sales vs. Staff Usage).
 
 ---
 
-## 📱 Android / Mobile App Integration (Secure Auth)
+## 🔌 Database Integration (Single Table Architecture)
 
-This web application is designed to be embedded within a native Android wrapper (WebView). To ensure seamless and secure user experience, we use a **Bridge Mechanism** for authentication instead of passing credentials via URLs.
+We use a simplified **Single Table** approach for Orders. Inventory consumption is stored as a "Snapshot" inside the Order JSON itself. This avoids the need for complex database triggers or multiple API calls.
 
-### Security Note
-**Do not** pass access codes via URL parameters (e.g., `?code=123`). URLs are logged in history and proxy servers. Use the methods below.
+### 1. Database Schema Setup
 
-### Method 1: Global Variable Injection (Recommended for Initial Load)
-When the Android app loads the WebView, it should inject the user's access code into a global JavaScript variable **before** the page finishes loading. The web app checks for this variable on mount, logs the user in, and immediately clears the variable.
+Run this in your Supabase SQL Editor to create the necessary table.
 
-**Android (Kotlin) Example:**
-```kotlin
-webView.settings.javaScriptEnabled = true
-webView.webViewClient = object : WebViewClient() {
-    override fun onPageFinished(view: WebView?, url: String?) {
-        // Inject the code securely
-        val userCode = "manager123" // Retrieve this from Android secure storage
-        val js = "window.PAKAJA_AUTH_CODE = '$userCode';"
-        view?.evaluateJavascript(js, null)
+```sql
+-- 1. Create the ORDERS table (Single Source of Truth)
+-- We use TEXT for id to support the frontend's offline ID generator
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    customer_id TEXT,             -- Linked to customers table
+    customer_name TEXT,
+    platform TEXT NOT NULL,       -- 'POS', 'ZOMATO', 'SWIGGY'
+    total_amount NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'COMPLETED',
+    payment_method TEXT DEFAULT 'CASH', -- Can be 'CASH', 'UPI', 'CARD'
+    date TEXT NOT NULL,           -- YYYY-MM-DD
+    timestamp BIGINT NOT NULL,
+    items JSONB DEFAULT '[]'::jsonb, -- Stores the Menu Item AND Ingredients Snapshot
+    
+    -- Custom Additions
+    custom_amount NUMERIC DEFAULT 0,
+    custom_amount_reason TEXT,
+    custom_sku_items JSONB DEFAULT '[]'::jsonb, -- Stores array of { skuId, quantity }
+    custom_sku_reason TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Update MENU_ITEMS table
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS half_price NUMERIC;
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS half_ingredients JSONB DEFAULT '[]'::jsonb;
+
+-- 3. Indexes & RLS
+CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(date);
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable access to all users" ON orders FOR ALL USING (true) WITH CHECK (true);
+```
+
+---
+
+## 📱 Payload Examples for Android Developer
+
+Use these JSON payloads when sending data to the `orders` table via Supabase REST API or SDK. 
+
+**Note:** The keys below use `snake_case` (e.g., `branch_id`, `custom_amount`) matching the database columns.
+
+### Scenario 1: Standard Order
+*2 Plates of Veg Steam Momos (No custom extras) paid via UPI*
+
+```json
+{
+  "id": "android-unique-id-101",
+  "branch_id": "branch-1",
+  "platform": "POS",
+  "date": "2024-03-22",
+  "timestamp": 1711100000000,
+  "payment_method": "UPI",  // Options: "CASH", "UPI", "CARD"
+  "total_amount": 200, 
+  "items": [
+    {
+      "id": "line-item-1",
+      "menuItemId": "menu-veg-steam",
+      "name": "Veg Steam Full Plate",
+      "price": 100,
+      "quantity": 2,
+      "variant": "FULL",
+      "consumed": [
+        { "skuId": "sku-1", "quantity": 20 } 
+      ]
     }
+  ]
 }
-webView.loadUrl("https://your-app-url.com")
 ```
 
-### Method 2: PostMessage (Async / Event Driven)
-If the web app is already loaded and you need to trigger a login (e.g., after a biometric scan on the native side), use `postMessage`.
+### Scenario 2: Order with Custom Amount
+*Standard Order + ₹50 Delivery Charge*
 
-**Android (Kotlin) Example:**
-```kotlin
-// Trigger login event
-val userCode = "admin456"
-val js = "window.postMessage({ type: 'PAKAJA_LOGIN', code: '$userCode' }, '*');"
-webView.evaluateJavascript(js, null)
+```json
+{
+  "id": "android-unique-id-102",
+  "branch_id": "branch-1",
+  "platform": "POS",
+  "payment_method": "CASH",
+  "total_amount": 250, // (Item Total 200 + Custom 50)
+  "custom_amount": 50,
+  "custom_amount_reason": "Delivery Charge",
+  "items": [
+    {
+      "menuItemId": "menu-veg-steam",
+      "price": 100,
+      "quantity": 2,
+      "consumed": [{ "skuId": "sku-1", "quantity": 20 }]
+    }
+  ]
+}
 ```
 
-**Web App Implementation Details (`AuthContext.tsx`):**
-1.  On mount, the app checks `window.PAKAJA_AUTH_CODE`.
-2.  The app listens for `window.onmessage` events with `{ type: 'PAKAJA_LOGIN' }`.
+### Scenario 3: Order with Custom Raw Items
+*Standard Order + Staff Meal (Uses Inventory, No extra cost)*
+
+```json
+{
+  "id": "android-unique-id-103",
+  "branch_id": "branch-1",
+  "platform": "POS",
+  "payment_method": "CASH",
+  "total_amount": 200, // Price is only for the Menu Item
+  "custom_sku_items": [
+      { "skuId": "sku-2", "quantity": 10 },
+      { "skuId": "sku-12", "quantity": 1 }
+  ],
+  "custom_sku_reason": "Staff Meal (Ramesh)",
+  "items": [
+    {
+      "menuItemId": "menu-veg-steam",
+      "price": 100,
+      "quantity": 2,
+      "consumed": [{ "skuId": "sku-1", "quantity": 20 }]
+    }
+  ]
+}
+```
+
+### Scenario 4: Complex Order
+*Includes Custom Amount AND Multiple Raw Items*
+
+```json
+{
+  "id": "android-unique-id-104",
+  "branch_id": "branch-1",
+  "platform": "ZOMATO",
+  "payment_method": "ONLINE", // Or "CASH" if COD
+  "total_amount": 150, // (100 Item + 50 Packaging)
+  
+  // Custom Money
+  "custom_amount": 50,
+  "custom_amount_reason": "Extra Packaging Fee",
+
+  // Custom Inventory Usage
+  "custom_sku_items": [
+     { "skuId": "sku-10", "quantity": 2 }, // Extra Mayo
+     { "skuId": "sku-9", "quantity": 2 }   // Extra Chutney
+  ],
+  "custom_sku_reason": "Customer requested extra sauce",
+
+  "items": [
+    {
+      "menuItemId": "menu-veg-steam",
+      "price": 100,
+      "quantity": 1,
+      "consumed": [{ "skuId": "sku-1", "quantity": 10 }]
+    }
+  ]
+}
+```
 
 ---
 
@@ -146,8 +238,6 @@ webView.evaluateJavascript(js, null)
     VITE_BUNNY_STORAGE_KEY=your_storage_password
     VITE_BUNNY_STORAGE_ZONE=pakaja
     VITE_BUNNY_PULL_ZONE=https://your-zone.b-cdn.net
-    # Optional: Override host if not using default
-    # VITE_BUNNY_STORAGE_HOST=sg.storage.bunnycdn.com
     ```
 4.  **Run Development Server**:
     ```bash
@@ -156,31 +246,22 @@ webView.evaluateJavascript(js, null)
 
 ## 🔐 Default Access
 
-When launching the app for the first time, use the default admin credentials:
-
 *   **User**: Admin
 *   **Access Code**: `admin`
 
-*Go to "User Management" to change this immediately after setup.*
-
 ## 📂 Project Structure
 
-*   `/components`: Reusable UI components (Layout, ProtectedRoute, StatCard).
+*   `/components`: Reusable UI components.
 *   `/context`: Global state (AuthContext, StoreContext).
-*   `/pages`: Main application views.
-    *   `Operations.tsx`: Main staff interface for daily logging.
-    *   `Wastage.tsx`: Camera interface for reporting loss.
-    *   `Dashboard.tsx`: Analytics and AI summaries.
-    *   `Attendance.tsx`: Staff check-in with selfie.
-    *   `Reconciliation.tsx`: Sales vs Inventory checks.
-*   `/types`: TypeScript interfaces for Data Models (User, Transaction, SKU).
-*   `/services`: API integrations (Gemini AI, BunnyCDN, Supabase).
+*   `/pages`: Main application views (Operations, Orders, Wastage, Dashboard, etc.).
+*   `/types`: TypeScript interfaces.
+*   `/services`: API integrations.
 
 ## 🤖 AI Features
 
 The **Gemini Analyst** (found in Dashboard) and **Vision Tools** (Reconciliation) help with:
 1.  **Consumption Data**: Compares sales vs. returns.
 2.  **Vision Analysis**: Parses screenshots of Zomato/Swiggy reports into data.
-3.  **Trends**: Highlights top-selling categories (Steam vs. Fry etc).
+3.  **Trends**: Highlights top-selling categories.
 
 Ensure `process.env.API_KEY` is set to enable these features.

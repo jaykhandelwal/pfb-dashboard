@@ -148,7 +148,7 @@ const Wastage: React.FC = () => {
     const uploadedUrls: string[] = [];
     
     try {
-      const uploadPromises = capturedImages.map(base64 => uploadImageToBunny(base64));
+      const uploadPromises = capturedImages.map(base64 => uploadImageToBunny(base64, 'wastage'));
       const results = await Promise.all(uploadPromises);
       uploadedUrls.push(...results);
     } catch (e) {

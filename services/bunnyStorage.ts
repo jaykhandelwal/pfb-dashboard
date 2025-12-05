@@ -15,7 +15,7 @@ const STORAGE_ZONE = getEnv('BUNNY_STORAGE_ZONE') || 'pakaja';
 const STORAGE_HOST = getEnv('BUNNY_STORAGE_HOST') || 'sg.storage.bunnycdn.com'; 
 let PULL_ZONE = getEnv('BUNNY_PULL_ZONE');
 
-export const uploadImageToBunny = async (base64Data: string): Promise<string> => {
+export const uploadImageToBunny = async (base64Data: string, folder: string = 'uploads'): Promise<string> => {
   // Fallback to Base64 if credentials are not set
   if (!STORAGE_KEY || !PULL_ZONE) {
     console.warn("BunnyCDN credentials missing (VITE_BUNNY_STORAGE_KEY, VITE_BUNNY_PULL_ZONE). Saving as Base64.");
@@ -28,8 +28,8 @@ export const uploadImageToBunny = async (base64Data: string): Promise<string> =>
   }
 
   try {
-    // Generate a unique filename: wastage_{timestamp}_{random}.jpg
-    const filename = `wastage_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
+    // Generate a unique filename: {folder}_{timestamp}_{random}.jpg
+    const filename = `${folder}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
     
     // Convert Base64 Data URL to Blob
     const response = await fetch(base64Data);
@@ -37,8 +37,7 @@ export const uploadImageToBunny = async (base64Data: string): Promise<string> =>
 
     // BunnyCDN Storage Endpoint
     // Format: https://{Region}.storage.bunnycdn.com/{StorageZoneName}/{path}/{fileName}
-    // Using the host from your screenshot: sg.storage.bunnycdn.com
-    const uploadUrl = `https://${STORAGE_HOST}/${STORAGE_ZONE}/wastage/${filename}`;
+    const uploadUrl = `https://${STORAGE_HOST}/${STORAGE_ZONE}/${folder}/${filename}`;
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
@@ -58,7 +57,7 @@ export const uploadImageToBunny = async (base64Data: string): Promise<string> =>
     // Construct the public URL using the Pull Zone
     // Ensure PULL_ZONE has no trailing slash
     const cleanBaseUrl = PULL_ZONE.replace(/\/$/, '');
-    return `${cleanBaseUrl}/wastage/${filename}`;
+    return `${cleanBaseUrl}/${folder}/${filename}`;
 
   } catch (error) {
     console.error("Image Upload Error:", error);

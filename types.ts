@@ -1,5 +1,4 @@
 
-
 export enum TransactionType {
   CHECK_OUT = 'CHECK_OUT', // Freezer -> Branch
   CHECK_IN = 'CHECK_IN',    // Branch -> Freezer (Returns)
@@ -42,8 +41,10 @@ export interface MenuItem {
   id: string;
   name: string;
   price: number;
+  halfPrice?: number; // Optional: Price for half plate
   description?: string;
-  ingredients: MenuIngredient[]; // List of SKUs and quantities needed
+  ingredients: MenuIngredient[]; // Full Plate Recipe
+  halfIngredients?: MenuIngredient[]; // Optional: Half Plate Recipe (Overrides 0.5x logic)
 }
 
 export interface Branch {
@@ -87,8 +88,10 @@ export interface AttendanceRecord {
 // Strict platforms only
 export type SalesPlatform = 'POS' | 'ZOMATO' | 'SWIGGY';
 
+// This table is for SKU Consumption (Inventory View) - Derived from Orders now
 export interface SalesRecord {
   id: string;
+  orderId?: string; // Optional link back to financial order
   date: string;
   branchId: string;
   platform: SalesPlatform;
@@ -97,6 +100,44 @@ export interface SalesRecord {
   timestamp: number;
   customerId?: string; // Optional link to a customer
   orderAmount?: number; // Snapshot of value for this specific line item (optional)
+}
+
+// New: Full Order Structure (Revenue View)
+export interface OrderItem {
+  id: string; // Random ID
+  menuItemId: string; // Link to MenuItem
+  name: string; // Snapshot of name
+  price: number; // Snapshot of price
+  quantity: number;
+  variant?: 'FULL' | 'HALF'; // New: Variant tracking
+  
+  // SNAPSHOT: The ingredients consumed by this specific item at the time of order
+  consumed?: { 
+    skuId: string; 
+    quantity: number 
+  }[];
+}
+
+export interface Order {
+  id: string;
+  branchId: string;
+  customerId?: string;
+  customerName?: string;
+  platform: SalesPlatform;
+  totalAmount: number;
+  status: 'COMPLETED' | 'CANCELLED';
+  paymentMethod: 'CASH' | 'UPI' | 'CARD'; 
+  date: string;
+  timestamp: number;
+  items: OrderItem[]; // Stored as JSONB in DB usually
+
+  // Custom additions (Order Level)
+  customAmount?: number;
+  customAmountReason?: string;
+  
+  // Updated: Allow multiple custom SKUs per order
+  customSkuItems?: { skuId: string; quantity: number }[];
+  customSkuReason?: string;
 }
 
 export interface DailyReportItem {

@@ -2,6 +2,7 @@
   "name": "Pakaja Inventory & Analytics",
   "description": "Inventory management system for Pakaja momo carts with daily consumption tracking and AI-powered insights.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ]
 }

@@ -38,7 +38,7 @@ const Reconciliation: React.FC = () => {
       }
     });
 
-    // 2. Calculate Total Sales (From Reconciliation Records)
+    // 2. Calculate Total Sales (From Derived Sales Records)
     const sales: Record<string, number> = {};
     salesRecords.filter(r => r.date === date && r.branchId === branchId).forEach(r => {
       sales[r.skuId] = (sales[r.skuId] || 0) + r.quantitySold;
@@ -53,7 +53,7 @@ const Reconciliation: React.FC = () => {
       return {
         sku,
         used, // Theoretical Consumption based on inventory movement
-        sold, // Actual Sales recorded
+        sold, // Actual Sales recorded (From Orders + Manual Entry)
         diff
       };
     });
@@ -99,7 +99,7 @@ const Reconciliation: React.FC = () => {
   };
 
   const handleSave = () => {
-    // 1. Delete existing records for this platform/date/branch to avoid duplicates if re-saving
+    // 1. Delete existing manual records for this platform/date/branch to avoid duplicates if re-saving
     deleteSalesRecordsForDate(date, branchId, activePlatform);
 
     // 2. Add new records
