@@ -1,12 +1,16 @@
 
+
+
+
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem } from '../types';
-import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS } from '../constants';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory } from '../types';
+import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface StoreContextType {
   skus: SKU[];
   menuItems: MenuItem[];
+  menuCategories: MenuCategory[];
   branches: Branch[];
   transactions: Transaction[];
   salesRecords: SalesRecord[]; // Now derived from Orders
@@ -33,6 +37,12 @@ interface StoreContextType {
   updateMenuItem: (item: MenuItem) => Promise<void>;
   deleteMenuItem: (id: string) => Promise<void>;
   
+  // Menu Categories
+  addMenuCategory: (category: Omit<MenuCategory, 'id'>) => Promise<void>;
+  updateMenuCategory: (category: MenuCategory, oldName: string) => Promise<void>;
+  deleteMenuCategory: (id: string, name: string) => Promise<void>;
+  reorderMenuCategory: (id: string, direction: 'up' | 'down') => Promise<void>;
+
   addBranch: (branch: Omit<Branch, 'id'>) => Promise<void>;
   updateBranch: (branch: Branch) => Promise<void>;
   deleteBranch: (id: string) => Promise<void>;
@@ -53,6 +63,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [skus, setSkus] = useState<SKU[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [deletedTransactions, setDeletedTransactions] = useState<ArchivedTransaction[]>([]);
@@ -164,6 +175,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Fallback to initial constants if no DB
         if (skus.length === 0) setSkus(INITIAL_SKUS);
         if (menuItems.length === 0) setMenuItems(INITIAL_MENU_ITEMS);
+        if (menuCategories.length === 0) setMenuCategories(INITIAL_MENU_CATEGORIES);
         if (branches.length === 0) setBranches(INITIAL_BRANCHES);
         if (customers.length === 0) setCustomers(INITIAL_CUSTOMERS);
         if (membershipRules.length === 0) setMembershipRules(INITIAL_MEMBERSHIP_RULES);
@@ -195,11 +207,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...m,
             ingredients: m.ingredients || [],
             halfIngredients: m.half_ingredients || [], // New: Explicit Half Plate Recipe
-            halfPrice: m.half_price
+            halfPrice: m.half_price,
+            category: m.category || 'Uncategorized' // Map Category
         }));
         setMenuItems(mappedMenu);
       } else {
         setMenuItems(INITIAL_MENU_ITEMS);
+      }
+
+      // 2b. Fetch Menu Categories (If table exists, otherwise fallback or empty)
+      const { data: catData, error: catError } = await supabase.from('menu_categories').select('*').order('order', { ascending: true });
+      if (catData && catData.length > 0) {
+         setMenuCategories(catData);
+      } else {
+         // If no categories in DB, check if we have menu items with categories and seed?
+         // For now, just use initial constants if empty
+         if(menuItems.length === 0) {
+            setMenuCategories(INITIAL_MENU_CATEGORIES);
+         } else {
+            // Extract from existing items if not present in DB
+            const existingCats = new Set(menuItems.map(m => m.category || 'Uncategorized'));
+            const derivedCats = Array.from(existingCats).map((name, idx) => ({
+               id: `cat-${idx}`,
+               name,
+               order: idx
+            }));
+            setMenuCategories(derivedCats);
+         }
       }
 
       // 3. Fetch Branches
@@ -698,12 +732,84 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // --- Menu Category CRUD ---
+  const addMenuCategory = async (categoryData: Omit<MenuCategory, 'id'>) => {
+      const newCategory = {
+         id: `cat-${Date.now()}`,
+         ...categoryData
+      };
+      if (isSupabaseConfigured()) {
+         await supabase.from('menu_categories').insert({
+             id: newCategory.id,
+             name: newCategory.name,
+             order: newCategory.order
+         });
+      }
+      setMenuCategories(prev => [...prev, newCategory]);
+  };
+
+  const updateMenuCategory = async (updated: MenuCategory, oldName: string) => {
+      // 1. Update Category Name
+      if (isSupabaseConfigured()) {
+          await supabase.from('menu_categories').update({
+             name: updated.name,
+             order: updated.order
+          }).eq('id', updated.id);
+      }
+      setMenuCategories(prev => prev.map(c => c.id === updated.id ? updated : c));
+
+      // 2. Cascade Update to Menu Items (if name changed)
+      if (oldName !== updated.name) {
+         // Update Local
+         setMenuItems(prev => prev.map(m => m.category === oldName ? { ...m, category: updated.name } : m));
+         // Update DB
+         if (isSupabaseConfigured()) {
+             await supabase.from('menu_items').update({ category: updated.name }).eq('category', oldName);
+         }
+      }
+  };
+
+  const deleteMenuCategory = async (id: string, name: string) => {
+      // 1. Delete Category
+      if (isSupabaseConfigured()) {
+          await supabase.from('menu_categories').delete().eq('id', id);
+      }
+      setMenuCategories(prev => prev.filter(c => c.id !== id));
+
+      // 2. Set associated Menu Items to "Uncategorized"
+      setMenuItems(prev => prev.map(m => m.category === name ? { ...m, category: 'Uncategorized' } : m));
+      if (isSupabaseConfigured()) {
+          await supabase.from('menu_items').update({ category: 'Uncategorized' }).eq('category', name);
+      }
+  };
+
+  const reorderMenuCategory = async (id: string, direction: 'up' | 'down') => {
+      const index = menuCategories.findIndex(c => c.id === id);
+      if (index === -1) return;
+      if (direction === 'up' && index === 0) return;
+      if (direction === 'down' && index === menuCategories.length - 1) return;
+
+      const newCats = [...menuCategories];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      [newCats[index], newCats[targetIndex]] = [newCats[targetIndex], newCats[index]];
+
+      const reordered = newCats.map((c, idx) => ({ ...c, order: idx }));
+      setMenuCategories(reordered);
+
+      if (isSupabaseConfigured()) {
+          for (const c of reordered) {
+             await supabase.from('menu_categories').update({ order: c.order }).eq('id', c.id);
+          }
+      }
+  };
+
   // --- Menu Item CRUD ---
   
   const addMenuItem = async (itemData: Omit<MenuItem, 'id'> & { id?: string }) => {
     const newItem = {
       id: itemData.id || `menu-${Date.now()}`,
-      ...itemData
+      ...itemData,
+      category: itemData.category || 'Uncategorized'
     };
     if (isSupabaseConfigured()) {
        await supabase.from('menu_items').insert({
@@ -712,8 +818,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           price: newItem.price,
           half_price: newItem.halfPrice,
           description: newItem.description,
+          category: newItem.category, // Save Category
           ingredients: newItem.ingredients,
-          half_ingredients: newItem.halfIngredients // New field
+          half_ingredients: newItem.halfIngredients
        });
     }
     setMenuItems(prev => [...prev, newItem]);
@@ -726,8 +833,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           price: updated.price,
           half_price: updated.halfPrice,
           description: updated.description,
+          category: updated.category, // Update Category
           ingredients: updated.ingredients,
-          half_ingredients: updated.halfIngredients // New field
+          half_ingredients: updated.halfIngredients
        }).eq('id', updated.id);
     }
     setMenuItems(prev => prev.map(m => m.id === updated.id ? updated : m));
@@ -862,6 +970,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('orders').delete().neq('id', '0'); // Reset orders
         await supabase.from('skus').delete().neq('id', '0');
         await supabase.from('menu_items').delete().neq('id', '0');
+        await supabase.from('menu_categories').delete().neq('id', '0');
         await supabase.from('branches').delete().neq('id', '0');
         await supabase.from('deleted_transactions').delete().neq('id', '0');
         await supabase.from('customers').delete().neq('id', '0');
@@ -873,6 +982,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setOrders([]);
     setSkus([]);
     setMenuItems([]);
+    setMenuCategories([]);
     setBranches([]);
     setDeletedTransactions([]);
     setCustomers([]);
@@ -882,9 +992,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
+      addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
       addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, resetData 
     }}>

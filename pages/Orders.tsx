@@ -1,8 +1,9 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, CreditCard } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, CreditCard, ChevronRight, ArrowLeft, ChevronUp } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
@@ -23,6 +24,10 @@ const Orders: React.FC = () => {
   const [linkedCustomer, setLinkedCustomer] = useState<{name: string, phone: string} | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+
+  // -- MOBILE UI STATE --
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   // -- CUSTOM AMOUNT STATE (ORDER LEVEL) --
   const [isCustomAmountOpen, setIsCustomAmountOpen] = useState(false);
@@ -46,6 +51,12 @@ const Orders: React.FC = () => {
   // -- HELPERS --
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
+
+  // Derive unique categories for filter
+  const uniqueCategories = useMemo(() => {
+     const cats = new Set(menuItems.map(m => m.category || 'Uncategorized'));
+     return ['All', ...Array.from(cats).sort()];
+  }, [menuItems]);
 
   // -- HISTORY LOGIC --
   const filteredOrders = useMemo(() => {
@@ -204,15 +215,19 @@ const Orders: React.FC = () => {
      setOrderCustomSku(null);
      setLinkedCustomer(null);
      setPosPaymentMethod('CASH');
+     setIsMobileCartOpen(false); // Close mobile cart
      setShowSuccess(true);
      setTimeout(() => setShowSuccess(false), 2000);
   };
 
   // Filter menu items for POS
-  const visibleMenuItems = menuItems; // Can add search filter later
+  const visibleMenuItems = useMemo(() => {
+     if (selectedCategory === 'All') return menuItems;
+     return menuItems.filter(m => (m.category || 'Uncategorized') === selectedCategory);
+  }, [menuItems, selectedCategory]);
 
   return (
-    <div className="pb-16 h-[calc(100vh-80px)] flex flex-col">
+    <div className="pb-16 h-[calc(100vh-80px)] flex flex-col relative">
       <div className="mb-4 flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -390,9 +405,10 @@ const Orders: React.FC = () => {
         </div>
       ) : (
         // --- NEW ORDER (POS) INTERFACE ---
-        <div className="flex flex-col md:flex-row gap-4 h-full overflow-hidden">
-           {/* Left: Menu & Controls */}
-           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
+        <div className="flex flex-col md:flex-row gap-4 h-full relative">
+           
+           {/* Left: Menu & Controls (Full width on mobile) */}
+           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full h-full relative">
                {/* Controls Header */}
                <div className="p-4 border-b border-slate-100 bg-slate-50">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -445,6 +461,26 @@ const Orders: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Category Filter */}
+                  <div className="mb-4">
+                     <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Menu Category</label>
+                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                        {uniqueCategories.map(cat => (
+                           <button
+                             key={cat}
+                             onClick={() => setSelectedCategory(cat)}
+                             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${
+                                selectedCategory === cat 
+                                   ? 'bg-slate-800 text-white border-slate-800' 
+                                   : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                             }`}
+                           >
+                              {cat}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+
                   {/* Custom Action Buttons */}
                   <div className="flex gap-2">
                     <button 
@@ -471,49 +507,91 @@ const Orders: React.FC = () => {
                </div>
 
                {/* Menu Grid */}
-               <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50">
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                     {visibleMenuItems.map(item => (
-                        <div 
-                           key={item.id}
-                           className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col h-auto group"
-                        >
-                           <div className="p-3 flex-1">
-                              <span className="font-bold text-slate-700 line-clamp-2 text-sm leading-tight group-hover:text-emerald-700 transition-colors">
-                                 {item.name}
-                              </span>
-                           </div>
-                           
-                           <div className="p-2 bg-slate-50 border-t border-slate-100 flex gap-2">
-                              {/* Full Plate Button */}
-                              <button 
-                                 onClick={() => addToCart(item, 'FULL')}
-                                 className="flex-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded py-1.5 px-1 text-center transition-colors"
-                              >
-                                 <div className="text-[10px] text-slate-400 font-bold uppercase">Full</div>
-                                 <div className="text-xs font-bold text-emerald-700">₹{item.price}</div>
-                              </button>
-
-                              {/* Half Plate Button (Optional) */}
-                              {item.halfPrice && (
+               <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 pb-32 md:pb-4">
+                  {visibleMenuItems.length === 0 ? (
+                     <div className="text-center text-slate-400 py-10 italic">No items found in this category.</div>
+                  ) : (
+                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                        {visibleMenuItems.map(item => (
+                           <div 
+                              key={item.id}
+                              className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col h-auto group"
+                           >
+                              <div className="p-3 flex-1">
+                                 <span className="font-bold text-slate-700 line-clamp-2 text-sm leading-tight group-hover:text-emerald-700 transition-colors">
+                                    {item.name}
+                                 </span>
+                              </div>
+                              
+                              <div className="p-2 bg-slate-50 border-t border-slate-100 flex gap-2">
+                                 {/* Full Plate Button */}
                                  <button 
-                                    onClick={() => addToCart(item, 'HALF')}
-                                    className="flex-1 bg-white hover:bg-orange-50 border border-slate-200 hover:border-orange-200 rounded py-1.5 px-1 text-center transition-colors"
+                                    onClick={() => addToCart(item, 'FULL')}
+                                    className="flex-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded py-1.5 px-1 text-center transition-colors"
                                  >
-                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Half</div>
-                                    <div className="text-xs font-bold text-orange-700">₹{item.halfPrice}</div>
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Full</div>
+                                    <div className="text-xs font-bold text-emerald-700">₹{item.price}</div>
                                  </button>
-                              )}
+
+                                 {/* Half Plate Button (Optional) */}
+                                 {item.halfPrice && (
+                                    <button 
+                                       onClick={() => addToCart(item, 'HALF')}
+                                       className="flex-1 bg-white hover:bg-orange-50 border border-slate-200 hover:border-orange-200 rounded py-1.5 px-1 text-center transition-colors"
+                                    >
+                                       <div className="text-[10px] text-slate-400 font-bold uppercase">Half</div>
+                                       <div className="text-xs font-bold text-orange-700">₹{item.halfPrice}</div>
+                                    </button>
+                                 )}
+                              </div>
                            </div>
-                        </div>
-                     ))}
-                  </div>
+                        ))}
+                     </div>
+                  )}
                </div>
+
+               {/* Mobile Sticky Footer (Only Visible on Mobile when Cart is Closed) */}
+               {!isMobileCartOpen && (
+                 <div 
+                   onClick={() => setIsMobileCartOpen(true)}
+                   className="fixed bottom-0 left-0 right-0 md:hidden bg-slate-900 text-white p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.2)] border-t border-slate-800 flex justify-between items-center cursor-pointer z-40"
+                 >
+                    <div>
+                      <div className="text-sm font-bold flex items-center gap-2">
+                         <span className="bg-white text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs">
+                            {cart.reduce((a,b) => a+b.quantity, 0)}
+                         </span>
+                         Items Added
+                      </div>
+                      <div className="text-xs text-slate-400">
+                         Total: ₹{cartTotal} {(orderCustomAmount || orderCustomSku) && '+ Extras'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 font-bold text-emerald-400">
+                       View Order <ChevronUp size={18} />
+                    </div>
+                 </div>
+               )}
            </div>
 
-           {/* Right: Cart */}
-           <div className="w-full md:w-96 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col h-[35vh] md:h-full border-t md:border-t-0 border-slate-300">
-               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-800 text-white rounded-t-xl">
+           {/* Right: Cart (Desktop: Side Panel, Mobile: Full Screen Modal Overlay) */}
+           <div 
+             className={`
+                bg-white flex flex-col 
+                md:w-96 md:border-l md:border-slate-200 md:static md:h-full md:flex md:rounded-r-xl
+                ${isMobileCartOpen ? 'fixed inset-0 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300' : 'hidden'}
+             `}
+           >
+               {/* Mobile Close Header */}
+               <div className="md:hidden p-4 border-b border-slate-100 flex items-center gap-3 bg-slate-50">
+                  <button onClick={() => setIsMobileCartOpen(false)} className="p-2 -ml-2 text-slate-500">
+                     <ArrowLeft size={24} />
+                  </button>
+                  <h3 className="font-bold text-lg text-slate-800">Current Order</h3>
+               </div>
+
+               {/* Desktop Header */}
+               <div className="hidden md:flex p-4 border-b border-slate-100 justify-between items-center bg-slate-800 text-white rounded-tr-xl">
                   <div className="flex items-center gap-2 font-bold">
                      <ShoppingCart size={18} /> Current Order
                   </div>
@@ -548,8 +626,17 @@ const Orders: React.FC = () => {
                {/* Cart Items */}
                <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {cart.length === 0 && !orderCustomAmount && !orderCustomSku ? (
-                     <div className="text-center text-slate-400 py-10 italic text-sm">
-                        Cart is empty. Select items from the menu.
+                     <div className="text-center text-slate-400 py-10 italic text-sm flex flex-col items-center">
+                        <ShoppingCart size={32} className="opacity-20 mb-2"/>
+                        Cart is empty. 
+                        <br/>
+                        Select items from the menu.
+                        <button 
+                           onClick={() => setIsMobileCartOpen(false)} 
+                           className="md:hidden mt-4 text-emerald-600 font-bold underline"
+                        >
+                           Go to Menu
+                        </button>
                      </div>
                   ) : (
                     <>
@@ -619,7 +706,7 @@ const Orders: React.FC = () => {
                </div>
 
                {/* Footer */}
-               <div className="p-4 bg-slate-50 border-t border-slate-200 rounded-b-xl">
+               <div className="p-4 bg-slate-50 border-t border-slate-200 md:rounded-br-xl pb-8 md:pb-4">
                   <div className="flex justify-between items-center mb-4 text-lg">
                      <span className="font-bold text-slate-500">Total</span>
                      <span className="font-bold text-slate-800">₹{cartTotal}</span>
@@ -637,7 +724,7 @@ const Orders: React.FC = () => {
 
            {/* Customer Search Modal */}
            {isCustomerModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                        <h3 className="font-bold text-slate-700">Find Customer</h3>
@@ -687,7 +774,7 @@ const Orders: React.FC = () => {
 
             {/* Custom Amount Modal (Order Level) */}
             {isCustomAmountOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
                     <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-indigo-50 rounded-t-xl">
                         <h3 className="font-bold text-indigo-800">Add Custom Amount</h3>
@@ -730,7 +817,7 @@ const Orders: React.FC = () => {
 
             {/* Custom SKU Modal (Refactored to support list) */}
             {isCustomSkuOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
                     <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
                         <h3 className="font-bold text-slate-700">Add Raw Item Usage</h3>

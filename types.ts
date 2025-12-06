@@ -36,6 +36,13 @@ export interface MenuIngredient {
   quantity: number; // Number of pieces used
 }
 
+// New: Centralized Menu Categories
+export interface MenuCategory {
+  id: string;
+  name: string;
+  order: number;
+}
+
 // Updated: Sellable Products (Menu)
 export interface MenuItem {
   id: string;
@@ -43,6 +50,7 @@ export interface MenuItem {
   price: number;
   halfPrice?: number; // Optional: Price for half plate
   description?: string;
+  category?: string; // New: Menu Category (e.g. Steam, Fried, Drinks)
   ingredients: MenuIngredient[]; // Full Plate Recipe
   halfIngredients?: MenuIngredient[]; // Optional: Half Plate Recipe (Overrides 0.5x logic)
 }

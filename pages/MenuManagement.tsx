@@ -2,24 +2,61 @@
 
 
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, MenuIngredient } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Copy, Check, KeyRound, Columns, Divide } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Copy, Check, KeyRound, Divide, FileJson, Upload, AlertCircle, Tag } from 'lucide-react';
 
 const MenuManagement: React.FC = () => {
-  const { menuItems, skus, addMenuItem, updateMenuItem, deleteMenuItem } = useStore();
+  const { menuItems, skus, addMenuItem, updateMenuItem, deleteMenuItem, menuCategories } = useStore();
   const [isEditing, setIsEditing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [currentItem, setCurrentItem] = useState<Partial<MenuItem>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  // Import State
+  const [jsonInput, setJsonInput] = useState('');
+  const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   
   // Local state for ingredients editing
   const [ingredients, setIngredients] = useState<MenuIngredient[]>([]);
   const [halfIngredients, setHalfIngredients] = useState<MenuIngredient[]>([]);
   const [recipeTab, setRecipeTab] = useState<'FULL' | 'HALF'>('FULL');
 
+  // UX: Scroll Management
+  const formRef = useRef<HTMLDivElement>(null);
+  const [editingReturnId, setEditingReturnId] = useState<string | null>(null);
+
+  // Effect: Scroll to form when it opens
+  useEffect(() => {
+    if (isEditing && formRef.current) {
+      setTimeout(() => {
+        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [isEditing]);
+
+  const closeForm = () => {
+    setIsEditing(false);
+    setCurrentItem({});
+    setIngredients([]);
+    setHalfIngredients([]);
+    
+    // Scroll back to the item we were editing
+    if (editingReturnId) {
+      setTimeout(() => {
+        const row = document.getElementById(`menu-row-${editingReturnId}`);
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+    setEditingReturnId(null);
+  };
+
   const handleAddNew = () => {
-    setCurrentItem({ name: '', price: 0 });
+    setEditingReturnId(null); // No specific item to return to
+    setCurrentItem({ name: '', price: 0, category: menuCategories.length > 0 ? menuCategories[0].name : '' });
     setIngredients([]);
     setHalfIngredients([]);
     setRecipeTab('FULL');
@@ -27,6 +64,7 @@ const MenuManagement: React.FC = () => {
   };
 
   const handleEdit = (item: MenuItem) => {
+    setEditingReturnId(item.id); // Remember where to scroll back to
     setCurrentItem({ ...item });
     setIngredients(item.ingredients ? [...item.ingredients] : []);
     setHalfIngredients(item.halfIngredients ? [...item.halfIngredients] : []);
@@ -46,21 +84,89 @@ const MenuManagement: React.FC = () => {
 
     const payload = {
        ...currentItem,
+       category: currentItem.category || 'Uncategorized',
        ingredients,
        halfIngredients
     };
 
     if (currentItem.id && menuItems.some(i => i.id === currentItem.id)) {
-      // Logic: Update if ID exists in list (Edit Mode)
       updateMenuItem(payload as MenuItem);
     } else {
-      // Logic: Add new (Create Mode). ID might be passed in payload if user entered one.
       addMenuItem(payload as Omit<MenuItem, 'id'>);
     }
-    setIsEditing(false);
-    setCurrentItem({});
-    setIngredients([]);
-    setHalfIngredients([]);
+    closeForm();
+  };
+
+  // --- Bulk Import Logic ---
+  const handleBulkImport = async () => {
+    try {
+      const data = JSON.parse(jsonInput);
+      let count = 0;
+      let skipped = 0;
+
+      // Iterate over Categories (keys like "Steam", "Kurkure")
+      for (const [categoryKey, items] of Object.entries(data)) {
+         if (Array.isArray(items)) {
+            for (const item of items) {
+               // 1. Check if ID exists (skip to prevent accidental overwrite)
+               const exists = menuItems.find(m => m.id === item.code_name);
+               if (exists) {
+                 skipped++;
+                 continue;
+               }
+
+               // 2. Try to find matching Raw SKU for Ingredient auto-linking
+               // Logic: Look for SKU where category matches JSON Key AND name contains item Name
+               // Example: JSON Key "Steam", Item Name "Veg" -> Matches SKU "Veg Steam" or "Veg" in category "Steam"
+               const matchingSku = skus.find(s => {
+                  const catMatch = s.category.toLowerCase() === categoryKey.toLowerCase();
+                  const nameMatch = s.name.toLowerCase().includes(item.name.toLowerCase());
+                  return catMatch && nameMatch;
+               });
+
+               // 3. Construct Recipe
+               const fullIngredients: MenuIngredient[] = [];
+               const halfIngredientsList: MenuIngredient[] = [];
+
+               if (matchingSku) {
+                  if (item.plate && item.plate.pieces) {
+                     fullIngredients.push({ skuId: matchingSku.id, quantity: item.plate.pieces });
+                  }
+                  if (item.halfPlate && item.halfPlate.pieces) {
+                     halfIngredientsList.push({ skuId: matchingSku.id, quantity: item.halfPlate.pieces });
+                  }
+               }
+
+               // 4. Create Item Payload
+               const newItem: any = {
+                  id: item.code_name, // Map code_name -> ID
+                  name: item.label,   // Map label -> Name
+                  category: categoryKey, // Use JSON Key as Category
+                  price: item.plate?.price || 0,
+                  halfPrice: item.halfPlate?.price,
+                  description: `${categoryKey} - ${item.name}`,
+                  ingredients: fullIngredients,
+                  halfIngredients: halfIngredientsList
+               };
+
+               await addMenuItem(newItem);
+               count++;
+            }
+         }
+      }
+
+      setImportStatus({ msg: `Successfully imported ${count} items. (${skipped} skipped as duplicates)`, type: 'success' });
+      setJsonInput('');
+      
+      // Close modal after delay
+      setTimeout(() => {
+         setIsImporting(false);
+         setImportStatus(null);
+      }, 2000);
+
+    } catch (e) {
+      setImportStatus({ msg: "Invalid JSON format. Please check your syntax.", type: 'error' });
+    }
   };
 
   const getSkuName = (skuId?: string) => {
@@ -69,13 +175,11 @@ const MenuManagement: React.FC = () => {
      return sku ? sku.name : 'Unknown SKU';
   };
 
-  // Generic Ingredient Functions (Work on both Full and Half lists)
   const getCurrentList = () => recipeTab === 'FULL' ? ingredients : halfIngredients;
   const setList = (list: MenuIngredient[]) => recipeTab === 'FULL' ? setIngredients(list) : setHalfIngredients(list);
 
   const addIngredient = () => {
      if(skus.length === 0) return;
-     // Add first available SKU as default
      const current = getCurrentList();
      setList([...current, { skuId: skus[0].id, quantity: 1 }]);
   };
@@ -91,13 +195,12 @@ const MenuManagement: React.FC = () => {
   };
 
   const copyFullToHalf = () => {
-      // Logic: Auto-calculate 0.5x of Full Plate ingredients and set to Half Plate
       const calculated = ingredients.map(ing => ({
           skuId: ing.skuId,
           quantity: ing.quantity * 0.5
       }));
       setHalfIngredients(calculated);
-      setRecipeTab('HALF'); // Switch tab to show user
+      setRecipeTab('HALF');
   };
 
   const copyToClipboard = (text: string) => {
@@ -108,32 +211,96 @@ const MenuManagement: React.FC = () => {
 
   return (
     <div className="pb-16">
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
               <Utensils className="text-orange-500" /> Menu & Pricing
            </h2>
            <p className="text-slate-500 text-sm md:text-base">Manage sellable items, recipes, and prices.</p>
         </div>
-        {!isEditing && (
-          <button 
-            onClick={handleAddNew}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium"
-          >
-            <Plus size={18} />
-            <span className="hidden md:inline">Add Menu Item</span>
-            <span className="md:hidden">Add</span>
-          </button>
+        {!isEditing && !isImporting && (
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsImporting(true)}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium border border-slate-200"
+            >
+              <FileJson size={18} />
+              <span className="hidden md:inline">Import JSON</span>
+              <span className="md:hidden">Import</span>
+            </button>
+            <button 
+              onClick={handleAddNew}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium"
+            >
+              <Plus size={18} />
+              <span className="hidden md:inline">Add Item</span>
+              <span className="md:hidden">Add</span>
+            </button>
+          </div>
         )}
       </div>
 
+      {/* Import Modal */}
+      {isImporting && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+               <div className="p-5 border-b border-slate-100 flex justify-between items-center rounded-t-xl bg-slate-50">
+                  <div>
+                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <FileJson size={20} className="text-blue-600" /> Bulk Import Menu
+                     </h3>
+                     <p className="text-xs text-slate-500">Paste your JSON configuration below.</p>
+                  </div>
+                  <button onClick={() => setIsImporting(false)} className="text-slate-400 hover:text-slate-600">
+                     <X size={24} />
+                  </button>
+               </div>
+               
+               <div className="flex-1 p-6 overflow-hidden flex flex-col">
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 mb-4">
+                     <strong>How it works:</strong> The JSON Keys (e.g. "Steam", "Fried") will be used as the <strong>Category</strong>. The system will auto-match ingredients if possible.
+                  </div>
+                  <textarea 
+                     value={jsonInput}
+                     onChange={(e) => { setJsonInput(e.target.value); setImportStatus(null); }}
+                     placeholder='{"Steam": [{"code_name": "Veg_S", "label": "Veg Steam", ...}]}'
+                     className="flex-1 w-full border border-slate-300 rounded-lg p-4 font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                  ></textarea>
+                  
+                  {importStatus && (
+                     <div className={`mt-4 p-3 rounded-lg text-sm font-medium flex items-center gap-2 ${importStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                        {importStatus.type === 'success' ? <Check size={16}/> : <AlertCircle size={16}/>}
+                        {importStatus.msg}
+                     </div>
+                  )}
+               </div>
+
+               <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end gap-3">
+                  <button 
+                     onClick={() => setIsImporting(false)}
+                     className="px-5 py-2 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors"
+                  >
+                     Cancel
+                  </button>
+                  <button 
+                     onClick={handleBulkImport}
+                     disabled={!jsonInput}
+                     className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                  >
+                     <Upload size={18} /> Parse & Import
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
       {isEditing && (
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8 animate-fade-in">
+        <div ref={formRef} className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8 animate-fade-in scroll-mt-24">
           <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
             <h3 className="text-lg font-bold text-slate-800">
               {currentItem.id && menuItems.some(i => i.id === currentItem.id) ? 'Edit Menu Item' : 'New Menu Item'}
             </h3>
-            <button onClick={() => setIsEditing(false)} className="text-slate-400 hover:text-slate-600">
+            <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
               <X size={20} />
             </button>
           </div>
@@ -152,6 +319,25 @@ const MenuManagement: React.FC = () => {
                   />
                </div>
 
+               <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                     Category <Tag size={14} className="text-slate-400" />
+                  </label>
+                  <select 
+                     value={currentItem.category || ''}
+                     onChange={e => setCurrentItem({...currentItem, category: e.target.value})}
+                     className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                  >
+                     <option value="">-- Select Category --</option>
+                     {menuCategories.sort((a,b) => a.order - b.order).map(cat => (
+                        <option key={cat.id} value={cat.name}>{cat.name}</option>
+                     ))}
+                     <option value="Uncategorized">Uncategorized</option>
+                  </select>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                <div className="flex gap-3">
                   <div className="flex-1">
                      <label className="block text-sm font-medium text-slate-700 mb-1">Selling Price (Full)</label>
@@ -182,26 +368,23 @@ const MenuManagement: React.FC = () => {
                      </div>
                   </div>
                </div>
-            </div>
 
-            <div>
-               <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                  System ID / Code <KeyRound size={14} className="text-slate-400" />
-               </label>
-               <input 
-                 type="text"
-                 value={currentItem.id || ''}
-                 onChange={e => setCurrentItem({...currentItem, id: e.target.value})}
-                 readOnly={menuItems.some(i => i.id === currentItem.id)} // Read-only if editing existing
-                 className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-sm ${
-                    menuItems.some(i => i.id === currentItem.id) ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' : 'border-slate-300 bg-white'
-                 }`}
-                 placeholder="Auto-generated if left empty"
-                 title={menuItems.some(i => i.id === currentItem.id) ? "ID cannot be changed after creation" : "Enter a custom ID (e.g. POS Code) or leave blank"}
-               />
-               {!menuItems.some(i => i.id === currentItem.id) && (
-                  <p className="text-[10px] text-slate-500 mt-1">Optional: Enter your POS Product ID here to link sales data easily.</p>
-               )}
+               <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                     System ID / Code <KeyRound size={14} className="text-slate-400" />
+                  </label>
+                  <input 
+                     type="text"
+                     value={currentItem.id || ''}
+                     onChange={e => setCurrentItem({...currentItem, id: e.target.value})}
+                     readOnly={menuItems.some(i => i.id === currentItem.id)} // Read-only if editing existing
+                     className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-sm ${
+                        menuItems.some(i => i.id === currentItem.id) ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed' : 'border-slate-300 bg-white'
+                     }`}
+                     placeholder="Auto-generated if left empty"
+                     title={menuItems.some(i => i.id === currentItem.id) ? "ID cannot be changed after creation" : "Enter a custom ID (e.g. POS Code) or leave blank"}
+                  />
+               </div>
             </div>
 
             <div>
@@ -327,7 +510,7 @@ const MenuManagement: React.FC = () => {
             <div className="flex justify-end gap-3 pt-2">
               <button 
                 type="button"
-                onClick={() => setIsEditing(false)}
+                onClick={closeForm}
                 className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 Cancel
@@ -351,7 +534,7 @@ const MenuManagement: React.FC = () => {
               <tr>
                 <th className="p-4 w-12 text-center">#</th>
                 <th className="p-4">Item Name</th>
-                <th className="p-4">System ID</th>
+                <th className="p-4">Category</th>
                 <th className="p-4">Recipe Summary</th>
                 <th className="p-4 text-right">Price (Full / Half)</th>
                 <th className="p-4 text-right">Actions</th>
@@ -359,47 +542,43 @@ const MenuManagement: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {menuItems.map((item, index) => (
-                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={item.id} id={`menu-row-${item.id}`} className="hover:bg-slate-50 transition-colors scroll-mt-32">
                   <td className="p-4 text-center text-slate-400 text-sm">
                     {index + 1}
                   </td>
                   <td className="p-4">
-                    <div className="font-bold text-slate-700">{item.name}</div>
-                    {item.description && <div className="text-xs text-slate-400">{item.description}</div>}
+                     <div className="flex flex-col">
+                        <span className="font-bold text-slate-700">{item.name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                           {item.description && <div className="text-xs text-slate-400">{item.description}</div>}
+                           <button 
+                              onClick={() => copyToClipboard(item.id)}
+                              className="group flex items-center gap-1 text-[10px] font-mono text-slate-300 hover:text-slate-500 transition-colors"
+                              title="Click to copy ID"
+                           >
+                              {copiedId === item.id ? <Check size={10} className="text-emerald-500"/> : item.id}
+                           </button>
+                        </div>
+                     </div>
                   </td>
                   <td className="p-4">
-                     <button 
-                        onClick={() => copyToClipboard(item.id)}
-                        className="group flex items-center gap-2 text-xs font-mono bg-slate-100 hover:bg-slate-200 text-slate-500 px-2 py-1 rounded transition-colors"
-                        title="Click to copy ID"
-                     >
-                        {item.id}
-                        {copiedId === item.id ? (
-                           <Check size={12} className="text-emerald-600" />
-                        ) : (
-                           <Copy size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
-                     </button>
+                     {item.category && item.category !== 'Uncategorized' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                           <Tag size={10} /> {item.category}
+                        </span>
+                     ) : (
+                        <span className="text-xs text-slate-300 italic">No Category</span>
+                     )}
                   </td>
                   <td className="p-4">
                      {item.ingredients && item.ingredients.length > 0 ? (
                         <div className="flex flex-col gap-1">
-                           <div className="text-[10px] text-slate-400 font-bold uppercase">Full Plate:</div>
+                           <div className="text-[10px] text-slate-400 font-bold uppercase">Full:</div>
                            {item.ingredients.map((ing, idx) => (
                               <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-700 border border-slate-200 w-fit">
                                  <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
                               </span>
                            ))}
-                           {item.halfIngredients && item.halfIngredients.length > 0 && (
-                               <>
-                                   <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">Half Plate:</div>
-                                   {item.halfIngredients.map((ing, idx) => (
-                                      <span key={`half-${idx}`} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-orange-50 text-xs text-orange-800 border border-orange-200 w-fit">
-                                         <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
-                                      </span>
-                                   ))}
-                               </>
-                           )}
                         </div>
                      ) : (
                         <span className="text-xs text-slate-300 italic">No recipe defined</span>

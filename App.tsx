@@ -1,5 +1,7 @@
 
 
+
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -16,6 +18,7 @@ import Orders from './pages/Orders';
 import CustomerManagement from './pages/CustomerManagement';
 import MembershipSettings from './pages/MembershipSettings';
 import MenuManagement from './pages/MenuManagement';
+import MenuCategoryManagement from './pages/MenuCategoryManagement';
 import Attendance from './pages/Attendance';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -88,6 +91,12 @@ function App() {
               <Route path="/menu" element={
                 <ProtectedRoute requiredPermission="MANAGE_MENU">
                   <MenuManagement />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/menu-categories" element={
+                <ProtectedRoute requiredPermission="MANAGE_MENU">
+                  <MenuCategoryManagement />
                 </ProtectedRoute>
               } />
 

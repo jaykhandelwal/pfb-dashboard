@@ -1,6 +1,7 @@
 
 
-import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem } from './types';
+
+import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
   { id: 'branch-1', name: 'Momo Mafia 01' },
@@ -31,28 +32,40 @@ export const INITIAL_SKUS: SKU[] = [
   { id: 'sku-12', name: 'Paper Plates', category: SKUCategory.CONSUMABLES, dietary: SKUDietary.NA, piecesPerPacket: 50, order: 11 },
 ];
 
+export const INITIAL_MENU_CATEGORIES: MenuCategory[] = [
+  { id: 'cat-1', name: 'Steam', order: 0 },
+  { id: 'cat-2', name: 'Fried', order: 1 },
+  { id: 'cat-3', name: 'Kurkure', order: 2 },
+  { id: 'cat-4', name: 'Drinks', order: 3 },
+  { id: 'cat-5', name: 'Platters', order: 4 },
+];
+
 export const INITIAL_MENU_ITEMS: MenuItem[] = [
   { 
     id: 'menu-1', 
     name: 'Veg Steam Full Plate', 
+    category: 'Steam',
     price: 100, 
     ingredients: [{ skuId: 'sku-1', quantity: 10 }] 
   },
   { 
     id: 'menu-2', 
     name: 'Paneer Steam Full Plate', 
+    category: 'Steam',
     price: 120, 
     ingredients: [{ skuId: 'sku-2', quantity: 10 }]
   },
   { 
     id: 'menu-3', 
     name: 'Chicken Steam Full Plate', 
+    category: 'Steam',
     price: 140, 
     ingredients: [{ skuId: 'sku-3', quantity: 10 }]
   },
   { 
     id: 'menu-4', 
     name: 'Mixed Platter (12pcs)', 
+    category: 'Platters',
     price: 180, 
     description: '4 Veg, 4 Paneer, 4 Chicken',
     ingredients: [

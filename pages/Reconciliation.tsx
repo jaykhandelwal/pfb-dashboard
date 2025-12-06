@@ -69,23 +69,27 @@ const Reconciliation: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const result = reader.result;
-        if (typeof result !== 'string') return;
-        
-        try {
-          const parsedData = await parseSalesReportImage(result, skus);
-          
-          // Merge parsed data into inputs
-          const newInputs = { ...inputs };
-          Object.entries(parsedData).forEach(([skuId, qty]) => {
-            const current = parseInt(newInputs[skuId] || '0');
-            newInputs[skuId] = (current + qty).toString();
-          });
-          setInputs(newInputs);
-          setSuccessMsg('Report analyzed! Please review quantities below.');
-        } catch (err) {
-          alert("Failed to analyze image. Please try again or enter manually.");
-        } finally {
-          setIsProcessing(false);
+        if (typeof result === 'string') {
+            try {
+              const parsedData = await parseSalesReportImage(result, skus);
+              
+              // Merge parsed data into inputs
+              setInputs(prev => {
+                const newInputs = { ...prev };
+                Object.entries(parsedData).forEach(([skuId, qty]) => {
+                    const current = parseInt(newInputs[skuId] || '0');
+                    newInputs[skuId] = (current + qty).toString();
+                });
+                return newInputs;
+              });
+              setSuccessMsg('Report analyzed! Please review quantities below.');
+            } catch (err) {
+              alert("Failed to analyze image. Please try again or enter manually.");
+            } finally {
+              setIsProcessing(false);
+            }
+        } else {
+             setIsProcessing(false);
         }
       };
       reader.readAsDataURL(file);

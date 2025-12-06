@@ -1,10 +1,12 @@
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
-  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck
+  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -67,6 +69,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       icon: <Settings size={20} />,
       children: [
         { path: '/menu', label: 'Menu & Pricing', icon: <Utensils size={18} />, permission: 'MANAGE_MENU' },
+        { path: '/menu-categories', label: 'Menu Categories', icon: <Tag size={18} />, permission: 'MANAGE_MENU' },
         { path: '/skus', label: 'Raw SKUs', icon: <Package size={18} />, permission: 'MANAGE_SKUS' },
         { path: '/branches', label: 'Branches', icon: <Store size={18} />, permission: 'MANAGE_BRANCHES' },
         { path: '/users', label: 'User Management', icon: <Users size={18} />, permission: 'MANAGE_USERS' },
