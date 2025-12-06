@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
@@ -7,7 +6,7 @@ import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, M
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
-  const { orders, skus, menuItems, branches, customers, addOrder } = useStore();
+  const { orders, skus, menuItems, branches, customers, addOrder, menuCategories } = useStore();
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
   // -- HISTORY STATE --
@@ -51,6 +50,12 @@ const Orders: React.FC = () => {
   // -- HELPERS --
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
+  
+  const getCategoryColor = (catName: string) => {
+     if (catName === 'All') return '#475569'; // Slate-600 default
+     const cat = menuCategories.find(c => c.name === catName);
+     return cat?.color || '#94a3b8'; // Slate-400 fallback
+  };
 
   // Derive unique categories for filter
   const uniqueCategories = useMemo(() => {
@@ -465,19 +470,25 @@ const Orders: React.FC = () => {
                   <div className="mb-4">
                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Menu Category</label>
                      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {uniqueCategories.map(cat => (
+                        {uniqueCategories.map(cat => {
+                           const color = getCategoryColor(cat);
+                           const isSelected = selectedCategory === cat;
+                           
+                           return (
                            <button
                              key={cat}
                              onClick={() => setSelectedCategory(cat)}
-                             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${
-                                selectedCategory === cat 
-                                   ? 'bg-slate-800 text-white border-slate-800' 
-                                   : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                             }`}
+                             style={{ 
+                                backgroundColor: isSelected ? color : 'white',
+                                borderColor: isSelected ? color : '#e2e8f0',
+                                color: isSelected ? 'white' : '#64748b'
+                             }}
+                             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border shadow-sm`}
                            >
                               {cat}
                            </button>
-                        ))}
+                           )
+                        })}
                      </div>
                   </div>
 

@@ -41,6 +41,7 @@ export interface MenuCategory {
   id: string;
   name: string;
   order: number;
+  color?: string; // Hex code for UI tagging
 }
 
 // Updated: Sellable Products (Menu)

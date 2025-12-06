@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, MenuIngredient } from '../types';
@@ -173,6 +170,12 @@ const MenuManagement: React.FC = () => {
      if(!skuId) return 'Unknown';
      const sku = skus.find(s => s.id === skuId);
      return sku ? sku.name : 'Unknown SKU';
+  };
+  
+  // Helper to find category color
+  const getCategoryColor = (catName?: string) => {
+      const cat = menuCategories.find(c => c.name === catName);
+      return cat?.color || '#64748b';
   };
 
   const getCurrentList = () => recipeTab === 'FULL' ? ingredients : halfIngredients;
@@ -541,7 +544,10 @@ const MenuManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {menuItems.map((item, index) => (
+              {menuItems.map((item, index) => {
+                const catColor = getCategoryColor(item.category);
+                
+                return (
                 <tr key={item.id} id={`menu-row-${item.id}`} className="hover:bg-slate-50 transition-colors scroll-mt-32">
                   <td className="p-4 text-center text-slate-400 text-sm">
                     {index + 1}
@@ -563,7 +569,10 @@ const MenuManagement: React.FC = () => {
                   </td>
                   <td className="p-4">
                      {item.category && item.category !== 'Uncategorized' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                        <span 
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-white text-xs font-bold shadow-sm"
+                          style={{ backgroundColor: catColor }}
+                        >
                            <Tag size={10} /> {item.category}
                         </span>
                      ) : (
@@ -571,18 +580,35 @@ const MenuManagement: React.FC = () => {
                      )}
                   </td>
                   <td className="p-4">
-                     {item.ingredients && item.ingredients.length > 0 ? (
-                        <div className="flex flex-col gap-1">
-                           <div className="text-[10px] text-slate-400 font-bold uppercase">Full:</div>
-                           {item.ingredients.map((ing, idx) => (
-                              <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-700 border border-slate-200 w-fit">
-                                 <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
-                              </span>
-                           ))}
-                        </div>
-                     ) : (
-                        <span className="text-xs text-slate-300 italic">No recipe defined</span>
-                     )}
+                     <div className="flex flex-col gap-2">
+                        {/* Full Plate */}
+                        {item.ingredients && item.ingredients.length > 0 && (
+                           <div className="flex flex-col gap-1">
+                              <div className="text-[10px] text-slate-400 font-bold uppercase">Full:</div>
+                              {item.ingredients.map((ing, idx) => (
+                                 <span key={idx} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-700 border border-slate-200 w-fit">
+                                    <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
+                                 </span>
+                              ))}
+                           </div>
+                        )}
+
+                        {/* Half Plate */}
+                        {item.halfIngredients && item.halfIngredients.length > 0 && (
+                           <div className="flex flex-col gap-1">
+                              <div className="text-[10px] text-slate-400 font-bold uppercase">Half:</div>
+                              {item.halfIngredients.map((ing, idx) => (
+                                 <span key={`h-${idx}`} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-orange-50 text-xs text-orange-800 border border-orange-100 w-fit">
+                                    <span className="font-bold">{ing.quantity}x</span> {getSkuName(ing.skuId)}
+                                 </span>
+                              ))}
+                           </div>
+                        )}
+
+                        {(!item.ingredients?.length && !item.halfIngredients?.length) && (
+                           <span className="text-xs text-slate-300 italic">No recipe defined</span>
+                        )}
+                     </div>
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex flex-col items-end gap-1">
@@ -615,7 +641,7 @@ const MenuManagement: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
               {menuItems.length === 0 && (
                  <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-400 italic">No menu items configured.</td>

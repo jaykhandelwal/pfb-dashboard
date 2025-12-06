@@ -1,6 +1,4 @@
 
-
-
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -33,11 +31,11 @@ export const INITIAL_SKUS: SKU[] = [
 ];
 
 export const INITIAL_MENU_CATEGORIES: MenuCategory[] = [
-  { id: 'cat-1', name: 'Steam', order: 0 },
-  { id: 'cat-2', name: 'Fried', order: 1 },
-  { id: 'cat-3', name: 'Kurkure', order: 2 },
-  { id: 'cat-4', name: 'Drinks', order: 3 },
-  { id: 'cat-5', name: 'Platters', order: 4 },
+  { id: 'cat-1', name: 'Steam', order: 0, color: '#3b82f6' }, // Blue
+  { id: 'cat-2', name: 'Fried', order: 1, color: '#f59e0b' }, // Amber
+  { id: 'cat-3', name: 'Kurkure', order: 2, color: '#ef4444' }, // Red
+  { id: 'cat-4', name: 'Drinks', order: 3, color: '#10b981' }, // Emerald
+  { id: 'cat-5', name: 'Platters', order: 4, color: '#8b5cf6' }, // Violet
 ];
 
 export const INITIAL_MENU_ITEMS: MenuItem[] = [

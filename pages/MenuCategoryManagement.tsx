@@ -4,6 +4,21 @@ import { useStore } from '../context/StoreContext';
 import { MenuCategory } from '../types';
 import { Plus, Edit2, Trash2, X, Save, Tag, ArrowUp, ArrowDown } from 'lucide-react';
 
+const PRESET_COLORS = [
+  '#ef4444', // Red
+  '#f97316', // Orange
+  '#f59e0b', // Amber
+  '#84cc16', // Lime
+  '#10b981', // Emerald
+  '#06b6d4', // Cyan
+  '#3b82f6', // Blue
+  '#8b5cf6', // Violet
+  '#d946ef', // Fuchsia
+  '#ec4899', // Pink
+  '#64748b', // Slate
+  '#334155', // Dark Slate
+];
+
 const MenuCategoryManagement: React.FC = () => {
   const { menuCategories, addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory } = useStore();
   const [isEditing, setIsEditing] = useState(false);
@@ -13,7 +28,7 @@ const MenuCategoryManagement: React.FC = () => {
   const [originalName, setOriginalName] = useState<string>('');
 
   const handleAddNew = () => {
-    setCurrentCategory({ name: '', order: menuCategories.length });
+    setCurrentCategory({ name: '', order: menuCategories.length, color: '#64748b' });
     setIsEditing(true);
   };
 
@@ -93,6 +108,36 @@ const MenuCategoryManagement: React.FC = () => {
               </p>
             </div>
 
+            {/* Color Selection */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Color Tag</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                 {PRESET_COLORS.map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setCurrentCategory({...currentCategory, color})}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${currentCategory.color === color ? 'border-slate-800 scale-110 shadow-sm' : 'border-transparent hover:scale-105'}`}
+                      style={{ backgroundColor: color }}
+                    />
+                 ))}
+              </div>
+              <div className="flex items-center gap-2">
+                 <span className="text-xs text-slate-500">Custom Hex:</span>
+                 <input 
+                   type="text"
+                   value={currentCategory.color || ''}
+                   onChange={e => setCurrentCategory({...currentCategory, color: e.target.value})}
+                   className="border border-slate-300 rounded px-2 py-1 text-xs w-24 font-mono uppercase"
+                   placeholder="#000000"
+                 />
+                 <div 
+                   className="w-6 h-6 rounded border border-slate-200" 
+                   style={{ backgroundColor: currentCategory.color || '#fff' }}
+                 />
+              </div>
+            </div>
+
             <div className="flex justify-end gap-3 pt-2">
               <button 
                 type="button"
@@ -120,6 +165,7 @@ const MenuCategoryManagement: React.FC = () => {
               <tr>
                 <th className="p-4 w-16 text-center">Order</th>
                 <th className="p-4">Category Name</th>
+                <th className="p-4">Color</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -147,6 +193,14 @@ const MenuCategoryManagement: React.FC = () => {
                   <td className="p-4 font-medium text-slate-700 text-base">
                      {cat.name}
                   </td>
+                  <td className="p-4">
+                     <span 
+                       className="px-3 py-1 rounded-full text-white text-xs font-bold shadow-sm"
+                       style={{ backgroundColor: cat.color || '#64748b' }}
+                     >
+                       Preview
+                     </span>
+                  </td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button 
@@ -169,7 +223,7 @@ const MenuCategoryManagement: React.FC = () => {
               ))}
               {menuCategories.length === 0 && (
                  <tr>
-                    <td colSpan={3} className="p-8 text-center text-slate-400 italic">No categories found.</td>
+                    <td colSpan={4} className="p-8 text-center text-slate-400 italic">No categories found.</td>
                  </tr>
               )}
             </tbody>

@@ -1,7 +1,4 @@
 
-
-
-
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
@@ -230,7 +227,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const derivedCats = Array.from(existingCats).map((name, idx) => ({
                id: `cat-${idx}`,
                name,
-               order: idx
+               order: idx,
+               color: '#64748b'
             }));
             setMenuCategories(derivedCats);
          }
@@ -736,13 +734,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMenuCategory = async (categoryData: Omit<MenuCategory, 'id'>) => {
       const newCategory = {
          id: `cat-${Date.now()}`,
-         ...categoryData
+         ...categoryData,
+         color: categoryData.color || '#64748b'
       };
       if (isSupabaseConfigured()) {
          await supabase.from('menu_categories').insert({
              id: newCategory.id,
              name: newCategory.name,
-             order: newCategory.order
+             order: newCategory.order,
+             color: newCategory.color
          });
       }
       setMenuCategories(prev => [...prev, newCategory]);
@@ -753,7 +753,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (isSupabaseConfigured()) {
           await supabase.from('menu_categories').update({
              name: updated.name,
-             order: updated.order
+             order: updated.order,
+             color: updated.color
           }).eq('id', updated.id);
       }
       setMenuCategories(prev => prev.map(c => c.id === updated.id ? updated : c));
