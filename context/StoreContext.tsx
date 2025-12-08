@@ -284,13 +284,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          setDeletedTransactions(mappedDel);
       }
 
-      // 6. Fetch Manual Sales Records (Only those NOT linked to an order)
-      // Since we are moving to Orders-based system, we only fetch legacy manual entries here
-      /* 
-         We are deprecating the 'sales_records' table in favor of 'orders' JSON.
-         However, if you have legacy data, you might want to keep fetching it.
-         For this update, we assume we rely on Orders mostly.
-      */
+      // 6. Fetch Manual Sales Records (Re-enabled for manual entry persistence)
+      const { data: manualData, error: manualError } = await supabase
+        .from('sales_records')
+        .select('*');
+      
+      if (manualData) {
+         const mappedManual = manualData.map((r: any) => ({
+             id: r.id,
+             orderId: r.order_id,
+             date: r.date,
+             branchId: r.branch_id,
+             platform: r.platform,
+             skuId: r.sku_id,
+             quantitySold: r.quantity_sold,
+             timestamp: r.timestamp,
+             customerId: r.customer_id,
+             orderAmount: r.order_amount
+         }));
+         setManualSalesRecords(mappedManual);
+      }
 
       // 7. Fetch Orders (Primary Source of Truth)
       const { data: ordersData, error: ordersError } = await supabase
@@ -463,10 +476,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
      if (records.length === 0) return;
      const timestamp = Date.now();
      
-     // Only add to local state as manual entries
-     // We are not saving to a 'sales_records' table anymore
-     // But for Reconciliation feature to work for manual inputs, we track them in state
-     
      const localRecords: SalesRecord[] = records.map(r => ({
          id: generateId(),
          orderId: r.orderId,
@@ -479,7 +488,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          customerId: r.customerId,
          orderAmount: r.orderAmount
      }));
+     
      setManualSalesRecords(prev => [...prev, ...localRecords]);
+
+     // Persist to Supabase
+     if (isSupabaseConfigured()) {
+        const dbRows = localRecords.map(r => ({
+            id: r.id,
+            order_id: r.orderId,
+            date: r.date,
+            branch_id: r.branchId,
+            platform: r.platform,
+            sku_id: r.skuId,
+            quantity_sold: r.quantitySold,
+            timestamp: r.timestamp,
+            customer_id: r.customerId,
+            order_amount: r.orderAmount
+        }));
+        const { error } = await supabase.from('sales_records').insert(dbRows);
+        if (error) console.error("Error saving sales records", error);
+    }
   };
 
   // 2. High-level function to Create an Order (Single Source of Truth)
@@ -665,6 +693,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (platform && r.platform !== platform) return true;
         return false;
     }));
+
+    if (isSupabaseConfigured()) {
+       let query = supabase.from('sales_records').delete().eq('date', date).eq('branch_id', branchId);
+       if (platform) {
+          query = query.eq('platform', platform);
+       }
+       await query;
+    }
   };
 
   const addSku = async (skuData: Omit<SKU, 'id' | 'order'>) => {
@@ -967,7 +1003,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
-        // await supabase.from('sales_records').delete().neq('id', '0'); // Deprecated
+        await supabase.from('sales_records').delete().neq('id', '0'); // Restored
         await supabase.from('orders').delete().neq('id', '0'); // Reset orders
         await supabase.from('skus').delete().neq('id', '0');
         await supabase.from('menu_items').delete().neq('id', '0');

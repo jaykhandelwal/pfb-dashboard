@@ -71,14 +71,17 @@ const Reconciliation: React.FC = () => {
         const result = reader.result;
         if (typeof result === 'string') {
             try {
-              const parsedData = await parseSalesReportImage(result, skus);
+              const parsedData = await parseSalesReportImage(result as string, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {
                 const newInputs = { ...prev };
                 Object.entries(parsedData).forEach(([skuId, qty]) => {
+                    const quantity = Number(qty);
                     const current = parseInt(newInputs[skuId] || '0');
-                    newInputs[skuId] = (current + qty).toString();
+                    if (!isNaN(quantity)) {
+                        newInputs[skuId] = (current + quantity).toString();
+                    }
                 });
                 return newInputs;
               });
