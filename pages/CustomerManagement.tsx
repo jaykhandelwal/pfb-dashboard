@@ -5,7 +5,7 @@ import { Contact, Search, Crown, Phone, Calendar, IndianRupee, History, X, Clock
 import { Customer } from '../types';
 
 const CustomerManagement: React.FC = () => {
-  const { customers, membershipRules, salesRecords, skus, branches } = useStore();
+  const { customers, membershipRules, orders, skus, branches } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -39,53 +39,13 @@ const CustomerManagement: React.FC = () => {
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || 'Unknown Branch';
 
   // --- History Logic ---
-  // Group sales records into "Order Tickets" based on timestamp/batch for the selected customer
+  // Use Orders Table directly to show Menu Items instead of raw ingredients
   const customerHistory = useMemo(() => {
     if (!selectedCustomer) return [];
-
-    // Filter records for this customer
-    const records = salesRecords.filter(r => r.customerId === selectedCustomer.id);
-    
-    const groups: Record<string, {
-      id: string,
-      timestamp: number,
-      date: string,
-      branchId: string,
-      platform: string,
-      items: { skuName: string, qty: number }[],
-      totalAmount: number
-    }> = {};
-
-    records.forEach(r => {
-      // Group Key: Timestamp + Branch
-      const key = `${r.timestamp}-${r.branchId}`;
-      
-      if (!groups[key]) {
-        groups[key] = {
-           id: key,
-           timestamp: r.timestamp,
-           date: r.date,
-           branchId: r.branchId,
-           platform: r.platform,
-           items: [],
-           totalAmount: 0 // Will accumulate
-        };
-      }
-
-      groups[key].items.push({
-         skuName: getSkuName(r.skuId),
-         qty: r.quantitySold
-      });
-      // Fallback: If orderAmount is present on record, use it. Note: orderAmount in DB is total for line item or total for order? 
-      // In StoreContext we save 'orderTotalValue' to 'order_amount' on each record. 
-      // If the POS sends total order value, it's duplicated on each record. We should take it once per group.
-      // However, simplified approach: We won't sum 'order_amount' from records if it represents the whole order.
-      // Let's assume order_amount is the *Order Total* snapshot passed from POS.
-      groups[key].totalAmount = r.orderAmount || 0; 
-    });
-
-    return Object.values(groups).sort((a,b) => b.timestamp - a.timestamp);
-  }, [selectedCustomer, salesRecords, skus]);
+    return orders
+        .filter(o => o.customerId === selectedCustomer.id)
+        .sort((a,b) => b.timestamp - a.timestamp);
+  }, [selectedCustomer, orders]);
 
 
   return (
@@ -251,11 +211,24 @@ const CustomerManagement: React.FC = () => {
                               <ul className="space-y-1">
                                  {order.items.map((item, idx) => (
                                     <li key={idx} className="flex justify-between text-sm text-slate-600">
-                                       <span>{item.skuName}</span>
-                                       <span className="font-mono text-slate-400">x {item.qty}</span>
+                                       <span className="flex-1">
+                                          {item.name}
+                                          {item.variant === 'HALF' && <span className="text-xs text-slate-400 ml-1">(Half)</span>}
+                                       </span>
+                                       <div className="flex gap-4">
+                                          <span className="font-mono text-slate-400 text-xs">x {item.quantity}</span>
+                                          <span className="font-bold text-slate-700 w-12 text-right">₹{item.price * item.quantity}</span>
+                                       </div>
                                     </li>
                                  ))}
                               </ul>
+                              
+                              {(order.customAmount || (order.customSkuItems && order.customSkuItems.length > 0)) && (
+                                 <div className="mt-3 pt-2 border-t border-slate-50 text-xs text-slate-500">
+                                    {order.customAmount && <div className="flex justify-between"><span>Custom Charge</span><span>₹{order.customAmount}</span></div>}
+                                    {order.customSkuItems?.length && <div>+ {order.customSkuItems.length} raw items</div>}
+                                 </div>
+                              )}
                            </div>
                         ))}
                      </div>

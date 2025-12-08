@@ -71,7 +71,8 @@ const Reconciliation: React.FC = () => {
         const result = reader.result;
         if (typeof result === 'string') {
             try {
-              const parsedData = await parseSalesReportImage(result as string, skus);
+              // Removed explicit casting 'as string' to rely on type guard narrowing
+              const parsedData = await parseSalesReportImage(result, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {

@@ -348,7 +348,7 @@ const Orders: React.FC = () => {
 
                       {/* Items */}
                       <div className="p-4 flex-1">
-                        <ul className="space-y-2 text-sm">
+                        <ul className="space-y-3 text-sm">
                             {order.items.map((item, idx) => (
                               <li key={idx} className="flex justify-between items-start">
                                   <div className="flex-1">
@@ -356,8 +356,14 @@ const Orders: React.FC = () => {
                                       {item.name}
                                       {item.variant === 'HALF' && <span className="text-xs text-slate-400 ml-1">(Half)</span>}
                                     </span>
+                                    <div className="text-xs text-slate-400 mt-0.5">
+                                       ₹{item.price} ea
+                                    </div>
                                   </div>
-                                  <span className="font-mono text-slate-500 ml-2">x {item.quantity}</span>
+                                  <div className="text-right">
+                                     <span className="font-mono text-slate-600 block">x {item.quantity}</span>
+                                     <span className="font-bold text-slate-700">₹{item.price * item.quantity}</span>
+                                  </div>
                               </li>
                             ))}
                         </ul>
