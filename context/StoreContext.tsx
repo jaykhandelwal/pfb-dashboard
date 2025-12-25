@@ -10,7 +10,7 @@ interface StoreContextType {
   menuCategories: MenuCategory[];
   branches: Branch[];
   transactions: Transaction[];
-  salesRecords: SalesRecord[]; // Now derived from Orders
+  salesRecords: SalesRecord[]; 
   orders: Order[]; 
   customers: Customer[];
   membershipRules: MembershipRule[];
@@ -21,7 +21,7 @@ interface StoreContextType {
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
   
   // Sales & Orders
-  addSalesRecords: (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => Promise<void>; // Kept for manual reconciliation
+  addSalesRecords: (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => Promise<void>; 
   addOrder: (orderData: Omit<Order, 'id' | 'timestamp'>) => Promise<void>; 
   deleteOrder: (orderId: string) => Promise<void>;
   deleteSalesRecordsForDate: (date: string, branchId: string, platform?: string) => Promise<void>;
@@ -65,45 +65,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [branches, setBranches] = useState<Branch[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [deletedTransactions, setDeletedTransactions] = useState<ArchivedTransaction[]>([]);
-  
-  // salesRecords is now split:
-  // 1. manualSalesRecords: For legacy support or direct manual entry in Reconciliation page (rare)
-  // 2. derivedSalesRecords: Automatically calculated from Orders (The main source)
   const [manualSalesRecords, setManualSalesRecords] = useState<SalesRecord[]>([]); 
-  
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [membershipRules, setMembershipRules] = useState<MembershipRule[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
 
-  // Derived State: Flatten Orders into Sales Records for Inventory Reports
+  // Derived State
   const salesRecords = useMemo(() => {
-     // 1. Convert Orders to Sales Records
      const derived = orders.flatMap(order => {
-        // Safe check for items array
         const safeItems = order.items || [];
-        
-        // A. Process Menu Items
         const itemRecords = safeItems.flatMap(item => {
-           // If the item has a 'consumed' snapshot, use that (Inventory View)
            if (item.consumed && item.consumed.length > 0) {
               return item.consumed.map(c => ({
-                 id: `${order.id}-${item.id}-${c.skuId}`, // Virtual ID
+                 id: `${order.id}-${item.id}-${c.skuId}`,
                  orderId: order.id,
                  date: order.date,
                  branchId: order.branchId,
                  platform: order.platform,
                  skuId: c.skuId,
-                 quantitySold: c.quantity, // This is already total for the line item
+                 quantitySold: c.quantity,
                  customerId: order.customerId,
                  timestamp: order.timestamp,
-                 orderAmount: 0 // Not relevant for inventory view
+                 orderAmount: 0 
               }));
            } 
-           // Fallback: If no consumption snapshot, maybe it's a direct SKU mapping?
            else {
              const potentialSku = skus.find(s => s.id === item.menuItemId);
-             
              if (potentialSku) {
                 return [{
                     id: `${order.id}-${item.id}`,
@@ -122,7 +110,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
            }
         });
 
-        // B. Process Custom SKUs (Multiple)
         const customRecords: SalesRecord[] = [];
         if (order.customSkuItems && order.customSkuItems.length > 0) {
             order.customSkuItems.forEach((item, index) => {
@@ -136,11 +123,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     quantitySold: item.quantity,
                     customerId: order.customerId,
                     timestamp: order.timestamp,
-                    orderAmount: 0 // Custom SKUs have no price in the new model (billed via customAmount if needed)
+                    orderAmount: 0 
                 });
             });
         }
-        // Legacy Support for old orders that might have singular fields (should be handled by fetching logic, but safety first)
         else if ((order as any).customSkuId && (order as any).customSkuQuantity) {
              customRecords.push({
                 id: `${order.id}-custom-sku-legacy`,
@@ -159,18 +145,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return [...itemRecords, ...customRecords];
      });
      
-     // 2. Combine with any manually entered records (from Reconciliation page)
      return [...derived, ...manualSalesRecords];
   }, [orders, manualSalesRecords, skus]);
 
-  // --- Fetch Initial Data from Supabase ---
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
     if (!isSupabaseConfigured()) {
-        // Fallback to initial constants if no DB
         if (skus.length === 0) setSkus(INITIAL_SKUS);
         if (menuItems.length === 0) setMenuItems(INITIAL_MENU_ITEMS);
         if (menuCategories.length === 0) setMenuCategories(INITIAL_MENU_CATEGORIES);
@@ -181,75 +164,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      // 1. Fetch SKUs
-      const { data: skusData, error: skuError } = await supabase
-        .from('skus')
-        .select('*')
-        .order('order', { ascending: true });
-      
-      if (skuError) throw skuError;
-      if (skusData && skusData.length > 0) {
-        const mappedSkus = skusData.map((s: any) => ({
-          ...s,
-          piecesPerPacket: s.pieces_per_packet
-        }));
-        setSkus(mappedSkus);
-      } else {
-        setSkus(INITIAL_SKUS);
-      }
+      const { data: skusData, error: skuError } = await supabase.from('skus').select('*').order('order', { ascending: true });
+      if (skusData) setSkus(skusData.map((s: any) => ({ ...s, piecesPerPacket: s.pieces_per_packet })));
+      else setSkus(INITIAL_SKUS);
 
-      // 2. Fetch Menu Items
-      const { data: menuData, error: menuError } = await supabase.from('menu_items').select('*');
-      if (menuData && menuData.length > 0) {
-        const mappedMenu = menuData.map((m: any) => ({
+      const { data: menuData } = await supabase.from('menu_items').select('*');
+      if (menuData) {
+        setMenuItems(menuData.map((m: any) => ({
             ...m,
             ingredients: m.ingredients || [],
-            halfIngredients: m.half_ingredients || [], // New: Explicit Half Plate Recipe
+            halfIngredients: m.half_ingredients || [], 
             halfPrice: m.half_price,
-            category: m.category || 'Uncategorized' // Map Category
-        }));
-        setMenuItems(mappedMenu);
-      } else {
-        setMenuItems(INITIAL_MENU_ITEMS);
-      }
+            category: m.category || 'Uncategorized' 
+        })));
+      } else setMenuItems(INITIAL_MENU_ITEMS);
 
-      // 2b. Fetch Menu Categories (If table exists, otherwise fallback or empty)
-      const { data: catData, error: catError } = await supabase.from('menu_categories').select('*').order('order', { ascending: true });
-      if (catData && catData.length > 0) {
-         setMenuCategories(catData);
-      } else {
-         // If no categories in DB, check if we have menu items with categories and seed?
-         // For now, just use initial constants if empty
-         if(menuItems.length === 0) {
-            setMenuCategories(INITIAL_MENU_CATEGORIES);
-         } else {
-            // Extract from existing items if not present in DB
-            const existingCats = new Set(menuItems.map(m => m.category || 'Uncategorized'));
-            const derivedCats = Array.from(existingCats).map((name, idx) => ({
-               id: `cat-${idx}`,
-               name,
-               order: idx,
-               color: '#64748b'
-            }));
-            setMenuCategories(derivedCats);
-         }
-      }
+      const { data: catData } = await supabase.from('menu_categories').select('*').order('order', { ascending: true });
+      if (catData && catData.length > 0) setMenuCategories(catData);
+      else if (menuItems.length === 0) setMenuCategories(INITIAL_MENU_CATEGORIES);
 
-      // 3. Fetch Branches
-      const { data: branchData, error: branchError } = await supabase.from('branches').select('*');
-      if (branchError) throw branchError;
-      if (branchData && branchData.length > 0) setBranches(branchData);
+      const { data: branchData } = await supabase.from('branches').select('*');
+      if (branchData) setBranches(branchData);
       else setBranches(INITIAL_BRANCHES);
 
-      // 4. Fetch Transactions (Last 30 days)
-      const { data: txData, error: txError } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('timestamp', { ascending: false });
-      
-      if (txError) throw txError;
+      const { data: txData } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
       if (txData) {
-        const mappedTx = txData.map((t: any) => ({
+        setTransactions(txData.map((t: any) => ({
           ...t,
           batchId: t.batch_id,
           skuId: t.sku_id,
@@ -258,19 +198,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           imageUrls: t.image_urls,
           userId: t.user_id,
           userName: t.user_name
-        }));
-        setTransactions(mappedTx);
+        })));
       }
 
-      // 5. Fetch Deleted Transactions
-      const { data: delData, error: delError } = await supabase
-        .from('deleted_transactions')
-        .select('*')
-        .order('deleted_at', { ascending: false });
-
-      if (delError) console.warn("Could not fetch deleted transactions", delError);
+      const { data: delData } = await supabase.from('deleted_transactions').select('*').order('deleted_at', { ascending: false });
       if (delData) {
-         const mappedDel = delData.map((t: any) => ({
+         setDeletedTransactions(delData.map((t: any) => ({
             ...t,
             batchId: t.batch_id,
             skuId: t.sku_id,
@@ -281,17 +214,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             userName: t.user_name,
             deletedAt: t.deleted_at,
             deletedBy: t.deleted_by
-         }));
-         setDeletedTransactions(mappedDel);
+         })));
       }
 
-      // 6. Fetch Manual Sales Records (Re-enabled for manual entry persistence)
-      const { data: manualData, error: manualError } = await supabase
-        .from('sales_records')
-        .select('*');
-      
+      const { data: manualData } = await supabase.from('sales_records').select('*');
       if (manualData) {
-         const mappedManual = manualData.map((r: any) => ({
+         setManualSalesRecords(manualData.map((r: any) => ({
              id: r.id,
              orderId: r.order_id,
              date: r.date,
@@ -302,18 +230,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              timestamp: r.timestamp,
              customerId: r.customer_id,
              orderAmount: r.order_amount
-         }));
-         setManualSalesRecords(mappedManual);
+         })));
       }
 
-      // 7. Fetch Orders (Primary Source of Truth)
-      const { data: ordersData, error: ordersError } = await supabase
-        .from('orders')
-        .select('*')
-        .order('timestamp', { ascending: false });
-      
-      if (!ordersError && ordersData) {
-         const mappedOrders = ordersData.map((o: any) => ({
+      const { data: ordersData } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
+      if (ordersData) {
+         setOrders(ordersData.map((o: any) => ({
              id: o.id,
              branchId: o.branch_id,
              customerId: o.customer_id,
@@ -321,65 +243,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              platform: o.platform,
              totalAmount: o.total_amount,
              status: o.status,
-             paymentMethod: o.payment_method || 'CASH', // Fallback
+             paymentMethod: o.payment_method || 'CASH',
              date: o.date,
              timestamp: o.timestamp,
-             items: o.items || [], // Ensure array
-             // New Fields
+             items: o.items || [], 
              customAmount: o.custom_amount,
              customAmountReason: o.custom_amount_reason,
-             // Map new custom_sku_items, fallback to legacy fields if needed
              customSkuItems: o.custom_sku_items || (o.custom_sku_id ? [{ skuId: o.custom_sku_id, quantity: o.custom_sku_quantity }] : []),
              customSkuReason: o.custom_sku_reason
-         }));
-         setOrders(mappedOrders);
+         })));
       }
 
-      // 8. Fetch Customers
-      const { data: custData, error: custError } = await supabase.from('customers').select('*');
-      if (custError && custError.code !== 'PGRST116') console.warn("Customers fetch issue", custError);
-      if (custData && custData.length > 0) {
-        const mappedCust = custData.map((c: any) => ({
+      const { data: custData } = await supabase.from('customers').select('*');
+      if (custData) {
+        setCustomers(custData.map((c: any) => ({
            ...c,
            phoneNumber: c.phone_number,
            totalSpend: c.total_spend,
            orderCount: c.order_count,
            joinedAt: c.joined_at,
            lastOrderDate: c.last_order_date
-        }));
-        setCustomers(mappedCust);
-      } else {
-         setCustomers(INITIAL_CUSTOMERS);
-      }
+        })));
+      } else setCustomers(INITIAL_CUSTOMERS);
 
-      // 9. Fetch Membership Rules
-      const { data: rulesData, error: rulesError } = await supabase.from('membership_rules').select('*');
-      if (rulesData && rulesData.length > 0) {
-        const mappedRules = rulesData.map((r: any) => ({
+      const { data: rulesData } = await supabase.from('membership_rules').select('*');
+      if (rulesData) {
+        setMembershipRules(rulesData.map((r: any) => ({
            ...r,
            triggerOrderCount: r.trigger_order_count,
            timeFrameDays: r.time_frame_days
-        }));
-        setMembershipRules(mappedRules);
-      } else {
-        setMembershipRules(INITIAL_MEMBERSHIP_RULES);
-      }
+        })));
+      } else setMembershipRules(INITIAL_MEMBERSHIP_RULES);
 
-      // 10. Fetch Attendance
-      const { data: attData, error: attError } = await supabase.from('attendance').select('*').order('timestamp', { ascending: false });
-      if (!attError && attData) {
-          const mappedAtt = attData.map((a: any) => ({
+      const { data: attData } = await supabase.from('attendance').select('*').order('timestamp', { ascending: false });
+      if (attData) {
+          setAttendanceRecords(attData.map((a: any) => ({
             id: a.id,
             userId: a.user_id,
-            userName: a.user_name,
+            user_name: a.user_name,
             branchId: a.branch_id,
             date: a.date,
             timestamp: a.timestamp,
             imageUrl: a.image_url
-          }));
-          setAttendanceRecords(mappedAtt);
+          })));
       }
-
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
     }
@@ -390,7 +297,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return Date.now().toString(36) + Math.random().toString(36).substring(2);
   };
 
-  // ... [Existing transaction methods] ...
   const addBatchTransactions = async (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => {
     if (txs.length === 0) return;
     const batchId = generateId();
@@ -411,8 +317,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     if (isSupabaseConfigured()) {
-       const { error } = await supabase.from('transactions').insert(dbRows);
-       if (error) console.error("Error adding transactions:", error);
+       await supabase.from('transactions').insert(dbRows);
     }
     
     const localTxs: Transaction[] = dbRows.map(r => ({
@@ -470,9 +375,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // --- ORDER & SALES LOGIC ---
-
-  // 1. Manual Sales Records (Legacy / Reconciliation Page only)
   const addSalesRecords = async (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => {
      if (records.length === 0) return;
      const timestamp = Date.now();
@@ -492,7 +394,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
      
      setManualSalesRecords(prev => [...prev, ...localRecords]);
 
-     // Persist to Supabase
      if (isSupabaseConfigured()) {
         const dbRows = localRecords.map(r => ({
             id: r.id,
@@ -506,41 +407,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             customer_id: r.customerId,
             order_amount: r.orderAmount
         }));
-        const { error } = await supabase.from('sales_records').insert(dbRows);
-        if (error) console.error("Error saving sales records", error);
+        await supabase.from('sales_records').insert(dbRows);
     }
   };
 
-  // 2. High-level function to Create an Order (Single Source of Truth)
   const addOrder = async (orderData: Omit<Order, 'id' | 'timestamp'>) => {
       const timestamp = Date.now();
       const orderId = generateId();
 
-      // A. Calculate Snapshots (Ingredients Used for Standard Items)
       const itemsWithSnapshot: OrderItem[] = orderData.items.map(item => {
-         // Standard Menu Item
          const menuItem = menuItems.find(m => m.id === item.menuItemId);
-         
          let consumedSnapshot: { skuId: string; quantity: number }[] = [];
          
          if (menuItem) {
              if (item.variant === 'HALF') {
-                 // Priority 1: Explicit Half Recipe
                  if (menuItem.halfIngredients && menuItem.halfIngredients.length > 0) {
                      consumedSnapshot = menuItem.halfIngredients.map(ing => ({
                          skuId: ing.skuId,
                          quantity: ing.quantity * item.quantity 
                      }));
-                 } 
-                 // Priority 2: Fallback to 0.5 * Full Recipe
-                 else if (menuItem.ingredients && menuItem.ingredients.length > 0) {
+                 } else if (menuItem.ingredients && menuItem.ingredients.length > 0) {
                      consumedSnapshot = menuItem.ingredients.map(ing => ({
                          skuId: ing.skuId,
                          quantity: ing.quantity * item.quantity * 0.5
                      }));
                  }
              } else {
-                 // Full Plate Logic
                  if (menuItem.ingredients && menuItem.ingredients.length > 0) {
                      consumedSnapshot = menuItem.ingredients.map(ing => ({
                          skuId: ing.skuId,
@@ -549,7 +441,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                  }
              }
          } else {
-             // Fallback for direct SKU items (legacy / direct match)
              const matchingSku = skus.find(s => s.id === item.menuItemId);
              if (matchingSku) {
                  consumedSnapshot = [{ skuId: matchingSku.id, quantity: item.quantity }];
@@ -558,12 +449,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
          return {
              ...item,
-             consumed: consumedSnapshot // Save the calculated ingredients permanently
+             consumed: consumedSnapshot 
          };
       });
 
-      // B. Create Order Object
-      // Total Calculation: Items Total + Custom Amount
       const itemsTotal = orderData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const customTotal = orderData.customAmount || 0;
       
@@ -575,9 +464,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           totalAmount: orderData.totalAmount || (itemsTotal + customTotal)
       };
 
-      // C. Handle Customer (Update/Create Logic)
       if (newOrder.customerId) {
-          // Check if existing
           const existingCust = customers.find(c => c.id === newOrder.customerId);
           if (existingCust) {
               const updatedCust = {
@@ -589,9 +476,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               };
               await updateCustomer(updatedCust);
           } else {
-              // Create New
               const newCust: Customer = {
-                  id: newOrder.customerId, // Phone is ID
+                  id: newOrder.customerId, 
                   name: newOrder.customerName || 'Unknown',
                   phoneNumber: newOrder.customerId,
                   totalSpend: newOrder.totalAmount,
@@ -614,9 +500,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
       }
 
-      // D. Save to Supabase
       if (isSupabaseConfigured()) {
-          const { error } = await supabase.from('orders').insert({
+          await supabase.from('orders').insert({
               id: newOrder.id,
               branch_id: newOrder.branchId,
               customer_id: newOrder.customerId,
@@ -628,13 +513,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               date: newOrder.date,
               timestamp: newOrder.timestamp,
               items: newOrder.items,
-              // New Fields
               custom_amount: newOrder.customAmount,
               custom_amount_reason: newOrder.customAmountReason,
-              custom_sku_items: newOrder.customSkuItems, // Saved as JSONB array
+              custom_sku_items: newOrder.customSkuItems, 
               custom_sku_reason: newOrder.customSkuReason
           });
-          if (error) console.error("Error creating order:", error);
       }
       setOrders(prev => [newOrder, ...prev]);
   };
@@ -643,86 +526,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const orderToDelete = orders.find(o => o.id === orderId);
     if (!orderToDelete) return;
 
-    // 1. Revert Customer Stats (If applicable)
     if (orderToDelete.customerId) {
        const customer = customers.find(c => c.id === orderToDelete.customerId);
        if (customer) {
-           // Calculate new stats based on remaining orders
            const remainingOrders = orders.filter(o => o.customerId === orderToDelete.customerId && o.id !== orderId);
-           
-           // Sort by timestamp desc to find the new lastOrderDate
+           const newTotalSpend = remainingOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+           const newOrderCount = remainingOrders.length;
            remainingOrders.sort((a,b) => b.timestamp - a.timestamp);
            const newLastOrderDate = remainingOrders.length > 0 ? remainingOrders[0].date : '-';
            
            const updatedCust = {
                ...customer,
-               totalSpend: Math.max(0, customer.totalSpend - orderToDelete.totalAmount),
-               orderCount: Math.max(0, customer.orderCount - 1),
+               totalSpend: newTotalSpend,
+               orderCount: newOrderCount,
                lastOrderDate: newLastOrderDate
            };
            await updateCustomer(updatedCust);
        }
     }
 
-    // 2. Remove from Supabase
     if (isSupabaseConfigured()) {
        await supabase.from('orders').delete().eq('id', orderId);
     }
-
-    // 3. Remove from Local State
     setOrders(prev => prev.filter(o => o.id !== orderId));
   };
 
-  // --- POS LISTENER (Legacy / External Bridge) ---
-  useEffect(() => {
-    const handlePosMessage = async (event: MessageEvent) => {
-      if (event.data && event.data.type === 'PAKAJA_IMPORT_SALES' && event.data.payload) {
-        try {
-          const { date, items, platform, branchId, timestamp, customer } = event.data.payload;
-          
-          if (!date || !Array.isArray(items) || !platform || !branchId) return;
-          if (!['POS', 'ZOMATO', 'SWIGGY'].includes(platform)) return;
-
-          // Transform external items format to internal OrderItem format
-          const orderItems: OrderItem[] = items.map((i: any) => {
-             const menuItem = menuItems.find(m => m.id === i.skuId);
-             return {
-                 id: generateId(),
-                 menuItemId: i.skuId,
-                 name: menuItem ? menuItem.name : 'External Item',
-                 price: menuItem ? menuItem.price : 0,
-                 quantity: Number(i.quantity),
-                 variant: 'FULL'
-             };
-          });
-
-          // Calculate total from system prices
-          const totalAmount = orderItems.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-
-          await addOrder({
-             branchId,
-             date,
-             platform,
-             totalAmount,
-             status: 'COMPLETED',
-             paymentMethod: 'CASH', // Assumption for external
-             items: orderItems,
-             customerId: customer?.phoneNumber, // Link via phone
-             customerName: customer?.name
-          });
-          
-        } catch (e) {
-          console.error("Failed to process POS message", e);
-        }
-      }
-    };
-    window.addEventListener('message', handlePosMessage);
-    return () => window.removeEventListener('message', handlePosMessage);
-  }, [menuItems, customers, addOrder]); 
-
-
   const deleteSalesRecordsForDate = async (date: string, branchId: string, platform?: string) => {
-    // Only delete from manual records since others are derived from orders
     setManualSalesRecords(prev => prev.filter(r => {
         if (r.date !== date || r.branchId !== branchId) return true;
         if (platform && r.platform !== platform) return true;
@@ -744,40 +573,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...skuData,
       order: skus.length,
     };
-    
     if (isSupabaseConfigured()) {
-        const dbRow = {
+        await supabase.from('skus').insert({
             id: newSku.id,
             name: newSku.name,
             category: newSku.category,
             dietary: newSku.dietary,
             pieces_per_packet: newSku.piecesPerPacket,
             order: newSku.order
-        };
-        await supabase.from('skus').insert(dbRow);
+        });
     }
-
     setSkus(prev => [...prev, newSku as SKU]);
   };
 
   const updateSku = async (updatedSku: SKU) => {
     if (isSupabaseConfigured()) {
-        const dbRow = {
+        await supabase.from('skus').update({
             name: updatedSku.name,
             category: updatedSku.category,
             dietary: updatedSku.dietary,
             pieces_per_packet: updatedSku.piecesPerPacket,
             order: updatedSku.order
-        };
-        await supabase.from('skus').update(dbRow).eq('id', updatedSku.id);
+        }).eq('id', updatedSku.id);
     }
     setSkus(prev => prev.map(s => s.id === updatedSku.id ? updatedSku : s));
   };
 
   const deleteSku = async (id: string) => {
-    if (isSupabaseConfigured()) {
-        await supabase.from('skus').delete().eq('id', id);
-    }
+    if (isSupabaseConfigured()) await supabase.from('skus').delete().eq('id', id);
     setSkus(prev => prev.filter(s => s.id !== id));
   };
 
@@ -801,7 +624,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // --- Menu Category CRUD ---
   const addMenuCategory = async (categoryData: Omit<MenuCategory, 'id'>) => {
       const newCategory = {
          id: `cat-${Date.now()}`,
@@ -809,32 +631,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          color: categoryData.color || '#64748b'
       };
       if (isSupabaseConfigured()) {
-         await supabase.from('menu_categories').insert({
-             id: newCategory.id,
-             name: newCategory.name,
-             order: newCategory.order,
-             color: newCategory.color
-         });
+         await supabase.from('menu_categories').insert(newCategory);
       }
       setMenuCategories(prev => [...prev, newCategory]);
   };
 
   const updateMenuCategory = async (updated: MenuCategory, oldName: string) => {
-      // 1. Update Category Name
       if (isSupabaseConfigured()) {
-          await supabase.from('menu_categories').update({
-             name: updated.name,
-             order: updated.order,
-             color: updated.color
-          }).eq('id', updated.id);
+          await supabase.from('menu_categories').update(updated).eq('id', updated.id);
       }
       setMenuCategories(prev => prev.map(c => c.id === updated.id ? updated : c));
 
-      // 2. Cascade Update to Menu Items (if name changed)
       if (oldName !== updated.name) {
-         // Update Local
          setMenuItems(prev => prev.map(m => m.category === oldName ? { ...m, category: updated.name } : m));
-         // Update DB
          if (isSupabaseConfigured()) {
              await supabase.from('menu_items').update({ category: updated.name }).eq('category', oldName);
          }
@@ -842,13 +651,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteMenuCategory = async (id: string, name: string) => {
-      // 1. Delete Category
-      if (isSupabaseConfigured()) {
-          await supabase.from('menu_categories').delete().eq('id', id);
-      }
+      if (isSupabaseConfigured()) await supabase.from('menu_categories').delete().eq('id', id);
       setMenuCategories(prev => prev.filter(c => c.id !== id));
 
-      // 2. Set associated Menu Items to "Uncategorized"
       setMenuItems(prev => prev.map(m => m.category === name ? { ...m, category: 'Uncategorized' } : m));
       if (isSupabaseConfigured()) {
           await supabase.from('menu_items').update({ category: 'Uncategorized' }).eq('category', name);
@@ -875,8 +680,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
-  // --- Menu Item CRUD ---
-  
   const addMenuItem = async (itemData: Omit<MenuItem, 'id'> & { id?: string }) => {
     const newItem = {
       id: itemData.id || `menu-${Date.now()}`,
@@ -890,7 +693,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           price: newItem.price,
           half_price: newItem.halfPrice,
           description: newItem.description,
-          category: newItem.category, // Save Category
+          category: newItem.category, 
           ingredients: newItem.ingredients,
           half_ingredients: newItem.halfIngredients
        });
@@ -905,7 +708,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           price: updated.price,
           half_price: updated.halfPrice,
           description: updated.description,
-          category: updated.category, // Update Category
+          category: updated.category, 
           ingredients: updated.ingredients,
           half_ingredients: updated.halfIngredients
        }).eq('id', updated.id);
@@ -914,9 +717,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteMenuItem = async (id: string) => {
-    if (isSupabaseConfigured()) {
-       await supabase.from('menu_items').delete().eq('id', id);
-    }
+    if (isSupabaseConfigured()) await supabase.from('menu_items').delete().eq('id', id);
     setMenuItems(prev => prev.filter(m => m.id !== id));
   };
 
@@ -925,10 +726,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `branch-${Date.now()}`,
       ...branchData
     };
-
-    if (isSupabaseConfigured()) {
-        await supabase.from('branches').insert(newBranch);
-    }
+    if (isSupabaseConfigured()) await supabase.from('branches').insert(newBranch);
     setBranches(prev => [...prev, newBranch]);
   };
 
@@ -940,18 +738,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteBranch = async (id: string) => {
-    if (isSupabaseConfigured()) {
-        await supabase.from('branches').delete().eq('id', id);
-    }
+    if (isSupabaseConfigured()) await supabase.from('branches').delete().eq('id', id);
     setBranches(prev => prev.filter(b => b.id !== id));
   };
 
-  // --- Customer & Membership CRUD ---
-
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'joinedAt' | 'totalSpend' | 'orderCount' | 'lastOrderDate'>) => {
-     // Explicitly use phone number as ID if creating manually
      const phoneId = customerData.phoneNumber.trim();
-
      const newCustomer: Customer = {
         id: phoneId,
         ...customerData,
@@ -960,7 +752,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         orderCount: 0,
         lastOrderDate: '-'
      };
-
      if (isSupabaseConfigured()) {
         await supabase.from('customers').insert({
             id: newCustomer.id,
@@ -1007,21 +798,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteMembershipRule = async (id: string) => {
-     if (isSupabaseConfigured()) {
-        await supabase.from('membership_rules').delete().eq('id', id);
-     }
+     if (isSupabaseConfigured()) await supabase.from('membership_rules').delete().eq('id', id);
      setMembershipRules(prev => prev.filter(r => r.id !== id));
   };
 
-  // --- Attendance ---
   const addAttendance = async (record: Omit<AttendanceRecord, 'id'>) => {
       const newRecord: AttendanceRecord = {
           id: generateId(),
           ...record
       };
-
       if (isSupabaseConfigured()) {
-          const { error } = await supabase.from('attendance').insert({
+          await supabase.from('attendance').insert({
              id: newRecord.id,
              user_id: newRecord.userId,
              user_name: newRecord.userName,
@@ -1030,7 +817,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              timestamp: newRecord.timestamp,
              image_url: newRecord.imageUrl
           });
-          if (error) console.error("Error adding attendance", error);
       }
       setAttendanceRecords(prev => [newRecord, ...prev]);
   };
@@ -1038,8 +824,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
-        await supabase.from('sales_records').delete().neq('id', '0'); // Restored
-        await supabase.from('orders').delete().neq('id', '0'); // Reset orders
+        await supabase.from('sales_records').delete().neq('id', '0'); 
+        await supabase.from('orders').delete().neq('id', '0'); 
         await supabase.from('skus').delete().neq('id', '0');
         await supabase.from('menu_items').delete().neq('id', '0');
         await supabase.from('menu_categories').delete().neq('id', '0');

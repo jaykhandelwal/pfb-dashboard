@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, CreditCard, ChevronRight, ArrowLeft, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
@@ -90,7 +90,6 @@ const Orders: React.FC = () => {
   // -- POS LOGIC --
   const addToCart = (item: MenuItem, variant: 'FULL' | 'HALF' = 'FULL') => {
      const priceToUse = variant === 'HALF' && item.halfPrice ? item.halfPrice : item.price;
-     // Create a unique cart ID key based on item + variant
      const cartItemKey = `${item.id}-${variant}`;
 
      setCart(prev => {
@@ -99,7 +98,7 @@ const Orders: React.FC = () => {
            return prev.map(i => `${i.menuItemId}-${i.variant || 'FULL'}` === cartItemKey ? { ...i, quantity: i.quantity + 1 } : i);
         } else {
            return [...prev, {
-              id: `temp-${Date.now()}`, // Temporary ID
+              id: `temp-${Date.now()}`,
               menuItemId: item.id,
               name: item.name,
               price: priceToUse,
@@ -123,7 +122,6 @@ const Orders: React.FC = () => {
     setCustomAmountReason('');
   };
 
-  // Helper: Open custom SKU modal and prepopulate if exists
   const openCustomSkuModal = () => {
       if (orderCustomSku) {
           setCustomSkuList(orderCustomSku.items);
@@ -187,15 +185,14 @@ const Orders: React.FC = () => {
   };
 
   const submitOrder = async () => {
-     if(cart.length === 0 && !orderCustomAmount) return; // Allow custom amount only order? Usually need items, but technically possible.
+     if(cart.length === 0 && !orderCustomAmount) return;
      if(!posBranchId) {
         alert("Please select a branch.");
         return;
      }
 
-     const orderDate = getLocalISOString(); // Today's date for POS
+     const orderDate = getLocalISOString();
 
-     // Map internal structure to expected API/Context structure
      const finalCustomSkuItems = orderCustomSku?.items.map(i => ({ skuId: i.skuId, quantity: i.qty })) || [];
 
      await addOrder({
@@ -208,32 +205,28 @@ const Orders: React.FC = () => {
         items: cart,
         customerId: linkedCustomer?.phone,
         customerName: linkedCustomer?.name,
-        // Pass Custom Fields
         customAmount: orderCustomAmount?.amount,
         customAmountReason: orderCustomAmount?.reason,
         customSkuItems: finalCustomSkuItems,
         customSkuReason: orderCustomSku?.reason
      });
 
-     // Reset
      setCart([]);
      setOrderCustomAmount(null);
      setOrderCustomSku(null);
      setLinkedCustomer(null);
      setPosPaymentMethod('CASH');
-     setIsMobileCartOpen(false); // Close mobile cart
+     setIsMobileCartOpen(false);
      setShowSuccess(true);
      setTimeout(() => setShowSuccess(false), 2000);
   };
 
-  // 1. Triggered when user clicks Trash Icon
   const promptDelete = (e: React.MouseEvent, orderId: string) => {
       e.preventDefault(); 
-      e.stopPropagation(); // CRITICAL: Stop event from bubbling to parent card
+      e.stopPropagation(); 
       setOrderToDelete(orderId);
   };
 
-  // 2. Triggered from Modal
   const confirmDelete = async () => {
       if (orderToDelete) {
           await deleteOrder(orderToDelete);
@@ -241,7 +234,6 @@ const Orders: React.FC = () => {
       }
   };
 
-  // Filter menu items for POS
   const visibleMenuItems = useMemo(() => {
      if (selectedCategory === 'All') return menuItems;
      return menuItems.filter(m => (m.category || 'Uncategorized') === selectedCategory);
@@ -277,7 +269,6 @@ const Orders: React.FC = () => {
         <div className="flex-1 overflow-y-auto">
           {/* Filters */}
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
-            {/* Date */}
             <div className="flex-1">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
                   <Calendar size={12} /> Date
@@ -290,7 +281,6 @@ const Orders: React.FC = () => {
                 />
             </div>
 
-            {/* Branch */}
             <div className="flex-1">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
                   <Store size={12} /> Branch
@@ -305,7 +295,6 @@ const Orders: React.FC = () => {
                 </select>
             </div>
 
-            {/* Platform */}
             <div className="flex-1">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
                   <Filter size={12} /> Platform
@@ -330,10 +319,9 @@ const Orders: React.FC = () => {
                 <p className="font-medium">No orders found for this criteria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                 {filteredOrders.map(order => (
-                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
-                      {/* Ticket Header */}
+                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow group relative">
                       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
                         <div>
                             <div className="flex items-center gap-2 mb-1">
@@ -356,17 +344,17 @@ const Orders: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                        <div className="flex flex-col items-end gap-2">
+                        <div className="flex flex-col items-end gap-2 relative z-10">
                            <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">
                               <Clock size={12} />
                               {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                            </div>
                            
-                           {/* Delete Button (Admin Only - Strict) */}
                            {currentUser?.role === 'ADMIN' && (
                               <button 
+                                type="button"
                                 onClick={(e) => promptDelete(e, order.id)}
-                                className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer z-10"
+                                className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer relative z-20"
                                 title="Delete Order (Admin Only)"
                               >
                                 <Trash2 size={14} />
@@ -375,7 +363,6 @@ const Orders: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Items */}
                       <div className="p-4 flex-1">
                         <ul className="space-y-3 text-sm">
                             {order.items.map((item, idx) => (
@@ -397,7 +384,6 @@ const Orders: React.FC = () => {
                             ))}
                         </ul>
 
-                        {/* Order Level Custom Fields */}
                         {(order.customAmount || (order.customSkuItems && order.customSkuItems.length > 0)) && (
                             <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
                                 {order.customAmount && (
@@ -429,7 +415,6 @@ const Orders: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Footer Total */}
                       <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-sm">
                         <span className="text-slate-500 font-medium flex items-center gap-1">
                             <UtensilsCrossed size={14} /> Total Items: {order.items.reduce((a,b)=>a+b.quantity,0)}
@@ -444,12 +429,9 @@ const Orders: React.FC = () => {
           )}
         </div>
       ) : (
-        // --- NEW ORDER (POS) INTERFACE ---
         <div className="flex flex-col md:flex-row gap-4 h-full relative">
-           
-           {/* Left: Menu & Controls (Full width on mobile) */}
+           {/* Left: Menu & Controls */}
            <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full h-full relative">
-               {/* Controls Header */}
                <div className="p-4 border-b border-slate-100 bg-slate-50">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     <div className="sm:col-span-1">
@@ -501,7 +483,6 @@ const Orders: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Category Filter */}
                   <div className="mb-4">
                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Menu Category</label>
                      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
@@ -527,7 +508,6 @@ const Orders: React.FC = () => {
                      </div>
                   </div>
 
-                  {/* Custom Action Buttons */}
                   <div className="flex gap-2">
                     <button 
                       onClick={() => setIsCustomAmountOpen(true)}
@@ -552,7 +532,6 @@ const Orders: React.FC = () => {
                   </div>
                </div>
 
-               {/* Menu Grid */}
                <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 pb-32 md:pb-4">
                   {visibleMenuItems.length === 0 ? (
                      <div className="text-center text-slate-400 py-10 italic">No items found in this category.</div>
@@ -570,7 +549,6 @@ const Orders: React.FC = () => {
                               </div>
                               
                               <div className="p-2 bg-slate-50 border-t border-slate-100 flex gap-2">
-                                 {/* Full Plate Button */}
                                  <button 
                                     onClick={() => addToCart(item, 'FULL')}
                                     className="flex-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded py-1.5 px-1 text-center transition-colors"
@@ -579,7 +557,6 @@ const Orders: React.FC = () => {
                                     <div className="text-xs font-bold text-emerald-700">₹{item.price}</div>
                                  </button>
 
-                                 {/* Half Plate Button (Optional) */}
                                  {item.halfPrice && (
                                     <button 
                                        onClick={() => addToCart(item, 'HALF')}
@@ -596,7 +573,6 @@ const Orders: React.FC = () => {
                   )}
                </div>
 
-               {/* Mobile Sticky Footer (Only Visible on Mobile when Cart is Closed) */}
                {!isMobileCartOpen && (
                  <div 
                    onClick={() => setIsMobileCartOpen(true)}
@@ -620,7 +596,7 @@ const Orders: React.FC = () => {
                )}
            </div>
 
-           {/* Right: Cart (Desktop: Side Panel, Mobile: Full Screen Modal Overlay) */}
+           {/* Right: Cart */}
            <div 
              className={`
                 bg-white flex flex-col 
@@ -628,7 +604,6 @@ const Orders: React.FC = () => {
                 ${isMobileCartOpen ? 'fixed inset-0 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300' : 'hidden'}
              `}
            >
-               {/* Mobile Close Header */}
                <div className="md:hidden p-4 border-b border-slate-100 flex items-center gap-3 bg-slate-50">
                   <button onClick={() => setIsMobileCartOpen(false)} className="p-2 -ml-2 text-slate-500">
                      <ArrowLeft size={24} />
@@ -636,7 +611,6 @@ const Orders: React.FC = () => {
                   <h3 className="font-bold text-lg text-slate-800">Current Order</h3>
                </div>
 
-               {/* Desktop Header */}
                <div className="hidden md:flex p-4 border-b border-slate-100 justify-between items-center bg-slate-800 text-white rounded-tr-xl">
                   <div className="flex items-center gap-2 font-bold">
                      <ShoppingCart size={18} /> Current Order
@@ -646,7 +620,6 @@ const Orders: React.FC = () => {
                   </div>
                </div>
 
-               {/* Customer Link */}
                <div className="p-3 border-b border-slate-100 bg-slate-50">
                   {linkedCustomer ? (
                      <div className="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg">
@@ -669,7 +642,6 @@ const Orders: React.FC = () => {
                   )}
                </div>
 
-               {/* Cart Items */}
                <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {cart.length === 0 && !orderCustomAmount && !orderCustomSku ? (
                      <div className="text-center text-slate-400 py-10 italic text-sm flex flex-col items-center">
@@ -686,7 +658,6 @@ const Orders: React.FC = () => {
                      </div>
                   ) : (
                     <>
-                     {/* Standard Items */}
                      {cart.map(item => (
                         <div key={item.id} className="flex justify-between items-center group">
                            <div className="flex-1">
@@ -710,10 +681,8 @@ const Orders: React.FC = () => {
                         </div>
                      ))}
                      
-                     {/* Custom Order Additions */}
                      {(orderCustomAmount || orderCustomSku) && <div className="border-t border-slate-100 my-2 pt-2"></div>}
                      
-                     {/* Custom Amount Display */}
                      {orderCustomAmount && (
                          <div className="flex justify-between items-center bg-indigo-50 p-2 rounded-lg border border-indigo-100">
                              <div>
@@ -727,7 +696,6 @@ const Orders: React.FC = () => {
                          </div>
                      )}
 
-                     {/* Custom SKU Display */}
                      {orderCustomSku && (
                          <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
                              <div className="flex justify-between items-center mb-1">
@@ -751,7 +719,6 @@ const Orders: React.FC = () => {
                   )}
                </div>
 
-               {/* Footer */}
                <div className="p-4 bg-slate-50 border-t border-slate-200 md:rounded-br-xl pb-8 md:pb-4">
                   <div className="flex justify-between items-center mb-4 text-lg">
                      <span className="font-bold text-slate-500">Total</span>
@@ -768,7 +735,8 @@ const Orders: React.FC = () => {
                </div>
            </div>
 
-           {/* Customer Search Modal */}
+           {/* POS MODALS (Inside flex layout to avoid conditional rendering bugs) */}
+           
            {isCustomerModalOpen && (
               <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -818,7 +786,6 @@ const Orders: React.FC = () => {
               </div>
            )}
 
-            {/* Custom Amount Modal (Order Level) */}
             {isCustomAmountOpen && (
               <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
@@ -861,7 +828,6 @@ const Orders: React.FC = () => {
               </div>
             )}
 
-            {/* Custom SKU Modal (Refactored to support list) */}
             {isCustomSkuOpen && (
               <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
@@ -871,7 +837,6 @@ const Orders: React.FC = () => {
                     </div>
                     
                     <div className="p-6 flex-1 overflow-y-auto">
-                        {/* List Builder */}
                         <div className="mb-4 space-y-3">
                              <div className="flex gap-2 items-end">
                                 <div className="flex-1">
@@ -905,7 +870,6 @@ const Orders: React.FC = () => {
                              </div>
                         </div>
 
-                        {/* List Display */}
                         {customSkuList.length > 0 ? (
                            <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden mb-4">
                               <table className="w-full text-sm text-left">
@@ -964,40 +928,40 @@ const Orders: React.FC = () => {
                   </div>
               </div>
             )}
+        </div>
+      )}
 
-            {/* DELETE ORDER MODAL */}
-            {orderToDelete && (
-               <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-                     <div className="p-6 text-center">
-                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
-                           <Trash2 size={32} />
-                        </div>
-                        <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Order?</h3>
-                        <p className="text-slate-500 text-sm mb-6">
-                           Are you sure you want to delete this order? This action cannot be undone. <br/>
-                           <span className="text-red-600 font-bold text-xs mt-2 block">Warning: Customer loyalty points will be reverted.</span>
-                        </p>
-                        
-                        <div className="flex gap-3">
-                           <button 
-                              onClick={() => setOrderToDelete(null)}
-                              className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-                           >
-                              Cancel
-                           </button>
-                           <button 
-                              onClick={confirmDelete}
-                              className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-700 shadow-md transition-colors"
-                           >
-                              Delete
-                           </button>
-                        </div>
-                     </div>
+      {/* DELETE ORDER MODAL - Moved outside conditional blocks */}
+      {orderToDelete && (
+         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+               <div className="p-6 text-center">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                     <Trash2 size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Order?</h3>
+                  <p className="text-slate-500 text-sm mb-6">
+                     Are you sure you want to delete this order? This action cannot be undone. <br/>
+                     <span className="text-red-600 font-bold text-xs mt-2 block">Warning: Customer loyalty points will be reverted.</span>
+                  </p>
+                  
+                  <div className="flex gap-3">
+                     <button 
+                        onClick={() => setOrderToDelete(null)}
+                        className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                     >
+                        Cancel
+                     </button>
+                     <button 
+                        onClick={confirmDelete}
+                        className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-700 shadow-md transition-colors"
+                     >
+                        Delete
+                     </button>
                   </div>
                </div>
-            )}
-        </div>
+            </div>
+         </div>
       )}
     </div>
   );
