@@ -1,18 +1,23 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, CreditCard, ChevronRight, ArrowLeft, ChevronUp } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, CreditCard, ChevronRight, ArrowLeft, ChevronUp, AlertTriangle } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
-  const { orders, skus, menuItems, branches, customers, addOrder, menuCategories } = useStore();
+  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories } = useStore();
+  const { currentUser } = useAuth(); // Strict role check
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
   // -- HISTORY STATE --
   const [date, setDate] = useState<string>(getLocalISOString());
   const [selectedBranch, setSelectedBranch] = useState<string>('ALL');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('ALL');
+  
+  // -- DELETE MODAL STATE --
+  const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
 
   // -- NEW ORDER STATE --
   const [posBranchId, setPosBranchId] = useState<string>(branches[0]?.id || '');
@@ -169,10 +174,6 @@ const Orders: React.FC = () => {
      });
   };
 
-  const removeItem = (itemId: string) => {
-    setCart(prev => prev.filter(i => i.id !== itemId));
-  };
-
   const cartTotal = useMemo(() => {
      const itemsTotal = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
      const customAmt = orderCustomAmount ? orderCustomAmount.amount : 0;
@@ -223,6 +224,21 @@ const Orders: React.FC = () => {
      setIsMobileCartOpen(false); // Close mobile cart
      setShowSuccess(true);
      setTimeout(() => setShowSuccess(false), 2000);
+  };
+
+  // 1. Triggered when user clicks Trash Icon
+  const promptDelete = (e: React.MouseEvent, orderId: string) => {
+      e.preventDefault(); 
+      e.stopPropagation(); // CRITICAL: Stop event from bubbling to parent card
+      setOrderToDelete(orderId);
+  };
+
+  // 2. Triggered from Modal
+  const confirmDelete = async () => {
+      if (orderToDelete) {
+          await deleteOrder(orderToDelete);
+          setOrderToDelete(null);
+      }
   };
 
   // Filter menu items for POS
@@ -316,7 +332,7 @@ const Orders: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredOrders.map(order => (
-                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow group">
                       {/* Ticket Header */}
                       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
                         <div>
@@ -340,9 +356,22 @@ const Orders: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                        <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">
-                            <Clock size={12} />
-                            {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <div className="flex flex-col items-end gap-2">
+                           <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">
+                              <Clock size={12} />
+                              {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                           </div>
+                           
+                           {/* Delete Button (Admin Only - Strict) */}
+                           {currentUser?.role === 'ADMIN' && (
+                              <button 
+                                onClick={(e) => promptDelete(e, order.id)}
+                                className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer z-10"
+                                title="Delete Order (Admin Only)"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                           )}
                         </div>
                       </div>
 
@@ -934,6 +963,39 @@ const Orders: React.FC = () => {
                     </div>
                   </div>
               </div>
+            )}
+
+            {/* DELETE ORDER MODAL */}
+            {orderToDelete && (
+               <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                     <div className="p-6 text-center">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                           <Trash2 size={32} />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Order?</h3>
+                        <p className="text-slate-500 text-sm mb-6">
+                           Are you sure you want to delete this order? This action cannot be undone. <br/>
+                           <span className="text-red-600 font-bold text-xs mt-2 block">Warning: Customer loyalty points will be reverted.</span>
+                        </p>
+                        
+                        <div className="flex gap-3">
+                           <button 
+                              onClick={() => setOrderToDelete(null)}
+                              className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                           >
+                              Cancel
+                           </button>
+                           <button 
+                              onClick={confirmDelete}
+                              className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-700 shadow-md transition-colors"
+                           >
+                              Delete
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
             )}
         </div>
       )}

@@ -23,6 +23,7 @@ interface StoreContextType {
   // Sales & Orders
   addSalesRecords: (records: Omit<SalesRecord, 'id' | 'timestamp'>[]) => Promise<void>; // Kept for manual reconciliation
   addOrder: (orderData: Omit<Order, 'id' | 'timestamp'>) => Promise<void>; 
+  deleteOrder: (orderId: string) => Promise<void>;
   deleteSalesRecordsForDate: (date: string, branchId: string, platform?: string) => Promise<void>;
   
   addSku: (sku: Omit<SKU, 'id' | 'order'>) => Promise<void>;
@@ -638,6 +639,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setOrders(prev => [newOrder, ...prev]);
   };
 
+  const deleteOrder = async (orderId: string) => {
+    const orderToDelete = orders.find(o => o.id === orderId);
+    if (!orderToDelete) return;
+
+    // 1. Revert Customer Stats (If applicable)
+    if (orderToDelete.customerId) {
+       const customer = customers.find(c => c.id === orderToDelete.customerId);
+       if (customer) {
+           // Calculate new stats based on remaining orders
+           const remainingOrders = orders.filter(o => o.customerId === orderToDelete.customerId && o.id !== orderId);
+           
+           // Sort by timestamp desc to find the new lastOrderDate
+           remainingOrders.sort((a,b) => b.timestamp - a.timestamp);
+           const newLastOrderDate = remainingOrders.length > 0 ? remainingOrders[0].date : '-';
+           
+           const updatedCust = {
+               ...customer,
+               totalSpend: Math.max(0, customer.totalSpend - orderToDelete.totalAmount),
+               orderCount: Math.max(0, customer.orderCount - 1),
+               lastOrderDate: newLastOrderDate
+           };
+           await updateCustomer(updatedCust);
+       }
+    }
+
+    // 2. Remove from Supabase
+    if (isSupabaseConfigured()) {
+       await supabase.from('orders').delete().eq('id', orderId);
+    }
+
+    // 3. Remove from Local State
+    setOrders(prev => prev.filter(o => o.id !== orderId));
+  };
+
   // --- POS LISTENER (Legacy / External Bridge) ---
   useEffect(() => {
     const handlePosMessage = async (event: MessageEvent) => {
@@ -1030,7 +1065,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StoreContext.Provider value={{ 
       skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords,
-      addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteSalesRecordsForDate, 
+      addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
