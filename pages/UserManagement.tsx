@@ -3,8 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Permission } from '../types';
-import { ALL_PERMISSIONS, ROLE_PRESETS } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
@@ -23,7 +23,8 @@ const UserManagement: React.FC = () => {
       code: '',
       role: 'STAFF',
       permissions: [...ROLE_PRESETS.STAFF],
-      defaultBranchId: ''
+      defaultBranchId: '',
+      defaultPage: '/'
     });
     setIsEditing(true);
   };
@@ -263,7 +264,7 @@ const UserManagement: React.FC = () => {
               </div>
 
               {/* Default Branch Selection */}
-              <div className="md:col-span-2">
+              <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
                      <Store size={14} /> Default Branch / Location
                   </label>
@@ -278,6 +279,23 @@ const UserManagement: React.FC = () => {
                      ))}
                   </select>
                   <p className="text-xs text-slate-500 mt-1">Pre-selects this location when the user takes attendance.</p>
+              </div>
+
+              {/* Default Page Selection */}
+              <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                     <LayoutDashboard size={14} /> Default Landing Page
+                  </label>
+                  <select 
+                     value={selectedUser.defaultPage || '/'}
+                     onChange={e => setSelectedUser({...selectedUser, defaultPage: e.target.value})}
+                     className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                  >
+                     {APP_PAGES.map(page => (
+                        <option key={page.path} value={page.path}>{page.label}</option>
+                     ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">Where to redirect this user after login.</p>
               </div>
             </div>
 

@@ -130,7 +130,19 @@ export const INITIAL_ADMIN_USER: User = {
   code: 'admin', // Alphanumeric code
   role: 'ADMIN',
   permissions: ROLE_PRESETS.ADMIN,
+  defaultPage: '/'
 };
+
+export const APP_PAGES = [
+  { path: '/', label: 'Dashboard' },
+  { path: '/orders', label: 'POS & Orders' },
+  { path: '/operations', label: 'Operations (Check In/Out)' },
+  { path: '/attendance', label: 'Attendance' },
+  { path: '/wastage', label: 'Wastage Report' },
+  { path: '/inventory', label: 'Fridge Inventory' },
+  { path: '/reconciliation', label: 'Sales Reconciliation' },
+  { path: '/logs', label: 'Logs' },
+];
 
 // --- Utilities ---
 

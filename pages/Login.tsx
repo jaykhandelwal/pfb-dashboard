@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Lock, ArrowRight, KeyRound } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, users } = useAuth();
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -19,7 +20,10 @@ const Login: React.FC = () => {
     setLoading(false);
 
     if (success) {
-      navigate('/');
+      // Determine redirect path
+      const user = users.find(u => u.code.toLowerCase() === code.toLowerCase());
+      const targetPath = user?.defaultPage || '/';
+      navigate(targetPath);
     } else {
       setError('Invalid Access Code. Please try again.');
       setCode('');

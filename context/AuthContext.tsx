@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Permission } from '../types';
 import { INITIAL_ADMIN_USER } from '../constants';
@@ -41,7 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                  code: u.code,
                  role: u.role,
                  permissions: u.permissions,
-                 defaultBranchId: u.default_branch_id
+                 defaultBranchId: u.default_branch_id,
+                 defaultPage: u.default_page // Map from DB
               }));
             } else {
               // If DB is empty, seed with Initial Admin (First Run)
@@ -168,7 +170,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             code: newUser.code,
             role: newUser.role,
             permissions: newUser.permissions,
-            default_branch_id: newUser.defaultBranchId
+            default_branch_id: newUser.defaultBranchId,
+            default_page: newUser.defaultPage
         });
         if (!error) {
             setUsers(prev => [...prev, newUser]);
@@ -186,7 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             code: updatedUser.code,
             role: updatedUser.role,
             permissions: updatedUser.permissions,
-            default_branch_id: updatedUser.defaultBranchId
+            default_branch_id: updatedUser.defaultBranchId,
+            default_page: updatedUser.defaultPage
         }).eq('id', updatedUser.id);
 
         if (!error) {

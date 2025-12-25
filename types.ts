@@ -217,6 +217,7 @@ export interface User {
   role: Role;
   permissions: Permission[];
   defaultBranchId?: string; // Optional default location for this user
+  defaultPage?: string; // Optional default page after login
 }
 
 // Add global window extension for Android Bridge
