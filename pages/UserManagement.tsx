@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
@@ -24,7 +26,7 @@ const UserManagement: React.FC = () => {
       role: 'STAFF',
       permissions: [...ROLE_PRESETS.STAFF],
       defaultBranchId: '',
-      defaultPage: '/'
+      defaultPage: '/dashboard'
     });
     setIsEditing(true);
   };
@@ -287,7 +289,7 @@ const UserManagement: React.FC = () => {
                      <LayoutDashboard size={14} /> Default Landing Page
                   </label>
                   <select 
-                     value={selectedUser.defaultPage || '/'}
+                     value={selectedUser.defaultPage || '/dashboard'}
                      onChange={e => setSelectedUser({...selectedUser, defaultPage: e.target.value})}
                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                   >

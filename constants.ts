@@ -1,4 +1,5 @@
 
+
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -130,11 +131,11 @@ export const INITIAL_ADMIN_USER: User = {
   code: 'admin', // Alphanumeric code
   role: 'ADMIN',
   permissions: ROLE_PRESETS.ADMIN,
-  defaultPage: '/'
+  defaultPage: '/dashboard'
 };
 
 export const APP_PAGES = [
-  { path: '/', label: 'Dashboard' },
+  { path: '/dashboard', label: 'Dashboard' },
   { path: '/orders', label: 'POS & Orders' },
   { path: '/operations', label: 'Operations (Check In/Out)' },
   { path: '/attendance', label: 'Attendance' },

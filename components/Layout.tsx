@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
@@ -43,7 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }
 
   const navStructure: NavItem[] = [
-    { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
     { path: '/attendance', label: 'Attendance', icon: <UserCheck size={20} />, permission: 'MANAGE_ATTENDANCE' },
     { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },

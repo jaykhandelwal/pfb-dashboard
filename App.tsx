@@ -2,6 +2,8 @@
 
 
 
+
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -23,7 +25,20 @@ import Attendance from './pages/Attendance';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+
+// Root Redirect Component
+const RootRedirect = () => {
+  const { currentUser } = useAuth();
+  
+  // If user has no preference or legacy preference ('/'), default to dashboard
+  // Otherwise respect their choice (e.g. /orders)
+  const target = (!currentUser?.defaultPage || currentUser.defaultPage === '/') 
+    ? '/dashboard' 
+    : currentUser.defaultPage;
+    
+  return <Navigate to={target} replace />;
+};
 
 function App() {
   return (
@@ -34,7 +49,15 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               
+              {/* Root Redirector - Redirects to default page */}
               <Route path="/" element={
+                <ProtectedRoute>
+                  <RootRedirect />
+                </ProtectedRoute>
+              } />
+
+              {/* Explicit Dashboard Route */}
+              <Route path="/dashboard" element={
                 <ProtectedRoute requiredPermission="VIEW_DASHBOARD">
                   <Dashboard />
                 </ProtectedRoute>
