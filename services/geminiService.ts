@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { DailyReportItem, SKU } from "../types";
 
@@ -66,11 +67,14 @@ export const parseSalesReportImage = async (
       - If multiple image items map to one SKU, sum their quantities.
     `;
 
+    // Safely extract base64 data if it contains the data:image prefix
+    const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: {
         parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image.split(',')[1] } },
+          { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
           { text: prompt }
         ]
       }

@@ -130,7 +130,7 @@ const MenuManagement: React.FC = () => {
             category: catName,
             label: item.name,
             name: cleanName,
-            item_image: `${item.id}.png`,
+            item_image: `${item.id}.jpg`, // Changed to .jpg
             includes: {}
         };
 
@@ -198,7 +198,7 @@ const MenuManagement: React.FC = () => {
             category: "Addons",
             label: "Custom Amount",
             name: "Custom Amount",
-            item_image: "custom_amount.png",
+            item_image: "custom_amount.jpg", // Changed to .jpg
             is_modal: true,
             includes: {
                 plate: { price: 0, quantity: 0 }
@@ -209,7 +209,7 @@ const MenuManagement: React.FC = () => {
             category: "Addons",
             label: "Custom Pieces",
             name: "Custom Pieces",
-            item_image: "custom_pieces.png",
+            item_image: "custom_pieces.jpg", // Changed to .jpg
             is_modal: true,
             includes: {
                 plate: { price: 0, quantity: 0 }
