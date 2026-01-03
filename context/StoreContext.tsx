@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
@@ -78,9 +77,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Derived State
   const salesRecords = useMemo(() => {
      const derived = orders.flatMap(order => {
-        const safeItems = order.items || [];
+        const safeItems = Array.isArray(order.items) ? order.items : [];
         const itemRecords = safeItems.flatMap(item => {
-           if (item.consumed && item.consumed.length > 0) {
+           // SAFETY CHECK: Ensure item.consumed is strictly an array before mapping
+           if (Array.isArray(item.consumed) && item.consumed.length > 0) {
               return item.consumed.map(c => ({
                  id: `${order.id}-${item.id}-${c.skuId}`,
                  orderId: order.id,
@@ -115,7 +115,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         const customRecords: SalesRecord[] = [];
-        if (order.customSkuItems && order.customSkuItems.length > 0) {
+        if (Array.isArray(order.customSkuItems) && order.customSkuItems.length > 0) {
             order.customSkuItems.forEach((item, index) => {
                  customRecords.push({
                     id: `${order.id}-custom-sku-${index}`,

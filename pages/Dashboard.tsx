@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
@@ -274,12 +273,15 @@ const Dashboard: React.FC = () => {
         if (!reconMap[dateKey]) reconMap[dateKey] = { date: dateKey, physicalUsage: 0, recordedSales: 0 };
         
         let rawPiecesSold = 0;
-        o.items.forEach(item => {
-            if(item.consumed) {
-                rawPiecesSold += item.consumed.reduce((sum, c) => sum + c.quantity, 0);
-            }
-        });
-        if(o.customSkuItems) {
+        if (o.items && Array.isArray(o.items)) {
+            o.items.forEach(item => {
+                // SAFETY: Ensure consumed is an array before reducing
+                if(item.consumed && Array.isArray(item.consumed)) {
+                    rawPiecesSold += item.consumed.reduce((sum, c) => sum + c.quantity, 0);
+                }
+            });
+        }
+        if(o.customSkuItems && Array.isArray(o.customSkuItems)) {
             rawPiecesSold += o.customSkuItems.reduce((sum, c) => sum + c.quantity, 0);
         }
 

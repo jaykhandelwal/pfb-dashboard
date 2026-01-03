@@ -106,6 +106,15 @@ Use these JSON payloads when sending data to the `orders` table via Supabase RES
 
 **Note:** The keys below use `snake_case` (e.g., `branch_id`, `custom_amount`) matching the database columns.
 
+### 🚨 CRITICAL: Inventory Consumption Logic
+The Android app **MUST** calculate the `consumed` array for every item before sending it to Supabase. 
+1. Fetch the `menu_items` table.
+2. Read the `ingredients` JSON for the selected item.
+3. Multiply ingredient quantities by the order quantity.
+4. Attach this list as the `consumed` property in the payload.
+
+**If `consumed` is missing or null, the web dashboard will not be able to track inventory deductions.**
+
 ### Scenario 1: Standard Order
 *2 Plates of Veg Steam Momos (No custom extras) paid via UPI*
 
@@ -126,6 +135,10 @@ Use these JSON payloads when sending data to the `orders` table via Supabase RES
       "price": 100,
       "quantity": 2,
       "variant": "FULL",
+      
+      // ---------------------------------------------------------
+      // IMPORTANT: This array is mandatory for inventory tracking
+      // ---------------------------------------------------------
       "consumed": [
         { "skuId": "sku-1", "quantity": 20 } 
       ]
