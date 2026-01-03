@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Permission } from '../types';
 import { INITIAL_ADMIN_USER } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -36,15 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (error) throw error;
             
             if (data && data.length > 0) {
-              fetchedUsers = data.map((u: any) => ({
-                 id: u.id,
-                 name: u.name,
-                 code: u.code,
-                 role: u.role,
-                 permissions: u.permissions,
-                 defaultBranchId: u.default_branch_id,
-                 defaultPage: u.default_page // Map from DB
-              }));
+              fetchedUsers = data.map(mapUser);
             } else {
               // If DB is empty, seed with Initial Admin (First Run)
               const { error: seedError } = await supabase.from('users').insert(INITIAL_ADMIN_USER);
@@ -112,6 +105,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initializeAuth();
   }, []);
 
+  // --- Realtime User Updates ---
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    const channel = supabase.channel('auth-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+         const { eventType, new: newRecord, old: oldRecord } = payload;
+         
+         setUsers(prev => {
+            if (eventType === 'INSERT') {
+               const mapped = mapUser(newRecord);
+               if (prev.some(u => u.id === mapped.id)) return prev;
+               return [...prev, mapped];
+            } else if (eventType === 'UPDATE') {
+               const mapped = mapUser(newRecord);
+               
+               // If the current logged in user was updated, reflect changes immediately
+               if (currentUser && currentUser.id === mapped.id) {
+                  setCurrentUser(mapped);
+                  persistSession(mapped);
+               }
+               
+               return prev.map(u => u.id === mapped.id ? mapped : u);
+            } else if (eventType === 'DELETE') {
+               return prev.filter(u => u.id !== oldRecord.id);
+            }
+            return prev;
+         });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
   // PostMessage Listener for dynamic login events
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -126,6 +155,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [users]);
+
+  // Mapper
+  const mapUser = (u: any): User => ({
+     id: u.id,
+     name: u.name,
+     code: u.code,
+     role: u.role,
+     permissions: u.permissions,
+     defaultBranchId: u.default_branch_id,
+     defaultPage: u.default_page
+  });
 
   const persistSession = (user: User) => {
     localStorage.setItem('pakaja_session', JSON.stringify({

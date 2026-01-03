@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface StoreContextType {
   skus: SKU[];
@@ -16,7 +17,7 @@ interface StoreContextType {
   membershipRules: MembershipRule[];
   deletedTransactions: ArchivedTransaction[];
   attendanceRecords: AttendanceRecord[];
-  attendanceOverrides: AttendanceOverride[]; // New State
+  attendanceOverrides: AttendanceOverride[];
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -53,7 +54,7 @@ interface StoreContextType {
   deleteMembershipRule: (id: string) => Promise<void>;
 
   addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
-  setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => Promise<void>; // New
+  setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => Promise<void>;
 
   resetData: () => Promise<void>;
 }
@@ -131,6 +132,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
         }
         else if ((order as any).customSkuId && (order as any).customSkuQuantity) {
+             // Legacy support
              customRecords.push({
                 id: `${order.id}-custom-sku-legacy`,
                 orderId: order.id,
@@ -155,8 +157,216 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetchData();
   }, []);
 
+  // --- Realtime Subscriptions ---
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    // We subscribe to changes on all relevant tables
+    const channel = supabase.channel('store-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+         handleRealtimeEvent(payload, setTransactions, mapTransaction);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+         handleRealtimeEvent(payload, setOrders, mapOrder);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_records' }, (payload) => {
+         handleRealtimeEvent(payload, setManualSalesRecords, mapSalesRecord);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'skus' }, (payload) => {
+         handleRealtimeEvent(payload, setSkus, mapSku, 'order'); 
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, (payload) => {
+         handleRealtimeEvent(payload, setMenuItems, mapMenuItem);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_categories' }, (payload) => {
+         handleRealtimeEvent(payload, setMenuCategories, mapMenuCategory);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, (payload) => {
+         handleRealtimeEvent(payload, setBranches, mapBranch);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+         handleRealtimeEvent(payload, setCustomers, mapCustomer);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'membership_rules' }, (payload) => {
+         handleRealtimeEvent(payload, setMembershipRules, mapMembershipRule);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, (payload) => {
+         handleRealtimeEvent(payload, setAttendanceRecords, mapAttendance);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_overrides' }, (payload) => {
+         handleRealtimeEvent(payload, setAttendanceOverrides, mapAttendanceOverride);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deleted_transactions' }, (payload) => {
+         handleRealtimeEvent(payload, setDeletedTransactions, mapDeletedTransaction);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Generic Realtime Handler
+  const handleRealtimeEvent = (
+    payload: RealtimePostgresChangesPayload<any>,
+    setState: React.Dispatch<React.SetStateAction<any[]>>,
+    mapper: (data: any) => any,
+    sortField?: string
+  ) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    setState((prev) => {
+      if (eventType === 'INSERT') {
+        const mapped = mapper(newRecord);
+        // SAFETY CHECK: Prevent duplicates if optimistic update already added it
+        if (prev.some(item => item.id === mapped.id)) return prev;
+        
+        const newState = [mapped, ...prev];
+        // Sort if needed (e.g. for SKUs or Categories which respect 'order')
+        if(sortField) {
+            return newState.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+        }
+        return newState;
+      } 
+      else if (eventType === 'UPDATE') {
+        const mapped = mapper(newRecord);
+        return prev.map((item) => (item.id === mapped.id ? mapped : item));
+      } 
+      else if (eventType === 'DELETE') {
+        return prev.filter((item) => item.id !== oldRecord.id);
+      }
+      return prev;
+    });
+  };
+
+  // --- Mappers (Snake Case -> Camel Case) ---
+  // Ensure DB data matches Type definitions
+  const mapTransaction = (t: any): Transaction => ({
+    id: t.id,
+    batchId: t.batch_id,
+    timestamp: t.timestamp,
+    date: t.date,
+    branchId: t.branch_id,
+    skuId: t.sku_id,
+    type: t.type,
+    quantityPieces: t.quantity_pieces,
+    imageUrls: t.image_urls || [],
+    userId: t.user_id,
+    userName: t.user_name
+  });
+
+  const mapOrder = (o: any): Order => ({
+    id: o.id,
+    branchId: o.branch_id,
+    customerId: o.customer_id,
+    customerName: o.customer_name,
+    platform: o.platform,
+    totalAmount: o.total_amount,
+    status: o.status,
+    paymentMethod: o.payment_method,
+    paymentSplit: o.payment_split || [],
+    date: o.date,
+    timestamp: o.timestamp,
+    items: o.items || [],
+    customAmount: o.custom_amount,
+    customAmountReason: o.custom_amount_reason,
+    customSkuItems: o.custom_sku_items,
+    customSkuReason: o.custom_sku_reason
+  });
+
+  const mapSalesRecord = (r: any): SalesRecord => ({
+    id: r.id,
+    orderId: r.order_id,
+    date: r.date,
+    branchId: r.branch_id,
+    platform: r.platform,
+    skuId: r.sku_id,
+    quantitySold: r.quantity_sold,
+    timestamp: r.timestamp,
+    customerId: r.customer_id,
+    orderAmount: r.order_amount
+  });
+
+  const mapSku = (s: any): SKU => ({
+    id: s.id,
+    name: s.name,
+    category: s.category,
+    dietary: s.dietary,
+    piecesPerPacket: s.pieces_per_packet,
+    order: s.order
+  });
+
+  const mapMenuItem = (m: any): MenuItem => ({
+    id: m.id,
+    name: m.name,
+    price: m.price,
+    halfPrice: m.half_price,
+    description: m.description,
+    category: m.category,
+    ingredients: m.ingredients || [],
+    halfIngredients: m.half_ingredients || []
+  });
+
+  const mapMenuCategory = (c: any): MenuCategory => ({
+    id: c.id,
+    name: c.name,
+    order: c.order,
+    color: c.color
+  });
+
+  const mapBranch = (b: any): Branch => ({
+    id: b.id,
+    name: b.name
+  });
+
+  const mapCustomer = (c: any): Customer => ({
+    id: c.id,
+    name: c.name,
+    phoneNumber: c.phone_number,
+    totalSpend: c.total_spend,
+    orderCount: c.order_count,
+    joinedAt: c.joined_at,
+    lastOrderDate: c.last_order_date
+  });
+
+  const mapMembershipRule = (r: any): MembershipRule => ({
+    id: r.id,
+    triggerOrderCount: r.trigger_order_count,
+    type: r.type,
+    value: r.value,
+    description: r.description,
+    timeFrameDays: r.time_frame_days
+  });
+
+  const mapAttendance = (a: any): AttendanceRecord => ({
+    id: a.id,
+    userId: a.user_id,
+    userName: a.user_name,
+    branchId: a.branch_id,
+    date: a.date,
+    timestamp: a.timestamp,
+    imageUrl: a.image_url
+  });
+
+  const mapAttendanceOverride = (o: any): AttendanceOverride => ({
+    id: o.id,
+    userId: o.user_id,
+    date: o.date,
+    type: o.type,
+    note: o.note
+  });
+
+  const mapDeletedTransaction = (t: any): ArchivedTransaction => ({
+    ...mapTransaction(t),
+    deletedAt: t.deleted_at,
+    deletedBy: t.deleted_by
+  });
+
+  // --- End Realtime Logic ---
+
   const fetchData = async () => {
     if (!isSupabaseConfigured()) {
+        // Fallback for offline/demo mode
         if (skus.length === 0) setSkus(INITIAL_SKUS);
         if (menuItems.length === 0) setMenuItems(INITIAL_MENU_ITEMS);
         if (menuCategories.length === 0) setMenuCategories(INITIAL_MENU_CATEGORIES);
@@ -167,142 +377,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      const { data: skusData, error: skuError } = await supabase.from('skus').select('*').order('order', { ascending: true });
-      if (skusData) setSkus(skusData.map((s: any) => ({ ...s, piecesPerPacket: s.pieces_per_packet })));
+      // Fetch and Map Data
+      const { data: skusData } = await supabase.from('skus').select('*').order('order', { ascending: true });
+      if (skusData) setSkus(skusData.map(mapSku));
       else setSkus(INITIAL_SKUS);
 
       const { data: menuData } = await supabase.from('menu_items').select('*');
-      if (menuData) {
-        setMenuItems(menuData.map((m: any) => ({
-            ...m,
-            ingredients: m.ingredients || [],
-            halfIngredients: m.half_ingredients || [], 
-            halfPrice: m.half_price,
-            category: m.category || 'Uncategorized' 
-        })));
-      } else setMenuItems(INITIAL_MENU_ITEMS);
+      if (menuData) setMenuItems(menuData.map(mapMenuItem)); 
+      else setMenuItems(INITIAL_MENU_ITEMS);
 
       const { data: catData } = await supabase.from('menu_categories').select('*').order('order', { ascending: true });
-      if (catData && catData.length > 0) setMenuCategories(catData);
+      if (catData && catData.length > 0) setMenuCategories(catData.map(mapMenuCategory));
       else if (menuItems.length === 0) setMenuCategories(INITIAL_MENU_CATEGORIES);
 
       const { data: branchData } = await supabase.from('branches').select('*');
-      if (branchData) setBranches(branchData);
+      if (branchData) setBranches(branchData.map(mapBranch));
       else setBranches(INITIAL_BRANCHES);
 
       const { data: txData } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
-      if (txData) {
-        setTransactions(txData.map((t: any) => ({
-          ...t,
-          batchId: t.batch_id,
-          skuId: t.sku_id,
-          branchId: t.branch_id,
-          quantityPieces: t.quantity_pieces,
-          imageUrls: t.image_urls,
-          userId: t.user_id,
-          userName: t.user_name
-        })));
-      }
+      if (txData) setTransactions(txData.map(mapTransaction));
 
       const { data: delData } = await supabase.from('deleted_transactions').select('*').order('deleted_at', { ascending: false });
-      if (delData) {
-         setDeletedTransactions(delData.map((t: any) => ({
-            ...t,
-            batchId: t.batch_id,
-            skuId: t.sku_id,
-            branchId: t.branch_id,
-            quantityPieces: t.quantity_pieces,
-            imageUrls: t.image_urls,
-            userId: t.user_id,
-            userName: t.user_name,
-            deletedAt: t.deleted_at,
-            deletedBy: t.deleted_by
-         })));
-      }
+      if (delData) setDeletedTransactions(delData.map(mapDeletedTransaction));
 
       const { data: manualData } = await supabase.from('sales_records').select('*');
-      if (manualData) {
-         setManualSalesRecords(manualData.map((r: any) => ({
-             id: r.id,
-             orderId: r.order_id,
-             date: r.date,
-             branchId: r.branch_id,
-             platform: r.platform,
-             skuId: r.sku_id,
-             quantitySold: r.quantity_sold,
-             timestamp: r.timestamp,
-             customerId: r.customer_id,
-             orderAmount: r.order_amount
-         })));
-      }
+      if (manualData) setManualSalesRecords(manualData.map(mapSalesRecord));
 
       const { data: ordersData } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
-      if (ordersData) {
-         setOrders(ordersData.map((o: any) => ({
-             id: o.id,
-             branchId: o.branch_id,
-             customerId: o.customer_id,
-             customerName: o.customer_name,
-             platform: o.platform,
-             totalAmount: o.total_amount,
-             status: o.status,
-             paymentMethod: o.payment_method || 'CASH',
-             paymentSplit: o.payment_split || [],
-             date: o.date,
-             timestamp: o.timestamp,
-             items: o.items || [], 
-             customAmount: o.custom_amount,
-             customAmountReason: o.custom_amount_reason,
-             customSkuItems: o.custom_sku_items || (o.custom_sku_id ? [{ skuId: o.custom_sku_id, quantity: o.custom_sku_quantity }] : []),
-             customSkuReason: o.custom_sku_reason
-         })));
-      }
+      if (ordersData) setOrders(ordersData.map(mapOrder));
 
       const { data: custData } = await supabase.from('customers').select('*');
-      if (custData) {
-        setCustomers(custData.map((c: any) => ({
-           ...c,
-           phoneNumber: c.phone_number,
-           totalSpend: c.total_spend,
-           orderCount: c.order_count,
-           joinedAt: c.joined_at,
-           lastOrderDate: c.last_order_date
-        })));
-      } else setCustomers(INITIAL_CUSTOMERS);
+      if (custData) setCustomers(custData.map(mapCustomer)); 
+      else setCustomers(INITIAL_CUSTOMERS);
 
       const { data: rulesData } = await supabase.from('membership_rules').select('*');
-      if (rulesData) {
-        setMembershipRules(rulesData.map((r: any) => ({
-           ...r,
-           triggerOrderCount: r.trigger_order_count,
-           timeFrameDays: r.time_frame_days
-        })));
-      } else setMembershipRules(INITIAL_MEMBERSHIP_RULES);
+      if (rulesData) setMembershipRules(rulesData.map(mapMembershipRule));
+      else setMembershipRules(INITIAL_MEMBERSHIP_RULES);
 
       const { data: attData } = await supabase.from('attendance').select('*').order('timestamp', { ascending: false });
-      if (attData) {
-          setAttendanceRecords(attData.map((a: any) => ({
-            id: a.id,
-            userId: a.user_id,
-            user_name: a.user_name,
-            branchId: a.branch_id,
-            date: a.date,
-            timestamp: a.timestamp,
-            imageUrl: a.image_url
-          })));
-      }
+      if (attData) setAttendanceRecords(attData.map(mapAttendance));
 
-      // Fetch Attendance Overrides
       const { data: overrideData } = await supabase.from('attendance_overrides').select('*');
-      if (overrideData) {
-          setAttendanceOverrides(overrideData.map((o: any) => ({
-             id: o.id,
-             userId: o.user_id,
-             date: o.date,
-             type: o.type,
-             note: o.note
-          })));
-      }
+      if (overrideData) setAttendanceOverrides(overrideData.map(mapAttendanceOverride));
 
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
@@ -313,6 +429,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
     return Date.now().toString(36) + Math.random().toString(36).substring(2);
   };
+
+  // ... (Rest of operations remain the same, just ensuring db inserts use snake_case)
 
   const addBatchTransactions = async (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => {
     if (txs.length === 0) return;
@@ -337,19 +455,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        await supabase.from('transactions').insert(dbRows);
     }
     
-    const localTxs: Transaction[] = dbRows.map(r => ({
-        id: r.id,
-        batchId: r.batch_id,
-        timestamp: r.timestamp,
-        date: r.date,
-        branchId: r.branch_id,
-        skuId: r.sku_id,
-        type: r.type as any,
-        quantityPieces: r.quantity_pieces,
-        imageUrls: r.image_urls,
-        userId: r.user_id,
-        userName: r.user_name
-    }));
+    // Optimistic Update
+    const localTxs: Transaction[] = dbRows.map(r => mapTransaction(r));
     setTransactions(prev => [...localTxs, ...prev]);
   };
 
@@ -527,7 +634,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               total_amount: newOrder.totalAmount,
               status: newOrder.status,
               payment_method: newOrder.paymentMethod,
-              payment_split: newOrder.paymentSplit, // Add split payment field
+              payment_split: newOrder.paymentSplit,
               date: newOrder.date,
               timestamp: newOrder.timestamp,
               items: newOrder.items,
@@ -842,7 +949,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setAttendanceStatus = async (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => {
       // 1. Update Local State
       if (type === null) {
-          // Remove override
           setAttendanceOverrides(prev => prev.filter(o => !(o.userId === userId && o.date === date)));
           if (isSupabaseConfigured()) {
              await supabase.from('attendance_overrides').delete().match({ user_id: userId, date: date });
@@ -857,13 +963,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
           
           setAttendanceOverrides(prev => {
-              // Remove existing for same day, add new
               const filtered = prev.filter(o => !(o.userId === userId && o.date === date));
               return [...filtered, newOverride];
           });
 
           if (isSupabaseConfigured()) {
-             // Upsert mechanism manually: Delete old, Insert new
+             // Upsert mechanism manually
              await supabase.from('attendance_overrides').delete().match({ user_id: userId, date: date });
              await supabase.from('attendance_overrides').insert({
                 id: newOverride.id,
