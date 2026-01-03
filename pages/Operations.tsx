@@ -94,12 +94,19 @@ const Operations: React.FC = () => {
     const returns: Record<string, { qty: number, date: string }> = {};
     if (type !== TransactionType.CHECK_OUT) return returns;
 
+    // Fix: Strictly look for returns from the PREVIOUS DAY relative to selected date
+    // This prevents showing stale returns from 2+ days ago if yesterday had 0 returns.
+    const [y, m, d] = date.split('-').map(Number);
+    const prevDateObj = new Date(y, m - 1, d - 1);
+    const targetDate = getLocalISOString(prevDateObj);
+
     skus.forEach(sku => {
-      // STRICT FILTER: Only consider returns for the currently selected branchId
+      // STRICT FILTER: Only consider returns for the currently selected branchId AND targetDate
       const lastTx = transactions.find(t => 
         t.type === TransactionType.CHECK_IN && 
         t.skuId === sku.id && 
-        t.branchId === branchId 
+        t.branchId === branchId &&
+        t.date === targetDate
       );
       if (lastTx) {
         returns[sku.id] = { 
@@ -109,7 +116,7 @@ const Operations: React.FC = () => {
       }
     });
     return returns;
-  }, [transactions, branchId, skus, type]);
+  }, [transactions, branchId, skus, type, date]);
 
   // Calculate Limits (Total Taken per SKU for this Date/Branch)
   const maxTransactionLimits = useMemo(() => {
@@ -466,7 +473,7 @@ const Operations: React.FC = () => {
                                   type="button"
                                   onClick={() => useLastReturn(sku.id, lastReturnQty)}
                                   className="absolute -top-7 right-0 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors whitespace-nowrap z-10 shadow-sm"
-                                  title="Add return from last check-in"
+                                  title="Add return from yesterday"
                                 >
                                   <Plus size={10} /> Add Return: {lastReturnQty}
                                 </button>
@@ -505,7 +512,7 @@ const Operations: React.FC = () => {
                             <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400" />
                           )}
                            {/* Category Badge */}
-                          <span className={`text-[10px] px-1.5 py-0 rounded border font-bold uppercase tracking-wide leading-none ${categoryColor}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide leading-none ${categoryColor}`}>
                               {sku.category}
                           </span>
                         </div>

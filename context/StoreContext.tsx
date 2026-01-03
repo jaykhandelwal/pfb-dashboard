@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory } from '../types';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -16,6 +16,7 @@ interface StoreContextType {
   membershipRules: MembershipRule[];
   deletedTransactions: ArchivedTransaction[];
   attendanceRecords: AttendanceRecord[];
+  attendanceOverrides: AttendanceOverride[]; // New State
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -52,6 +53,7 @@ interface StoreContextType {
   deleteMembershipRule: (id: string) => Promise<void>;
 
   addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
+  setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => Promise<void>; // New
 
   resetData: () => Promise<void>;
 }
@@ -70,6 +72,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [membershipRules, setMembershipRules] = useState<MembershipRule[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverride[]>([]);
 
   // Derived State
   const salesRecords = useMemo(() => {
@@ -244,6 +247,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              totalAmount: o.total_amount,
              status: o.status,
              paymentMethod: o.payment_method || 'CASH',
+             paymentSplit: o.payment_split || [],
              date: o.date,
              timestamp: o.timestamp,
              items: o.items || [], 
@@ -287,6 +291,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             imageUrl: a.image_url
           })));
       }
+
+      // Fetch Attendance Overrides
+      const { data: overrideData } = await supabase.from('attendance_overrides').select('*');
+      if (overrideData) {
+          setAttendanceOverrides(overrideData.map((o: any) => ({
+             id: o.id,
+             userId: o.user_id,
+             date: o.date,
+             type: o.type,
+             note: o.note
+          })));
+      }
+
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
     }
@@ -510,6 +527,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               total_amount: newOrder.totalAmount,
               status: newOrder.status,
               payment_method: newOrder.paymentMethod,
+              payment_split: newOrder.paymentSplit, // Add split payment field
               date: newOrder.date,
               timestamp: newOrder.timestamp,
               items: newOrder.items,
@@ -821,6 +839,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setAttendanceRecords(prev => [newRecord, ...prev]);
   };
 
+  const setAttendanceStatus = async (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => {
+      // 1. Update Local State
+      if (type === null) {
+          // Remove override
+          setAttendanceOverrides(prev => prev.filter(o => !(o.userId === userId && o.date === date)));
+          if (isSupabaseConfigured()) {
+             await supabase.from('attendance_overrides').delete().match({ user_id: userId, date: date });
+          }
+      } else {
+          const newOverride: AttendanceOverride = {
+             id: generateId(),
+             userId,
+             date,
+             type,
+             note
+          };
+          
+          setAttendanceOverrides(prev => {
+              // Remove existing for same day, add new
+              const filtered = prev.filter(o => !(o.userId === userId && o.date === date));
+              return [...filtered, newOverride];
+          });
+
+          if (isSupabaseConfigured()) {
+             // Upsert mechanism manually: Delete old, Insert new
+             await supabase.from('attendance_overrides').delete().match({ user_id: userId, date: date });
+             await supabase.from('attendance_overrides').insert({
+                id: newOverride.id,
+                user_id: newOverride.userId,
+                date: newOverride.date,
+                type: newOverride.type,
+                note: newOverride.note
+             });
+          }
+      }
+  };
+
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
@@ -834,6 +889,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('customers').delete().neq('id', '0');
         await supabase.from('membership_rules').delete().neq('id', '0');
         await supabase.from('attendance').delete().neq('id', '0');
+        await supabase.from('attendance_overrides').delete().neq('id', '0');
     }
     setTransactions([]);
     setManualSalesRecords([]);
@@ -846,16 +902,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomers([]);
     setMembershipRules([]);
     setAttendanceRecords([]);
+    setAttendanceOverrides([]);
   };
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
-      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, resetData 
+      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, resetData 
     }}>
       {children}
     </StoreContext.Provider>

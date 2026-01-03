@@ -88,7 +88,8 @@ The Single Source of Truth for revenue.
 - `platform` (text): 'POS', 'ZOMATO', 'SWIGGY'.
 - `total_amount` (numeric).
 - `status` (text).
-- `payment_method` (text).
+- `payment_method` (text): 'CASH', 'UPI', 'CARD', 'SPLIT'.
+- `payment_split` (jsonb): Array of `{ method: string, amount: number }` for split payments.
 - `date` (text).
 - `timestamp` (bigint).
 - `items` (jsonb): **Crucial.** Contains the snapshot of ingredients consumed.
@@ -97,6 +98,12 @@ The Single Source of Truth for revenue.
 - `custom_sku_items` (jsonb): Array of raw SKUs used manually.
 - `custom_sku_reason` (text).
 - `created_at` (timestamptz).
+
+#### Migration: Payment Split
+To enable split payments, run this query:
+```sql
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_split JSONB DEFAULT '[]'::jsonb;
+```
 
 ### `sales_records`
 *Used primarily for Manual Entries in the Reconciliation Page.*

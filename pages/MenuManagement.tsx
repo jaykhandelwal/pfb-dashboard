@@ -1,19 +1,27 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, MenuIngredient } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Copy, Check, KeyRound, Divide, FileJson, Upload, AlertCircle, Tag } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Check, KeyRound, Divide, FileJson, Download, Tag, Copy } from 'lucide-react';
+
+// Helper to escape regex characters
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
 const MenuManagement: React.FC = () => {
   const { menuItems, skus, addMenuItem, updateMenuItem, deleteMenuItem, menuCategories } = useStore();
   const [isEditing, setIsEditing] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [currentItem, setCurrentItem] = useState<Partial<MenuItem>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
-  // Import State
-  const [jsonInput, setJsonInput] = useState('');
-  const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+  // Export Prompt State
+  const [showExportPrompt, setShowExportPrompt] = useState(false);
+  
+  // JSON Preview Modal State
+  const [showJsonModal, setShowJsonModal] = useState(false);
+  const [jsonData, setJsonData] = useState('');
+  const [jsonCopied, setJsonCopied] = useState(false);
   
   // Local state for ingredients editing
   const [ingredients, setIngredients] = useState<MenuIngredient[]>([]);
@@ -72,10 +80,11 @@ const MenuManagement: React.FC = () => {
   const handleDelete = (id: string) => {
     if (window.confirm('Are you sure you want to delete this menu item?')) {
       deleteMenuItem(id);
+      setShowExportPrompt(true);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentItem.name) return;
 
@@ -87,83 +96,155 @@ const MenuManagement: React.FC = () => {
     };
 
     if (currentItem.id && menuItems.some(i => i.id === currentItem.id)) {
-      updateMenuItem(payload as MenuItem);
+      await updateMenuItem(payload as MenuItem);
     } else {
-      addMenuItem(payload as Omit<MenuItem, 'id'>);
+      await addMenuItem(payload as Omit<MenuItem, 'id'>);
     }
     closeForm();
+    setShowExportPrompt(true); // Trigger notification
   };
 
-  // --- Bulk Import Logic ---
-  const handleBulkImport = async () => {
-    try {
-      const data = JSON.parse(jsonInput);
-      let count = 0;
-      let skipped = 0;
+  // --- Export Logic ---
+  const generateAppConfig = () => {
+    // 1. Map existing menu items
+    const exportData = menuItems.map(item => {
+        const catName = item.category || 'Uncategorized';
+        
+        // Clean Name Logic
+        let cleanName = item.name;
+        // Remove Category Name from Item Name (case insensitive)
+        // Use escapeRegExp to prevent crashes if category has special chars like (, ), +
+        const catRegex = new RegExp(`\\b${escapeRegExp(catName)}\\b`, 'gi');
+        cleanName = cleanName.replace(catRegex, '');
+        // Remove common suffixes
+        cleanName = cleanName.replace(/\b(Full Plate|Plate|Half|Platter)\b/gi, '');
+        // Trim and clean double spaces
+        cleanName = cleanName.replace(/\s+/g, ' ').trim();
+        
+        // Fallback if name becomes empty
+        if (!cleanName) cleanName = item.name;
 
-      // Iterate over Categories (keys like "Steam", "Kurkure")
-      for (const [categoryKey, items] of Object.entries(data)) {
-         if (Array.isArray(items)) {
-            for (const item of items) {
-               // 1. Check if ID exists (skip to prevent accidental overwrite)
-               const exists = menuItems.find(m => m.id === item.code_name);
-               if (exists) {
-                 skipped++;
-                 continue;
-               }
+        // Construct basic entry
+        const itemEntry: any = {
+            id: item.id,
+            category: catName,
+            label: item.name,
+            name: cleanName,
+            item_image: `${item.id}.png`,
+            includes: {}
+        };
 
-               // 2. Try to find matching Raw SKU for Ingredient auto-linking
-               // Logic: Look for SKU where category matches JSON Key AND name contains item Name
-               // Example: JSON Key "Steam", Item Name "Veg" -> Matches SKU "Veg Steam" or "Veg" in category "Steam"
-               const matchingSku = skus.find(s => {
-                  const catMatch = s.category.toLowerCase() === categoryKey.toLowerCase();
-                  const nameMatch = s.name.toLowerCase().includes(item.name.toLowerCase());
-                  return catMatch && nameMatch;
-               });
+        // --- PLATE Logic ---
+        const plateIngs = item.ingredients || [];
+        // Logic: Use 'items' array if it's a Platter (or multiple items), otherwise single object
+        const isPlatter = plateIngs.length > 1 || catName.toLowerCase() === 'platters';
 
-               // 3. Construct Recipe
-               const fullIngredients: MenuIngredient[] = [];
-               const halfIngredientsList: MenuIngredient[] = [];
+        if (isPlatter) {
+             itemEntry.includes.plate = {
+                 price: item.price,
+                 items: plateIngs.map(ing => ({
+                     quantity: ing.quantity,
+                     skuId: ing.skuId
+                 }))
+             };
+        } else {
+             const totalQty = plateIngs.reduce((sum, ing) => sum + ing.quantity, 0);
+             const mainSku = plateIngs.length > 0 ? plateIngs[0].skuId : '';
+             
+             itemEntry.includes.plate = {
+                 price: item.price,
+                 quantity: totalQty,
+                 skuId: mainSku
+             };
+        }
 
-               if (matchingSku) {
-                  if (item.plate && item.plate.pieces) {
-                     fullIngredients.push({ skuId: matchingSku.id, quantity: item.plate.pieces });
-                  }
-                  if (item.halfPlate && item.halfPlate.pieces) {
-                     halfIngredientsList.push({ skuId: matchingSku.id, quantity: item.halfPlate.pieces });
-                  }
-               }
-
-               // 4. Create Item Payload
-               const newItem: any = {
-                  id: item.code_name, // Map code_name -> ID
-                  name: item.label,   // Map label -> Name
-                  category: categoryKey, // Use JSON Key as Category
-                  price: item.plate?.price || 0,
-                  halfPrice: item.halfPlate?.price,
-                  description: `${categoryKey} - ${item.name}`,
-                  ingredients: fullIngredients,
-                  halfIngredients: halfIngredientsList
-               };
-
-               await addMenuItem(newItem);
-               count++;
+        // --- HALF PLATE Logic ---
+        if (item.halfPrice) {
+            let finalHalfIngs = item.halfIngredients || [];
+            // Auto-calculate if empty
+            if (finalHalfIngs.length === 0 && plateIngs.length > 0) {
+                 finalHalfIngs = plateIngs.map(i => ({ ...i, quantity: i.quantity * 0.5 }));
             }
-         }
-      }
 
-      setImportStatus({ msg: `Successfully imported ${count} items. (${skipped} skipped as duplicates)`, type: 'success' });
-      setJsonInput('');
-      
-      // Close modal after delay
-      setTimeout(() => {
-         setIsImporting(false);
-         setImportStatus(null);
-      }, 2000);
+            const isHalfPlatter = finalHalfIngs.length > 1 || catName.toLowerCase() === 'platters';
 
-    } catch (e) {
-      setImportStatus({ msg: "Invalid JSON format. Please check your syntax.", type: 'error' });
-    }
+            if (isHalfPlatter) {
+                 itemEntry.includes.half_plate = {
+                     price: item.halfPrice,
+                     items: finalHalfIngs.map(ing => ({
+                         quantity: ing.quantity,
+                         skuId: ing.skuId
+                     }))
+                 };
+            } else {
+                 const totalHalfQty = finalHalfIngs.reduce((sum, ing) => sum + ing.quantity, 0);
+                 const mainHalfSku = finalHalfIngs.length > 0 ? finalHalfIngs[0].skuId : '';
+
+                 itemEntry.includes.half_plate = {
+                     price: item.halfPrice,
+                     quantity: totalHalfQty,
+                     skuId: mainHalfSku
+                 };
+            }
+        }
+
+        return itemEntry;
+    });
+
+    // 2. Append Static System Items (Addons/Modals)
+    const staticItems = [
+        {
+            id: "custom_amount",
+            category: "Addons",
+            label: "Custom Amount",
+            name: "Custom Amount",
+            item_image: "custom_amount.png",
+            is_modal: true,
+            includes: {
+                plate: { price: 0, quantity: 0 }
+            }
+        },
+        {
+            id: "custom_pieces",
+            category: "Addons",
+            label: "Custom Pieces",
+            name: "Custom Pieces",
+            item_image: "custom_pieces.png",
+            is_modal: true,
+            includes: {
+                plate: { price: 0, quantity: 0 }
+            }
+        }
+    ];
+
+    // Combine and Stringify
+    return JSON.stringify([...exportData, ...staticItems], null, 2);
+  };
+
+  const openExportModal = () => {
+    const jsonString = generateAppConfig();
+    setJsonData(jsonString);
+    setShowJsonModal(true);
+    setShowExportPrompt(false);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pakaja_pos_config_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+  };
+
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(jsonData);
+    setJsonCopied(true);
+    setTimeout(() => setJsonCopied(false), 2000);
   };
 
   const getSkuName = (skuId?: string) => {
@@ -172,7 +253,6 @@ const MenuManagement: React.FC = () => {
      return sku ? sku.name : 'Unknown SKU';
   };
   
-  // Helper to find category color
   const getCategoryColor = (catName?: string) => {
       const cat = menuCategories.find(c => c.name === catName);
       return cat?.color || '#64748b';
@@ -213,7 +293,7 @@ const MenuManagement: React.FC = () => {
   };
 
   return (
-    <div className="pb-16">
+    <div className="pb-16 relative">
       <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -221,15 +301,15 @@ const MenuManagement: React.FC = () => {
            </h2>
            <p className="text-slate-500 text-sm md:text-base">Manage sellable items, recipes, and prices.</p>
         </div>
-        {!isEditing && !isImporting && (
+        {!isEditing && (
           <div className="flex gap-2">
             <button 
-              onClick={() => setIsImporting(true)}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium border border-slate-200"
+              onClick={openExportModal}
+              className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-bold border border-slate-700"
             >
               <FileJson size={18} />
-              <span className="hidden md:inline">Import JSON</span>
-              <span className="md:hidden">Import</span>
+              <span className="hidden md:inline">Export App JSON</span>
+              <span className="md:hidden">Export</span>
             </button>
             <button 
               onClick={handleAddNew}
@@ -242,60 +322,6 @@ const MenuManagement: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Import Modal */}
-      {isImporting && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-               <div className="p-5 border-b border-slate-100 flex justify-between items-center rounded-t-xl bg-slate-50">
-                  <div>
-                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                        <FileJson size={20} className="text-blue-600" /> Bulk Import Menu
-                     </h3>
-                     <p className="text-xs text-slate-500">Paste your JSON configuration below.</p>
-                  </div>
-                  <button onClick={() => setIsImporting(false)} className="text-slate-400 hover:text-slate-600">
-                     <X size={24} />
-                  </button>
-               </div>
-               
-               <div className="flex-1 p-6 overflow-hidden flex flex-col">
-                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 mb-4">
-                     <strong>How it works:</strong> The JSON Keys (e.g. "Steam", "Fried") will be used as the <strong>Category</strong>. The system will auto-match ingredients if possible.
-                  </div>
-                  <textarea 
-                     value={jsonInput}
-                     onChange={(e) => { setJsonInput(e.target.value); setImportStatus(null); }}
-                     placeholder='{"Steam": [{"code_name": "Veg_S", "label": "Veg Steam", ...}]}'
-                     className="flex-1 w-full border border-slate-300 rounded-lg p-4 font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                  ></textarea>
-                  
-                  {importStatus && (
-                     <div className={`mt-4 p-3 rounded-lg text-sm font-medium flex items-center gap-2 ${importStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                        {importStatus.type === 'success' ? <Check size={16}/> : <AlertCircle size={16}/>}
-                        {importStatus.msg}
-                     </div>
-                  )}
-               </div>
-
-               <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end gap-3">
-                  <button 
-                     onClick={() => setIsImporting(false)}
-                     className="px-5 py-2 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors"
-                  >
-                     Cancel
-                  </button>
-                  <button 
-                     onClick={handleBulkImport}
-                     disabled={!jsonInput}
-                     className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
-                  >
-                     <Upload size={18} /> Parse & Import
-                  </button>
-               </div>
-            </div>
-         </div>
-      )}
 
       {isEditing && (
         <div ref={formRef} className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8 animate-fade-in scroll-mt-24">
@@ -651,6 +677,106 @@ const MenuManagement: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Export Prompt Modal (Notification after Save) */}
+      {showExportPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95">
+          <div className="bg-white p-6 rounded-xl shadow-2xl max-w-md text-center">
+             <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                <FileJson size={32} />
+             </div>
+             <h3 className="text-xl font-bold text-slate-800 mb-2">Configuration Updated!</h3>
+             <p className="text-slate-600 mb-6 text-sm">
+                You have modified the menu or pricing. Please export the updated JSON file to keep the POS app in sync.
+             </p>
+             <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={() => setShowExportPrompt(false)} 
+                  className="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Later
+                </button>
+                <button 
+                  onClick={openExportModal} 
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-md flex items-center gap-2 transition-colors"
+                >
+                  <FileJson size={18} /> View Export Data
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* JSON Preview Modal */}
+      {showJsonModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95">
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col h-[75vh] md:h-[80vh] overflow-hidden">
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                 <div className="flex items-center gap-3">
+                    <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg">
+                       <FileJson size={20} />
+                    </div>
+                    <div>
+                       <h3 className="text-lg font-bold text-slate-800">Export Configuration</h3>
+                       <p className="text-xs text-slate-500">Copy or download this JSON for the POS App.</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowJsonModal(false)} className="text-slate-400 hover:text-slate-600">
+                    <X size={24} />
+                 </button>
+              </div>
+
+              {/* Code Body */}
+              <div className="relative flex-1 bg-slate-900 overflow-hidden group">
+                 {/* Mac-like Window Header */}
+                 <div className="absolute top-0 left-0 w-full h-8 bg-slate-800 border-b border-slate-700 flex items-center px-4 space-x-2 z-10">
+                    <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+                    <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
+                    <span className="ml-2 text-[10px] font-mono text-slate-400 select-none">pakaja_config.json</span>
+                 </div>
+                 
+                 <textarea 
+                    readOnly
+                    value={jsonData}
+                    className="w-full h-full bg-slate-900 text-blue-300 font-mono text-xs p-4 pt-12 resize-none focus:outline-none custom-scrollbar"
+                    spellCheck={false}
+                 />
+                 <button 
+                    onClick={handleCopyJson}
+                    className="absolute top-10 right-6 bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
+                 >
+                    {jsonCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    {jsonCopied ? 'Copied!' : 'Copy JSON'}
+                 </button>
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                 <button 
+                    onClick={() => setShowJsonModal(false)}
+                    className="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+                 >
+                    Close
+                 </button>
+                 <button 
+                    onClick={handleCopyJson}
+                    className="px-5 py-2.5 rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 transition-colors flex items-center gap-2"
+                 >
+                    {jsonCopied ? <Check size={18} className="text-emerald-600" /> : <Copy size={18} />}
+                    Copy Code
+                 </button>
+                 <button 
+                    onClick={handleDownload}
+                    className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md transition-colors flex items-center gap-2"
+                 >
+                    <Download size={18} /> Download .json
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };

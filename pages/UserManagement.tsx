@@ -1,16 +1,18 @@
 
 
 
+
+
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
-import { User, Role, Permission } from '../types';
+import { User, Role, Permission, AttendanceOverrideType } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
-  const { attendanceRecords, branches } = useStore();
+  const { attendanceRecords, branches, attendanceOverrides, setAttendanceStatus } = useStore();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Partial<User>>({});
   
@@ -18,6 +20,9 @@ const UserManagement: React.FC = () => {
   const [viewingAttendanceFor, setViewingAttendanceFor] = useState<User | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
+  // Day Action Modal
+  const [selectedDayAction, setSelectedDayAction] = useState<{ date: string, formattedDate: string } | null>(null);
 
   const handleAddNew = () => {
     setSelectedUser({
@@ -103,27 +108,54 @@ const UserManagement: React.FC = () => {
          return r.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       })
       .sort((a, b) => b.timestamp - a.timestamp); // Sort newest first
+      
+    // Filter overrides for this user & selected month
+    const monthlyOverrides = attendanceOverrides.filter(o => {
+        const d = new Date(o.date);
+        return o.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    });
 
     const presentCount = monthlyRecords.length;
     
-    // Absent Logic: 
-    // If viewing past month: Absent = DaysInMonth - Present
-    // If viewing current month: Absent = DaysPassedSoFar - Present
-    // If viewing future month: 0
+    // Calculated Penalty/Absent Count
+    // Logic: Iterate days up to today. 
+    // If override exists: add penalty based on type.
+    // If no override and no check-in: add 1 penalty.
     
     const today = new Date();
-    let absentCount = 0;
+    let totalDeductibleDays = 0;
+    
+    // Limit calculation loop
+    let daysToCalculate = daysInMonth;
+    if (currentYear === today.getFullYear() && currentMonth === today.getMonth()) {
+        daysToCalculate = today.getDate();
+    } else if (currentYear > today.getFullYear() || (currentYear === today.getFullYear() && currentMonth > today.getMonth())) {
+        daysToCalculate = 0; // Future month
+    }
 
-    if (currentYear < today.getFullYear() || (currentYear === today.getFullYear() && currentMonth < today.getMonth())) {
-        // Past Month
-        absentCount = daysInMonth - presentCount;
-    } else if (currentYear === today.getFullYear() && currentMonth === today.getMonth()) {
-        // Current Month
-        const daysPassed = today.getDate();
-        absentCount = Math.max(0, daysPassed - presentCount);
-    } else {
-        // Future Month
-        absentCount = 0;
+    for (let i = 1; i <= daysToCalculate; i++) {
+        const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
+        
+        // Check for override first
+        const override = monthlyOverrides.find(o => o.date === dateStr);
+        const record = monthlyRecords.find(r => r.date === dateStr);
+
+        if (override) {
+            if (override.type === 'ABSENT') totalDeductibleDays += 1;
+            else if (override.type === 'PENALTY_2_DAYS') totalDeductibleDays += 2;
+            // HOLIDAY adds 0
+        } else {
+            // No override. If no record, count as absent (1 day)
+            // But if it is TODAY and no record yet, maybe don't count? 
+            // Standard logic: If today has passed without checkin, it's absent. 
+            // For live view, counting today as absent before day ends might be harsh, but let's stick to simple logic.
+            if (!record) {
+                // If it's today, only count if it's late? For simplicity, we count past days.
+                if (dateStr !== today.toISOString().slice(0, 10)) {
+                    totalDeductibleDays += 1;
+                }
+            }
+        }
     }
 
     // Avg Check-in Time
@@ -143,9 +175,10 @@ const UserManagement: React.FC = () => {
 
     return {
        presentCount,
-       absentCount,
+       totalDeductibleDays,
        avgTimeStr,
        monthlyRecords,
+       monthlyOverrides,
        monthLabel: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
        daysInMonth,
        startDayOfWeek,
@@ -153,7 +186,24 @@ const UserManagement: React.FC = () => {
        currentYear
     };
 
-  }, [viewingAttendanceFor, attendanceRecords, viewDate]);
+  }, [viewingAttendanceFor, attendanceRecords, attendanceOverrides, viewDate]);
+
+  const handleDayClick = (day: number) => {
+      if (!attendanceStats) return;
+      const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      const dateObj = new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, day);
+      
+      setSelectedDayAction({
+          date: dateStr,
+          formattedDate: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+      });
+  };
+
+  const applyStatus = async (type: AttendanceOverrideType | null) => {
+      if (!viewingAttendanceFor || !selectedDayAction) return;
+      await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type);
+      setSelectedDayAction(null);
+  };
 
   // Helper to render calendar grid
   const renderCalendar = () => {
@@ -171,31 +221,43 @@ const UserManagement: React.FC = () => {
      for (let i = 1; i <= attendanceStats.daysInMonth; i++) {
         const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
         const record = attendanceStats.monthlyRecords.find(r => r.date === dateStr);
+        const override = attendanceStats.monthlyOverrides.find(o => o.date === dateStr);
         
         const isToday = isCurrentMonth && i === today.getDate();
         const isFuture = isCurrentMonth && i > today.getDate() || (today < new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, i));
         
-        // Style Logic:
-        // Green = Present
-        // Red = Absent (Past days only)
-        // Slate = Future or Today (if not checked in yet)
-        
         let bgClass = 'bg-slate-50 border-slate-100 text-slate-300'; // Default future
-        
-        if (record) {
+        let content = <span className="text-sm">{i}</span>;
+
+        if (override) {
+            // Admin Override Logic
+            if (override.type === 'HOLIDAY') {
+                bgClass = 'bg-amber-100 border-amber-200 text-amber-700 font-bold';
+            } else if (override.type === 'ABSENT') {
+                bgClass = 'bg-red-100 border-red-200 text-red-700 font-bold';
+            } else if (override.type === 'PENALTY_2_DAYS') {
+                bgClass = 'bg-purple-100 border-purple-200 text-purple-700 font-bold ring-1 ring-purple-300';
+            }
+        } else if (record) {
+            // Present
             bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
         } else if (!isFuture) {
-             bgClass = 'bg-red-50 border-red-100 text-red-400';
+            // Absent (Default)
+             bgClass = 'bg-red-50 border-red-100 text-red-300';
         }
 
-        if (isToday && !record) {
+        if (isToday && !record && !override) {
              bgClass = 'bg-blue-50 border-blue-200 text-blue-500 ring-1 ring-blue-300';
         }
 
         days.push(
-           <div key={i} className={`aspect-square rounded-lg flex items-center justify-center text-sm border transition-all ${bgClass}`}>
-              {i}
-           </div>
+           <button 
+             key={i} 
+             onClick={() => handleDayClick(i)}
+             className={`aspect-square rounded-lg flex items-center justify-center border transition-all hover:brightness-95 active:scale-95 ${bgClass}`}
+           >
+              {content}
+           </button>
         );
      }
      return days;
@@ -483,8 +545,8 @@ const UserManagement: React.FC = () => {
                      </div>
                      <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-center">
                         <div className="flex items-center justify-center text-red-500 mb-1"><XCircle size={16} /></div>
-                        <div className="text-lg font-bold text-red-700 leading-none">{attendanceStats.absentCount}</div>
-                        <div className="text-[10px] text-red-600 uppercase font-semibold mt-1">Absent/Off</div>
+                        <div className="text-lg font-bold text-red-700 leading-none">{attendanceStats.totalDeductibleDays}</div>
+                        <div className="text-[10px] text-red-600 uppercase font-semibold mt-1">Deductible</div>
                      </div>
                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-center">
                         <div className="flex items-center justify-center text-blue-500 mb-1"><Clock size={16} /></div>
@@ -495,12 +557,21 @@ const UserManagement: React.FC = () => {
 
                   {/* Calendar Grid */}
                   <div className="mb-6">
-                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Calendar View</h4>
+                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center justify-between">
+                         Calendar View
+                         <span className="text-[10px] font-normal text-slate-400 normal-case">Tap date to edit</span>
+                     </h4>
                      <div className="grid grid-cols-7 gap-1">
                         {['S','M','T','W','T','F','S'].map((d, i) => (
                            <div key={i} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>
                         ))}
                         {renderCalendar()}
+                     </div>
+                     <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Present</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Holiday</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Absent (1)</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Penalty (2)</div>
                      </div>
                   </div>
 
@@ -552,6 +623,64 @@ const UserManagement: React.FC = () => {
                </div>
             </div>
          </div>
+      )}
+
+      {/* --- DAY ACTION MODAL --- */}
+      {selectedDayAction && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                      <div>
+                          <h3 className="font-bold text-slate-800">Set Status</h3>
+                          <p className="text-xs text-slate-500">{selectedDayAction.formattedDate}</p>
+                      </div>
+                      <button onClick={() => setSelectedDayAction(null)}><X size={20} className="text-slate-400" /></button>
+                  </div>
+                  <div className="p-4 space-y-2">
+                      <button 
+                          onClick={() => applyStatus('HOLIDAY')}
+                          className="w-full p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-bold flex items-center gap-3 hover:bg-amber-100 transition-colors"
+                      >
+                          <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center text-amber-700"><Palmtree size={16}/></div>
+                          <div>
+                              <div className="text-sm">Mark as Holiday/Leave</div>
+                              <div className="text-[10px] opacity-70 font-normal">No salary deduction (0 Days)</div>
+                          </div>
+                      </button>
+
+                      <button 
+                          onClick={() => applyStatus('ABSENT')}
+                          className="w-full p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 font-bold flex items-center gap-3 hover:bg-red-100 transition-colors"
+                      >
+                          <div className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center text-red-700"><AlertCircle size={16}/></div>
+                          <div>
+                              <div className="text-sm">Mark Absent (Standard)</div>
+                              <div className="text-[10px] opacity-70 font-normal">Salary deduction for 1 Day</div>
+                          </div>
+                      </button>
+
+                      <button 
+                          onClick={() => applyStatus('PENALTY_2_DAYS')}
+                          className="w-full p-3 rounded-lg border border-purple-200 bg-purple-50 text-purple-800 font-bold flex items-center gap-3 hover:bg-purple-100 transition-colors"
+                      >
+                          <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700"><AlertTriangle size={16}/></div>
+                          <div>
+                              <div className="text-sm">Mark Penalty</div>
+                              <div className="text-[10px] opacity-70 font-normal">Salary deduction for 2 Days</div>
+                          </div>
+                      </button>
+
+                      <div className="border-t border-slate-100 my-2"></div>
+
+                      <button 
+                          onClick={() => applyStatus(null)}
+                          className="w-full p-3 rounded-lg border border-slate-200 bg-white text-slate-600 font-medium flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
+                      >
+                          Clear Status / Reset
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* --- PHOTO PREVIEW OVERLAY --- */}

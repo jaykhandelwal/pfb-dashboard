@@ -58,9 +58,22 @@ const Wastage: React.FC = () => {
   const startCamera = async () => {
     try {
       setErrorMsg('');
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Prefer back camera
-      });
+      let mediaStream: MediaStream;
+      
+      try {
+        // Attempt 1: Force back camera (Mobile) using 'exact' constraint
+        // This usually solves the issue where some phones default to front camera even with 'environment'
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: { exact: 'environment' } } 
+        });
+      } catch (err) {
+        console.log("Back camera strict mode failed, trying loose mode...", err);
+        // Attempt 2: Fallback to loose preference (Desktop/Laptop or unsupported)
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
+      }
+
       setStream(mediaStream);
       setIsCameraOpen(true);
       // Allow react render cycle to place the video element before attaching stream

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType } from '../types';
@@ -71,7 +72,6 @@ const Reconciliation: React.FC = () => {
         const result = reader.result;
         if (typeof result === 'string') {
             try {
-              // Removed explicit casting 'as string' to rely on type guard narrowing
               const parsedData = await parseSalesReportImage(result as string, skus);
               
               // Merge parsed data into inputs

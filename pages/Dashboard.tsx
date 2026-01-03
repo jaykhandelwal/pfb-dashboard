@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { DailyReportItem, TransactionType } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale } from 'lucide-react';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line } from 'recharts';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
@@ -61,9 +62,12 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 };
 
 const Dashboard: React.FC = () => {
-  const { transactions, salesRecords, skus, branches } = useStore();
+  const { transactions, salesRecords, skus, branches, orders } = useStore();
   const { hasPermission } = useAuth();
+  
+  // Dashboard State
   const [timeRange, setTimeRange] = useState<TimeRange>('TODAY');
+  const [dashboardBranch, setDashboardBranch] = useState<string>('ALL');
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
 
@@ -99,7 +103,7 @@ const Dashboard: React.FC = () => {
     return result;
   }, [transactions, branches]);
 
-  // --- 2. Live Inventory Logic ---
+  // --- 2. Live Inventory Logic (Fridge) ---
   const stockLevels = useMemo(() => {
     const levels: Record<string, number> = {};
     skus.forEach(s => levels[s.id] = 0);
@@ -117,7 +121,95 @@ const Dashboard: React.FC = () => {
     return levels;
   }, [transactions, skus]);
 
-  // --- 3. Analytics Calculation (Based on Range) ---
+  // --- Date Helpers ---
+  const { dateRangeFilter, daysDivisor } = useMemo(() => {
+      const todayStr = getLocalISOString();
+      const yesterdayDate = new Date();
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const yesterdayStr = getLocalISOString(yesterdayDate);
+      
+      let startDateStr = todayStr;
+      let days = 1;
+
+      if (timeRange === 'YESTERDAY') {
+          startDateStr = yesterdayStr;
+          days = 1;
+      } else if (timeRange === '7D') {
+          const d = new Date();
+          d.setDate(d.getDate() - 7);
+          startDateStr = getLocalISOString(d);
+          days = 7;
+      } else if (timeRange === '30D') {
+          const d = new Date();
+          d.setDate(d.getDate() - 30);
+          startDateStr = getLocalISOString(d);
+          days = 30;
+      }
+
+      // Filter function
+      const filterFn = (d: string) => {
+          if (!d) return false;
+          if (timeRange === 'TODAY') return d === todayStr;
+          if (timeRange === 'YESTERDAY') return d === yesterdayStr;
+          return d >= startDateStr && d <= todayStr;
+      };
+
+      return { dateRangeFilter: filterFn, daysDivisor: days };
+  }, [timeRange]);
+
+  // --- 3. Sales Analytics Calculation (Averages) ---
+  const salesStats = useMemo(() => {
+      const filteredOrders = orders.filter(o => {
+          const matchesDate = dateRangeFilter(o.date);
+          const matchesBranch = dashboardBranch === 'ALL' || o.branchId === dashboardBranch;
+          return matchesDate && matchesBranch;
+      });
+
+      const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+      const totalOrderCount = filteredOrders.length;
+
+      const avgDailySales = totalRevenue / daysDivisor;
+      const avgDailyVolume = totalOrderCount / daysDivisor;
+      const avgOrderValue = totalOrderCount > 0 ? totalRevenue / totalOrderCount : 0;
+
+      return {
+          totalRevenue,
+          totalOrderCount,
+          avgDailySales,
+          avgDailyVolume,
+          avgOrderValue
+      };
+  }, [orders, dateRangeFilter, dashboardBranch, daysDivisor]);
+
+  // --- 4. Revenue Breakdown (Cash vs Online) ---
+  const revenueBreakdown = useMemo(() => {
+      const filteredOrders = orders.filter(o => {
+          const matchesDate = dateRangeFilter(o.date);
+          const matchesBranch = dashboardBranch === 'ALL' || o.branchId === dashboardBranch;
+          return matchesDate && matchesBranch;
+      });
+
+      let cash = 0;
+      let online = 0;
+
+      filteredOrders.forEach(o => {
+          if (o.paymentMethod === 'SPLIT') {
+              o.paymentSplit?.forEach(split => {
+                  if (split.method === 'CASH') cash += split.amount;
+                  else online += split.amount; // UPI or CARD
+              });
+          } else if (o.paymentMethod === 'CASH') {
+              cash += o.totalAmount;
+          } else {
+              // UPI, CARD, or others
+              online += o.totalAmount;
+          }
+      });
+
+      return { cash, online, total: cash + online };
+  }, [orders, dateRangeFilter, dashboardBranch]);
+
+  // --- 5. Inventory Analytics Calculation (Based on Range) ---
   const { reportData, trendData, reconciliationData } = useMemo(() => {
     if (!hasPermission('VIEW_ANALYTICS')) return { reportData: [], trendData: [], reconciliationData: [] };
 
@@ -125,25 +217,6 @@ const Dashboard: React.FC = () => {
     const trendMap: Record<string, { date: string, incoming: number, outgoing: number, waste: number, diff: number }> = {};
     const reconMap: Record<string, { date: string, physicalUsage: number, recordedSales: number }> = {};
     
-    // Determine Date Range Strings (YYYY-MM-DD)
-    const todayStr = getLocalISOString();
-    const yesterdayDate = new Date();
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayStr = getLocalISOString(yesterdayDate);
-    
-    // Calculate start date string for ranges
-    let startDateStr = todayStr;
-    const now = new Date();
-    if (timeRange === '7D') {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 7);
-        startDateStr = getLocalISOString(d);
-    } else if (timeRange === '30D') {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 30);
-        startDateStr = getLocalISOString(d);
-    }
-
     // Initialize Report Data
     skus.forEach(sku => {
       report[sku.id] = {
@@ -157,16 +230,10 @@ const Dashboard: React.FC = () => {
       };
     });
 
-    // Helper to check range
-    const isInRange = (d: string) => {
-        if (timeRange === 'TODAY') return d === todayStr;
-        if (timeRange === 'YESTERDAY') return d === yesterdayStr;
-        return d >= startDateStr && d <= todayStr;
-    };
-
     // Process Transactions
     transactions.forEach(t => {
-       if (!t.date || !isInRange(t.date)) return;
+       if (!dateRangeFilter(t.date)) return;
+       if (dashboardBranch !== 'ALL' && t.branchId !== dashboardBranch) return;
 
        // Report Data (SKU based)
        if (report[t.skuId]) {
@@ -189,23 +256,34 @@ const Dashboard: React.FC = () => {
          reconMap[dateKey].physicalUsage += t.quantityPieces;
        } else if (t.type === TransactionType.RESTOCK || t.type === TransactionType.CHECK_IN) {
          trendMap[dateKey].incoming += t.quantityPieces;
-         // Returns reduce the net usage
          if(t.type === TransactionType.CHECK_IN) {
             reconMap[dateKey].physicalUsage -= t.quantityPieces;
          }
        } else if (t.type === TransactionType.WASTE) {
          trendMap[dateKey].waste += t.quantityPieces;
-         // Wastage also reduces "Sold usage", as it wasn't sold.
          reconMap[dateKey].physicalUsage -= t.quantityPieces;
        }
     });
 
     // Process Sales Records for Reconciliation Graph
-    salesRecords.forEach(r => {
-        if (!r.date || !isInRange(r.date)) return;
-        const dateKey = r.date;
+    orders.forEach(o => {
+        if (!dateRangeFilter(o.date)) return;
+        if (dashboardBranch !== 'ALL' && o.branchId !== dashboardBranch) return;
+
+        const dateKey = o.date;
         if (!reconMap[dateKey]) reconMap[dateKey] = { date: dateKey, physicalUsage: 0, recordedSales: 0 };
-        reconMap[dateKey].recordedSales += r.quantitySold;
+        
+        let rawPiecesSold = 0;
+        o.items.forEach(item => {
+            if(item.consumed) {
+                rawPiecesSold += item.consumed.reduce((sum, c) => sum + c.quantity, 0);
+            }
+        });
+        if(o.customSkuItems) {
+            rawPiecesSold += o.customSkuItems.reduce((sum, c) => sum + c.quantity, 0);
+        }
+
+        reconMap[dateKey].recordedSales += rawPiecesSold;
     });
 
     // Finalize Report Metrics
@@ -228,7 +306,7 @@ const Dashboard: React.FC = () => {
     })).sort((a,b) => a.date.localeCompare(b.date));
 
     return { reportData: Object.values(report), trendData: trendArray, reconciliationData: reconArray };
-  }, [transactions, salesRecords, skus, timeRange, hasPermission]);
+  }, [transactions, orders, skus, dateRangeFilter, dashboardBranch, hasPermission]);
 
   // --- Derived Metrics (Simple Counts) ---
   const totalTaken = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.taken, 0);
@@ -256,7 +334,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     setAiInsight(null);
-  }, [timeRange]);
+  }, [timeRange, dashboardBranch]);
 
   return (
     <div className="space-y-8 pb-10">
@@ -325,30 +403,98 @@ const Dashboard: React.FC = () => {
       {/* 3. Analytics Section (Restricted) */}
       {hasPermission('VIEW_ANALYTICS') && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          {/* Header & Controls */}
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
              <div className="flex items-center gap-2 text-[#403424] font-bold text-lg">
                 <TrendingUp className="text-[#95a77c]" /> Business Intelligence
              </div>
              
-             {/* Time Range Selector */}
-             <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm">
-                {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
-                   <button
-                     key={range}
-                     onClick={() => setTimeRange(range)}
-                     className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                       timeRange === range 
-                         ? 'bg-[#eff2e7] text-[#403424]' 
-                         : 'text-[#403424]/50 hover:bg-[#f9faf7]'
-                     }`}
-                   >
-                     {range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}
-                   </button>
-                ))}
+             <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+                 {/* Branch Selector */}
+                 <div className="relative">
+                    <Store className="absolute left-3 top-2.5 text-[#403424]/40" size={14} />
+                    <select 
+                       value={dashboardBranch}
+                       onChange={(e) => setDashboardBranch(e.target.value)}
+                       className="w-full sm:w-48 pl-9 pr-8 py-2 bg-white border border-[#403424]/10 rounded-lg text-sm font-bold text-[#403424] appearance-none focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
+                    >
+                       <option value="ALL">All Branches</option>
+                       {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                       ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3 text-[#403424]/40 pointer-events-none" size={14} />
+                 </div>
+
+                 {/* Time Range Selector */}
+                 <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm overflow-x-auto">
+                    {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
+                       <button
+                         key={range}
+                         onClick={() => setTimeRange(range)}
+                         className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${
+                           timeRange === range 
+                             ? 'bg-[#eff2e7] text-[#403424]' 
+                             : 'text-[#403424]/50 hover:bg-[#f9faf7]'
+                         }`}
+                       >
+                         {range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}
+                       </button>
+                    ))}
+                 </div>
              </div>
           </div>
 
-          {/* Stats Grid - RAW COUNTS */}
+          {/* Revenue Breakdown Section */}
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Revenue Breakdown</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <StatCard 
+               title="Total Revenue"
+               value={`₹${revenueBreakdown.total.toLocaleString()}`}
+               icon={<Wallet size={20} className="text-slate-600" />}
+               color="bg-slate-50/50 border-slate-100"
+             />
+             <StatCard 
+               title="Cash Sales"
+               value={`₹${revenueBreakdown.cash.toLocaleString()}`}
+               icon={<Banknote size={20} className="text-emerald-600" />}
+               color="bg-emerald-50/50 border-emerald-100"
+             />
+             <StatCard 
+               title="Online Sales"
+               value={`₹${revenueBreakdown.online.toLocaleString()}`}
+               icon={<QrCode size={20} className="text-blue-600" />}
+               trend="UPI & Card"
+               color="bg-blue-50/50 border-blue-100"
+             />
+          </div>
+
+          {/* Sales Performance Stats */}
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Performance Averages</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <StatCard 
+               title="Avg Daily Sales"
+               value={`₹${Math.round(salesStats.avgDailySales).toLocaleString()}`}
+               icon={<IndianRupee size={20} className="text-emerald-600" />}
+               color="bg-white"
+             />
+             <StatCard 
+               title="Avg Daily Orders"
+               value={Math.round(salesStats.avgDailyVolume)}
+               icon={<Receipt size={20} className="text-blue-600" />}
+               color="bg-white"
+             />
+             <StatCard 
+               title="Avg Order Value"
+               value={`₹${Math.round(salesStats.avgOrderValue)}`}
+               icon={<BarChart3 size={20} className="text-violet-600" />}
+               color="bg-white"
+             />
+          </div>
+
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Operational Stats</h3>
+
+          {/* Operational Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard 
               title="Total Check-Outs" 
@@ -393,8 +539,8 @@ const Dashboard: React.FC = () => {
                       labelStyle={{ fontWeight: 'bold', color: '#403424' }}
                     />
                     <Legend iconSize={10} fontSize={10} verticalAlign="top" height={36}/>
-                    <Bar dataKey="physicalUsage" name="Physical Usage (CheckOut - Returns)" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="recordedSales" name="Recorded Sales (POS + Online)" fill="#95a77c" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="physicalUsage" name="Physical Usage (Raw Pcs)" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="recordedSales" name="Recorded Sales (Approx Raw)" fill="#95a77c" radius={[4, 4, 0, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
                ) : (
@@ -404,7 +550,7 @@ const Dashboard: React.FC = () => {
                )}
             </div>
             <p className="text-xs text-[#403424]/40 mt-2 text-center italic">
-               Blue Bar should match Green Bar. If Blue is higher, potential theft/loss occurred.
+               Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.
             </p>
           </div>
 

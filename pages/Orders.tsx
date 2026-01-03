@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
@@ -22,7 +22,12 @@ const Orders: React.FC = () => {
   // -- NEW ORDER STATE --
   const [posBranchId, setPosBranchId] = useState<string>(branches[0]?.id || '');
   const [posPlatform, setPosPlatform] = useState<SalesPlatform>('POS');
+  
+  // Payment State
+  const [paymentMode, setPaymentMode] = useState<'SINGLE' | 'SPLIT'>('SINGLE');
   const [posPaymentMethod, setPosPaymentMethod] = useState<'CASH' | 'UPI' | 'CARD'>('CASH');
+  const [splitInputs, setSplitInputs] = useState({ CASH: '', UPI: '', CARD: '' });
+
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [linkedCustomer, setLinkedCustomer] = useState<{name: string, phone: string} | null>(null);
@@ -178,6 +183,15 @@ const Orders: React.FC = () => {
      return itemsTotal + customAmt;
   }, [cart, orderCustomAmount]);
 
+  const splitTotal = useMemo(() => {
+      const c = parseFloat(splitInputs.CASH) || 0;
+      const u = parseFloat(splitInputs.UPI) || 0;
+      const d = parseFloat(splitInputs.CARD) || 0;
+      return c + u + d;
+  }, [splitInputs]);
+
+  const remainingSplit = cartTotal - splitTotal;
+
   const handleLinkCustomer = (phone: string, name?: string) => {
      setLinkedCustomer({ name: name || 'Unknown', phone });
      setIsCustomerModalOpen(false);
@@ -191,9 +205,24 @@ const Orders: React.FC = () => {
         return;
      }
 
+     if (paymentMode === 'SPLIT' && remainingSplit !== 0) {
+         alert(`Payment split must equal total amount. Difference: ${remainingSplit}`);
+         return;
+     }
+
      const orderDate = getLocalISOString();
 
      const finalCustomSkuItems = orderCustomSku?.items.map(i => ({ skuId: i.skuId, quantity: i.qty })) || [];
+
+     let finalPaymentMethod: any = posPaymentMethod;
+     let paymentSplitData = [];
+
+     if (paymentMode === 'SPLIT') {
+         finalPaymentMethod = 'SPLIT';
+         if (parseFloat(splitInputs.CASH) > 0) paymentSplitData.push({ method: 'CASH', amount: parseFloat(splitInputs.CASH) });
+         if (parseFloat(splitInputs.UPI) > 0) paymentSplitData.push({ method: 'UPI', amount: parseFloat(splitInputs.UPI) });
+         if (parseFloat(splitInputs.CARD) > 0) paymentSplitData.push({ method: 'CARD', amount: parseFloat(splitInputs.CARD) });
+     }
 
      await addOrder({
         branchId: posBranchId,
@@ -201,7 +230,8 @@ const Orders: React.FC = () => {
         platform: posPlatform,
         totalAmount: cartTotal,
         status: 'COMPLETED',
-        paymentMethod: posPaymentMethod, 
+        paymentMethod: finalPaymentMethod, 
+        paymentSplit: paymentSplitData,
         items: cart,
         customerId: linkedCustomer?.phone,
         customerName: linkedCustomer?.name,
@@ -216,6 +246,8 @@ const Orders: React.FC = () => {
      setOrderCustomSku(null);
      setLinkedCustomer(null);
      setPosPaymentMethod('CASH');
+     setPaymentMode('SINGLE');
+     setSplitInputs({ CASH: '', UPI: '', CARD: '' });
      setIsMobileCartOpen(false);
      setShowSuccess(true);
      setTimeout(() => setShowSuccess(false), 2000);
@@ -335,9 +367,24 @@ const Orders: React.FC = () => {
                             <div className="font-bold text-slate-700 text-sm">
                               {getBranchName(order.branchId)}
                             </div>
+                            
+                            {/* Payment Method Display */}
                             <div className="text-xs text-slate-500 mt-0.5">
-                               Paid via {order.paymentMethod}
+                               {order.paymentMethod === 'SPLIT' ? (
+                                  <div className="flex flex-col gap-0.5 mt-1">
+                                     <span className="font-bold text-slate-600">Split Payment:</span>
+                                     {order.paymentSplit?.map((split, i) => (
+                                        <span key={i} className="flex gap-1">
+                                           <span>{split.method}:</span>
+                                           <span>₹{split.amount}</span>
+                                        </span>
+                                     ))}
+                                  </div>
+                               ) : (
+                                  <span>Paid via {order.paymentMethod}</span>
+                               )}
                             </div>
+
                             {order.customerName && (
                                 <div className="text-xs text-emerald-600 font-medium mt-1">
                                     Cust: {order.customerName}
@@ -433,7 +480,7 @@ const Orders: React.FC = () => {
            {/* Left: Menu & Controls */}
            <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full h-full relative">
                <div className="p-4 border-b border-slate-100 bg-slate-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                     <div className="sm:col-span-1">
                         <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Branch</label>
                         <select 
@@ -467,21 +514,86 @@ const Orders: React.FC = () => {
                             </button>
                         </div>
                     </div>
-                    <div className="sm:col-span-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Payment</label>
-                        <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
-                           {(['CASH', 'UPI', 'CARD'] as const).map(pm => (
-                               <button
-                                 key={pm}
-                                 onClick={() => setPosPaymentMethod(pm)}
-                                  className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === pm ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}
-                               >
-                                 {pm}
-                               </button>
-                           ))}
+                    
+                    {/* Payment Mode Selector */}
+                    <div className="sm:col-span-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Payment Mode</label>
+                        <div className="flex gap-2">
+                           <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 flex-1">
+                              <button
+                                 onClick={() => setPaymentMode('SINGLE')}
+                                 className={`flex-1 py-1 px-2 text-xs font-bold rounded flex items-center justify-center gap-1 ${paymentMode === 'SINGLE' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                              >
+                                 Single
+                              </button>
+                              <button
+                                 onClick={() => setPaymentMode('SPLIT')}
+                                 className={`flex-1 py-1 px-2 text-xs font-bold rounded flex items-center justify-center gap-1 ${paymentMode === 'SPLIT' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+                              >
+                                 <Split size={12} /> Split
+                              </button>
+                           </div>
+
+                           {paymentMode === 'SINGLE' && (
+                              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 flex-[1.5]">
+                                 <button onClick={() => setPosPaymentMethod('CASH')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'CASH' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
+                                    Cash
+                                 </button>
+                                 <button onClick={() => setPosPaymentMethod('UPI')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'UPI' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
+                                    UPI
+                                 </button>
+                                 <button onClick={() => setPosPaymentMethod('CARD')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'CARD' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
+                                    Card
+                                 </button>
+                              </div>
+                           )}
                         </div>
                     </div>
                   </div>
+
+                  {/* Split Payment Inputs */}
+                  {paymentMode === 'SPLIT' && (
+                     <div className="mb-4 bg-indigo-50 border border-indigo-100 p-3 rounded-lg animate-fade-in">
+                        <div className="flex justify-between items-center mb-2">
+                           <span className="text-xs font-bold text-indigo-800 uppercase">Split Details</span>
+                           <span className={`text-xs font-bold ${remainingSplit === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              Remaining: ₹{remainingSplit}
+                           </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                           <div className="relative">
+                              <div className="absolute left-2 top-2 text-slate-400"><Banknote size={14}/></div>
+                              <input 
+                                 type="number" 
+                                 placeholder="Cash"
+                                 value={splitInputs.CASH}
+                                 onChange={e => setSplitInputs({...splitInputs, CASH: e.target.value})}
+                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
+                              />
+                           </div>
+                           <div className="relative">
+                              <div className="absolute left-2 top-2 text-slate-400"><Smartphone size={14}/></div>
+                              <input 
+                                 type="number" 
+                                 placeholder="UPI"
+                                 value={splitInputs.UPI}
+                                 onChange={e => setSplitInputs({...splitInputs, UPI: e.target.value})}
+                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
+                              />
+                           </div>
+                           <div className="relative">
+                              <div className="absolute left-2 top-2 text-slate-400"><CreditCard size={14}/></div>
+                              <input 
+                                 type="number" 
+                                 placeholder="Card"
+                                 value={splitInputs.CARD}
+                                 onChange={e => setSplitInputs({...splitInputs, CARD: e.target.value})}
+                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
+                              />
+                           </div>
+                        </div>
+                     </div>
+                  )}
 
                   <div className="mb-4">
                      <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Menu Category</label>

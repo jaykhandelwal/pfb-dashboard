@@ -92,6 +92,16 @@ export interface AttendanceRecord {
   imageUrl?: string;
 }
 
+export type AttendanceOverrideType = 'HOLIDAY' | 'ABSENT' | 'PENALTY_2_DAYS';
+
+export interface AttendanceOverride {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  type: AttendanceOverrideType;
+  note?: string;
+}
+
 // --- Sales & Reconciliation ---
 
 // Strict platforms only
@@ -127,6 +137,11 @@ export interface OrderItem {
   }[];
 }
 
+export interface PaymentSplit {
+  method: 'CASH' | 'UPI' | 'CARD';
+  amount: number;
+}
+
 export interface Order {
   id: string;
   branchId: string;
@@ -135,7 +150,8 @@ export interface Order {
   platform: SalesPlatform;
   totalAmount: number;
   status: 'COMPLETED' | 'CANCELLED';
-  paymentMethod: 'CASH' | 'UPI' | 'CARD'; 
+  paymentMethod: 'CASH' | 'UPI' | 'CARD' | 'SPLIT'; 
+  paymentSplit?: PaymentSplit[]; // Breakdown if SPLIT
   date: string;
   timestamp: number;
   items: OrderItem[]; // Stored as JSONB in DB usually

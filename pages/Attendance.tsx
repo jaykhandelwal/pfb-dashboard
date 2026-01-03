@@ -38,9 +38,21 @@ const Attendance: React.FC = () => {
   const startCamera = async () => {
     try {
       setErrorMsg('');
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } // Prefer front camera for selfies
-      });
+      let mediaStream: MediaStream;
+
+      try {
+         // Attempt 1: Explicitly request front camera
+         mediaStream = await navigator.mediaDevices.getUserMedia({ 
+           video: { facingMode: 'user' } 
+         });
+      } catch (e) {
+         console.warn("Front camera request failed, falling back to any video device", e);
+         // Fallback: Any available video device
+         mediaStream = await navigator.mediaDevices.getUserMedia({ 
+           video: true 
+         });
+      }
+
       setStream(mediaStream);
       setIsCameraOpen(true);
       setTimeout(() => {
