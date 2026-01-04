@@ -23,6 +23,8 @@ const Tasks: React.FC = () => {
   const [assignedUserId, setAssignedUserId] = useState(currentUser?.id || '');
   const [dueDate, setDueDate] = useState(getLocalISOString());
 
+  const getUserName = (id: string) => users.find(u => u.id === id)?.name || 'Unknown';
+
   // --- Derived Data ---
   const myTasks = useMemo(() => {
     if (!currentUser) return { overdue: [], today: [], upcoming: [], completed: [] };
@@ -30,7 +32,7 @@ const Tasks: React.FC = () => {
     const todayStr = getLocalISOString();
     
     // 1. Active Tasks (Personal Only)
-    // We strictly filter active tasks to the current user so "My Tasks" view remains personal.
+    // We strictly filter active tasks to the current user so "My Tasks" view remains personal focus.
     const myActiveTasks = todos.filter(t => t.assignedTo === currentUser.id && !t.isCompleted);
     
     // Sort Active: Overdue first, then by date
@@ -148,8 +150,6 @@ const Tasks: React.FC = () => {
       });
   };
 
-  const getUserName = (id: string) => users.find(u => u.id === id)?.name || 'Unknown';
-
   const canManage = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
 
   const getFrequencyLabel = (tmpl: TaskTemplate) => {
@@ -174,7 +174,7 @@ const Tasks: React.FC = () => {
       {/* Page Header */}
       <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
             <CheckSquare className="text-indigo-600" size={28} /> Task Center
           </h2>
           <p className="text-slate-500 mt-1">Stay organized and track daily operations.</p>
@@ -228,7 +228,7 @@ const Tasks: React.FC = () => {
                           <CheckCircle2 size={20} />
                       </div>
                       <div>
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">{currentUser?.role === 'ADMIN' ? 'Total Completed' : 'My Completed'}</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">{currentUser?.role === 'ADMIN' ? 'Team Completed' : 'My Completed'}</p>
                           <p className="text-2xl font-bold text-slate-800">{myTasks.completed.length}</p>
                       </div>
                   </div>
