@@ -1,5 +1,6 @@
 
 
+
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -112,6 +113,7 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
   { id: 'MANAGE_MENU', label: 'Manage Menu & Prices' },
   { id: 'MANAGE_BRANCHES', label: 'Manage Branches' },
   { id: 'MANAGE_USERS', label: 'Manage Users & Access' },
+  { id: 'MANAGE_SETTINGS', label: 'Manage App Settings' },
   { id: 'VIEW_LOGS', label: 'View Transaction Logs' },
   { id: 'MANAGE_RECONCILIATION', label: 'Sales Reconciliation (POS/Zomato)' },
   { id: 'VIEW_ORDERS', label: 'View Orders (POS/Online)' },
@@ -121,7 +123,7 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
 
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   ADMIN: ALL_PERMISSIONS.map(p => p.id),
-  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE'],
+  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE', 'MANAGE_SETTINGS'],
   STAFF: ['VIEW_DASHBOARD', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'], 
 };
 

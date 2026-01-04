@@ -1,13 +1,15 @@
 
+
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
-  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories } = useStore();
+  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings } = useStore();
   const { currentUser } = useAuth(); // Strict role check
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
@@ -204,6 +206,20 @@ const Orders: React.FC = () => {
         alert("Please select a branch.");
         return;
      }
+
+     // --- App Settings Validation ---
+     if (appSettings.require_customer_phone && !linkedCustomer) {
+         alert("Customer Phone Number is required to place an order. Please add a customer.");
+         setIsCustomerModalOpen(true);
+         return;
+     }
+
+     if (appSettings.require_customer_name && linkedCustomer && (!linkedCustomer.name || linkedCustomer.name === 'Unknown')) {
+         alert("Customer Name is required. Please update the customer details.");
+         setIsCustomerModalOpen(true);
+         return;
+     }
+     // -------------------------------
 
      if (paymentMode === 'SPLIT' && remainingSplit !== 0) {
          alert(`Payment split must equal total amount. Difference: ${remainingSplit}`);
@@ -747,8 +763,13 @@ const Orders: React.FC = () => {
                   ) : (
                      <button 
                         onClick={() => setIsCustomerModalOpen(true)}
-                        className="w-full py-2 border border-dashed border-slate-300 rounded-lg text-slate-500 text-sm font-medium hover:bg-white hover:border-emerald-300 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
+                        className={`w-full py-2 border border-dashed rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                           (appSettings.require_customer_phone) 
+                              ? 'border-red-300 text-red-500 bg-red-50 hover:bg-white' 
+                              : 'border-slate-300 text-slate-500 hover:bg-white hover:border-emerald-300 hover:text-emerald-600'
+                        }`}
                      >
+                        {(appSettings.require_customer_phone) && <AlertTriangle size={14} />}
                         <Plus size={14} /> Add Customer (Loyalty)
                      </button>
                   )}
@@ -886,7 +907,7 @@ const Orders: React.FC = () => {
                           
                           {customerSearch.length > 0 && !customers.some(c => c.phoneNumber === customerSearch) && (
                              <button
-                                onClick={() => handleLinkCustomer(customerSearch, "New Customer")}
+                                onClick={() => handleLinkCustomer(customerSearch, appSettings.require_customer_name ? "" : "New Customer")}
                                 className="w-full p-3 rounded-lg border-2 border-dashed border-emerald-200 text-emerald-600 font-bold text-sm hover:bg-emerald-50 flex justify-center items-center gap-2 mt-2"
                              >
                                 <Plus size={16} /> Create New: {customerSearch}

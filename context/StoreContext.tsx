@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType } from '../types';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType, AppSettings } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -17,6 +17,7 @@ interface StoreContextType {
   deletedTransactions: ArchivedTransaction[];
   attendanceRecords: AttendanceRecord[];
   attendanceOverrides: AttendanceOverride[];
+  appSettings: AppSettings;
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -55,6 +56,8 @@ interface StoreContextType {
   addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
   setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => Promise<void>;
 
+  updateAppSetting: (key: string, value: any) => Promise<void>;
+
   resetData: () => Promise<void>;
 }
 
@@ -73,6 +76,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [membershipRules, setMembershipRules] = useState<MembershipRule[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverride[]>([]);
+  const [appSettings, setAppSettings] = useState<AppSettings>({ require_customer_phone: false, require_customer_name: false });
 
   // Derived State
   const salesRecords = useMemo(() => {
@@ -198,6 +202,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deleted_transactions' }, (payload) => {
          handleRealtimeEvent(payload, setDeletedTransactions, mapDeletedTransaction);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
+         const { new: newSetting } = payload;
+         setAppSettings(prev => ({
+             ...prev,
+             [newSetting.key]: newSetting.value
+         }));
       })
       .subscribe();
 
@@ -419,6 +430,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const { data: overrideData } = await supabase.from('attendance_overrides').select('*');
       if (overrideData) setAttendanceOverrides(overrideData.map(mapAttendanceOverride));
+
+      const { data: settingsData } = await supabase.from('app_settings').select('*');
+      if (settingsData) {
+          const settingsObj: any = { ...appSettings };
+          settingsData.forEach((row: any) => {
+              settingsObj[row.key] = row.value;
+          });
+          setAppSettings(settingsObj);
+      }
 
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
@@ -981,6 +1001,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  const updateAppSetting = async (key: string, value: any) => {
+      setAppSettings(prev => ({
+          ...prev,
+          [key]: value
+      }));
+
+      if (isSupabaseConfigured()) {
+          // Upsert logic for settings
+          await supabase.from('app_settings').upsert({ key, value });
+      }
+  };
+
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
@@ -995,6 +1027,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('membership_rules').delete().neq('id', '0');
         await supabase.from('attendance').delete().neq('id', '0');
         await supabase.from('attendance_overrides').delete().neq('id', '0');
+        // Do not reset app_settings to default automatically to preserve remote config
     }
     setTransactions([]);
     setManualSalesRecords([]);
@@ -1012,12 +1045,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
-      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, resetData 
+      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, updateAppSetting, resetData 
     }}>
       {children}
     </StoreContext.Provider>

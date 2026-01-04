@@ -224,7 +224,8 @@ export type Permission =
   | 'MANAGE_CUSTOMERS'
   | 'MANAGE_MEMBERSHIP'
   | 'MANAGE_MENU'
-  | 'MANAGE_ATTENDANCE'; // New
+  | 'MANAGE_SETTINGS' // New permission for App Settings
+  | 'MANAGE_ATTENDANCE';
 
 export interface User {
   id: string;
@@ -234,6 +235,13 @@ export interface User {
   permissions: Permission[];
   defaultBranchId?: string; // Optional default location for this user
   defaultPage?: string; // Optional default page after login
+}
+
+// Global App Settings
+export interface AppSettings {
+  require_customer_phone: boolean;
+  require_customer_name: boolean;
+  [key: string]: any; // Extensible
 }
 
 // Add global window extension for Android Bridge
