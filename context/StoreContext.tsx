@@ -279,7 +279,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // --- Mappers (Snake Case -> Camel Case) ---
-  // Ensure DB data matches Type definitions
   const mapTransaction = (t: any): Transaction => ({
     id: t.id,
     batchId: t.batch_id,
@@ -421,6 +420,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     assignedBy: t.assigned_by,
     frequency: t.frequency,
     weekDays: t.week_days,
+    monthDays: t.month_days,
+    startDate: t.start_date,
     isActive: t.is_active,
     lastGeneratedDate: t.last_generated_date
   });
@@ -520,6 +521,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const todayStr = getLocalISOString();
       const todayDate = new Date();
       const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon
+      const dateOfMonth = todayDate.getDate(); // 1-31
 
       for (const tmpl of taskTemplates) {
           if (!tmpl.isActive) continue;
@@ -534,6 +536,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } else if (tmpl.frequency === 'WEEKLY') {
               if (tmpl.weekDays && tmpl.weekDays.includes(dayOfWeek)) {
                   shouldGenerate = true;
+              }
+          } else if (tmpl.frequency === 'MONTHLY') {
+              if (tmpl.monthDays && tmpl.monthDays.includes(dateOfMonth)) {
+                  shouldGenerate = true;
+              }
+          } else if (tmpl.frequency === 'BI_WEEKLY') {
+              if (tmpl.startDate) {
+                  const start = new Date(tmpl.startDate);
+                  const now = new Date(todayStr); // Compare strings using local date const
+                  
+                  // Calculate diff in days
+                  const timeDiff = now.getTime() - start.getTime();
+                  const diffDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                  
+                  // Must be non-negative and divisible by 14
+                  if (diffDays >= 0 && diffDays % 14 === 0) {
+                      shouldGenerate = true;
+                  }
               }
           }
 
@@ -1220,6 +1240,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               assigned_by: newTemplate.assignedBy,
               frequency: newTemplate.frequency,
               week_days: newTemplate.weekDays,
+              month_days: newTemplate.monthDays,
+              start_date: newTemplate.startDate,
               is_active: newTemplate.isActive,
               last_generated_date: newTemplate.lastGeneratedDate
           });
@@ -1235,6 +1257,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               assigned_to: updated.assignedTo,
               frequency: updated.frequency,
               week_days: updated.weekDays,
+              month_days: updated.monthDays,
+              start_date: updated.startDate,
               is_active: updated.isActive
           }).eq('id', updated.id);
       }

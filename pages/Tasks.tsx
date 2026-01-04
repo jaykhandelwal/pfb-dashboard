@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { CheckSquare, Plus, Trash2, Calendar, User as UserIcon, AlertTriangle, Check, Repeat, Clock, MoreVertical, X, Save } from 'lucide-react';
+import { CheckSquare, Plus, Trash2, Calendar, User as UserIcon, AlertTriangle, Check, Repeat, Clock, MoreVertical, X, Save, CalendarDays, Info } from 'lucide-react';
 import { TaskTemplate, TaskFrequency } from '../types';
 import { getLocalISOString } from '../constants';
 
@@ -68,12 +68,14 @@ const Tasks: React.FC = () => {
       e.preventDefault();
       if (!editingTemplate.title || !editingTemplate.assignedTo || !editingTemplate.frequency) return;
 
-      const payload = {
+      const payload: Partial<TaskTemplate> = {
           title: editingTemplate.title,
           assignedTo: editingTemplate.assignedTo,
           assignedBy: currentUser?.name || 'Admin',
           frequency: editingTemplate.frequency,
           weekDays: editingTemplate.weekDays || [],
+          monthDays: editingTemplate.monthDays || [],
+          startDate: editingTemplate.startDate || getLocalISOString(),
           isActive: editingTemplate.isActive ?? true,
           lastGeneratedDate: '' // Reset generation
       };
@@ -81,7 +83,7 @@ const Tasks: React.FC = () => {
       if (editingTemplate.id) {
           await updateTaskTemplate({ ...payload, id: editingTemplate.id } as TaskTemplate);
       } else {
-          await addTaskTemplate(payload);
+          await addTaskTemplate(payload as TaskTemplate);
       }
       setIsTemplateModalOpen(false);
       setEditingTemplate({});
@@ -98,6 +100,8 @@ const Tasks: React.FC = () => {
           assignedTo: '',
           frequency: 'DAILY',
           weekDays: [],
+          monthDays: [],
+          startDate: getLocalISOString(),
           isActive: true
       });
       setIsTemplateModalOpen(true);
@@ -114,9 +118,28 @@ const Tasks: React.FC = () => {
       });
   };
 
+  const toggleMonthDay = (day: number) => {
+      setEditingTemplate(prev => {
+          const current = prev.monthDays || [];
+          if (current.includes(day)) {
+              return { ...prev, monthDays: current.filter(d => d !== day) };
+          } else {
+              return { ...prev, monthDays: [...current, day].sort((a,b) => a - b) };
+          }
+      });
+  };
+
   const getUserName = (id: string) => users.find(u => u.id === id)?.name || 'Unknown';
 
   const canManage = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+
+  const getFrequencyLabel = (tmpl: TaskTemplate) => {
+      if (tmpl.frequency === 'DAILY') return 'Every Day';
+      if (tmpl.frequency === 'WEEKLY') return `Weekly (${tmpl.weekDays?.length || 0} days)`;
+      if (tmpl.frequency === 'BI_WEEKLY') return `Every 2 Weeks`;
+      if (tmpl.frequency === 'MONTHLY') return `Monthly (${tmpl.monthDays?.length || 0} days)`;
+      return tmpl.frequency;
+  };
 
   return (
     <div className="pb-16 max-w-5xl mx-auto">
@@ -262,10 +285,7 @@ const Tasks: React.FC = () => {
                                           <span>•</span>
                                           <span className="flex items-center gap-1">
                                               <Repeat size={12}/> 
-                                              {tmpl.frequency} 
-                                              {tmpl.frequency === 'WEEKLY' && tmpl.weekDays && (
-                                                  <span> ({tmpl.weekDays.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')})</span>
-                                              )}
+                                              {getFrequencyLabel(tmpl)}
                                           </span>
                                       </div>
                                   </div>
@@ -357,7 +377,7 @@ const Tasks: React.FC = () => {
                   <h3 className="font-bold text-slate-700">{editingTemplate.id ? 'Edit Template' : 'New Automation'}</h3>
                   <button onClick={() => setIsTemplateModalOpen(false)}><X size={20} className="text-slate-400" /></button>
                </div>
-               <form onSubmit={handleSaveTemplate} className="p-6 space-y-4">
+               <form onSubmit={handleSaveTemplate} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
                   <div>
                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Title</label>
                      <input 
@@ -393,8 +413,10 @@ const Tasks: React.FC = () => {
                         onChange={(e) => setEditingTemplate({...editingTemplate, frequency: e.target.value as TaskFrequency})}
                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
                      >
-                        <option value="DAILY">Daily (Every Day)</option>
+                        <option value="DAILY">Every Day</option>
                         <option value="WEEKLY">Weekly (Specific Days)</option>
+                        <option value="BI_WEEKLY">Every 2 Weeks (Fortnightly)</option>
+                        <option value="MONTHLY">Monthly / Bi-Monthly (Specific Dates)</option>
                      </select>
                   </div>
 
@@ -416,6 +438,52 @@ const Tasks: React.FC = () => {
                                       {day}
                                   </button>
                               ))}
+                          </div>
+                      </div>
+                  )}
+
+                  {editingTemplate.frequency === 'MONTHLY' && (
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Days of Month</label>
+                          <div className="grid grid-cols-7 gap-1">
+                              {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => toggleMonthDay(day)}
+                                    className={`aspect-square rounded border text-xs font-bold transition-all ${
+                                        (editingTemplate.monthDays || []).includes(day)
+                                        ? 'bg-indigo-600 text-white border-indigo-600'
+                                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                      {day}
+                                  </button>
+                              ))}
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-2">
+                             Select "1" and "15" for Bi-Monthly tasks.
+                          </p>
+                      </div>
+                  )}
+
+                  {editingTemplate.frequency === 'BI_WEEKLY' && (
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Starts From</label>
+                          <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                             <input 
+                                type="date"
+                                required
+                                value={editingTemplate.startDate || getLocalISOString()}
+                                onChange={(e) => setEditingTemplate({...editingTemplate, startDate: e.target.value})}
+                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm"
+                             />
+                             <div className="flex items-start gap-2 mt-2">
+                                <Info size={14} className="text-blue-500 mt-0.5" />
+                                <p className="text-xs text-blue-700">
+                                   Task will generate every 14 days starting from this date.
+                                </p>
+                             </div>
                           </div>
                       </div>
                   )}

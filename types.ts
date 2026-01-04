@@ -248,7 +248,7 @@ export interface AppSettings {
 
 // --- Todo / Task Management ---
 
-export type TaskFrequency = 'ONCE' | 'DAILY' | 'WEEKLY';
+export type TaskFrequency = 'ONCE' | 'DAILY' | 'WEEKLY' | 'BI_WEEKLY' | 'MONTHLY';
 
 export interface TaskTemplate {
   id: string;
@@ -256,7 +256,12 @@ export interface TaskTemplate {
   assignedTo: string; // User ID
   assignedBy: string; // User Name
   frequency: TaskFrequency;
+  
+  // Logic Config
   weekDays?: number[]; // 0=Sun, 1=Mon, etc. (For WEEKLY)
+  monthDays?: number[]; // [1, 15] for Bi-Monthly, or [1] for Monthly
+  startDate?: string; // YYYY-MM-DD (Anchor date for Bi-Weekly calculation)
+  
   isActive: boolean;
   lastGeneratedDate?: string; // YYYY-MM-DD
 }
