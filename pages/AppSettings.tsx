@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2 } from 'lucide-react';
 
 const AppSettings: React.FC = () => {
-  const { appSettings, updateAppSetting } = useStore();
+  const { appSettings, updateAppSetting, isLoading } = useStore();
   const { currentUser } = useAuth();
   
   // Local state to manage loading status per toggle to avoid race conditions
@@ -37,6 +37,15 @@ const AppSettings: React.FC = () => {
         setTimeout(() => setToastMsg(''), 3000);
     }
   };
+
+  if (isLoading) {
+      return (
+          <div className="h-[calc(100vh-100px)] flex flex-col items-center justify-center">
+              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-4" />
+              <p className="text-slate-500 font-medium">Loading Settings...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="max-w-3xl mx-auto pb-16 relative">

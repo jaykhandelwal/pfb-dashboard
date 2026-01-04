@@ -2,12 +2,12 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { CheckSquare, Plus, Trash2, Calendar, User as UserIcon, AlertTriangle, Check, Repeat, Clock, MoreVertical, X, Save, CalendarDays, Info } from 'lucide-react';
+import { CheckSquare, Plus, Trash2, Calendar, User as UserIcon, AlertTriangle, Check, Repeat, Clock, MoreVertical, X, Save, CalendarDays, Info, Loader2 } from 'lucide-react';
 import { TaskTemplate, TaskFrequency } from '../types';
 import { getLocalISOString } from '../constants';
 
 const Tasks: React.FC = () => {
-  const { todos, taskTemplates, addTodo, toggleTodo, addTaskTemplate, deleteTaskTemplate, updateTaskTemplate, deleteTodo } = useStore();
+  const { todos, taskTemplates, addTodo, toggleTodo, addTaskTemplate, deleteTaskTemplate, updateTaskTemplate, deleteTodo, isLoading } = useStore();
   const { currentUser, users } = useAuth();
   
   const [activeTab, setActiveTab] = useState<'MY_TASKS' | 'MANAGE_TEMPLATES'>('MY_TASKS');
@@ -140,6 +140,15 @@ const Tasks: React.FC = () => {
       if (tmpl.frequency === 'MONTHLY') return `Monthly (${tmpl.monthDays?.length || 0} days)`;
       return tmpl.frequency;
   };
+
+  if (isLoading) {
+      return (
+          <div className="h-[calc(100vh-100px)] flex flex-col items-center justify-center">
+              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-4" />
+              <p className="text-slate-500 font-medium">Loading Tasks...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="pb-16 max-w-5xl mx-auto">

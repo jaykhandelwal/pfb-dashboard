@@ -19,6 +19,7 @@ interface StoreContextType {
   attendanceRecords: AttendanceRecord[];
   attendanceOverrides: AttendanceOverride[];
   appSettings: AppSettings;
+  isLoading: boolean; // Added loading state
   
   // Task System
   todos: Todo[];
@@ -77,6 +78,7 @@ interface StoreContextType {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isLoading, setIsLoading] = useState(true);
   const [skus, setSkus] = useState<SKU[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
@@ -429,6 +431,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // --- End Realtime Logic ---
 
   const fetchData = async () => {
+    setIsLoading(true);
     if (!isSupabaseConfigured()) {
         // Fallback for offline/demo mode
         if (skus.length === 0) setSkus(INITIAL_SKUS);
@@ -437,6 +440,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (branches.length === 0) setBranches(INITIAL_BRANCHES);
         if (customers.length === 0) setCustomers(INITIAL_CUSTOMERS);
         if (membershipRules.length === 0) setMembershipRules(INITIAL_MEMBERSHIP_RULES);
+        setIsLoading(false);
         return; 
     }
 
@@ -507,6 +511,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1309,7 +1315,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings, todos, taskTemplates,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings, todos, taskTemplates, isLoading,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
