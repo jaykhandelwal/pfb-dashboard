@@ -4,7 +4,7 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { DailyReportItem, TransactionType, Todo } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check } from 'lucide-react';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, AreaChart, Area, LineChart } from 'recharts';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
@@ -62,7 +62,7 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 };
 
 const Dashboard: React.FC = () => {
-  const { transactions, salesRecords, skus, branches, orders, todos, addTodo, toggleTodo, deleteTodo } = useStore();
+  const { transactions, salesRecords, skus, branches, orders, todos, addTodo, toggleTodo, deleteTodo, appSettings } = useStore();
   const { hasPermission, currentUser, users } = useAuth();
   
   // Dashboard State
@@ -76,10 +76,22 @@ const Dashboard: React.FC = () => {
   const [newTaskText, setNewTaskText] = useState('');
   const [assignedUserId, setAssignedUserId] = useState('');
 
-  // --- 0. Todo Logic ---
-  const myTodos = useMemo(() => {
-    if (!currentUser) return [];
-    return todos.filter(t => t.assignedTo === currentUser.id && !t.isCompleted);
+  // --- 0. Todo Logic (Categorized) ---
+  const myTasks = useMemo(() => {
+    if (!currentUser) return { overdue: [], today: [], upcoming: [] };
+    
+    const todayStr = getLocalISOString();
+    
+    // Sort logic
+    const userTasks = todos
+      .filter(t => t.assignedTo === currentUser.id && !t.isCompleted)
+      .sort((a,b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+
+    return {
+       overdue: userTasks.filter(t => t.dueDate && t.dueDate < todayStr),
+       today: userTasks.filter(t => !t.dueDate || t.dueDate === todayStr),
+       upcoming: userTasks.filter(t => t.dueDate && t.dueDate > todayStr)
+    };
   }, [todos, currentUser]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -91,7 +103,8 @@ const Dashboard: React.FC = () => {
       assignedTo: assignedUserId,
       assignedBy: currentUser?.name || 'Admin',
       isCompleted: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      dueDate: getLocalISOString()
     });
 
     setNewTaskText('');
@@ -477,49 +490,76 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 pb-10">
 
-      {/* 0. My Tasks Section */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-6 text-white shadow-lg relative overflow-hidden">
-         <div className="flex justify-between items-center mb-4 relative z-10">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-               <CheckSquare className="text-emerald-400" /> My Tasks
-            </h2>
-            
-            {/* Admin Assign Button */}
-            {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
-               <button 
-                  onClick={() => setIsTaskModalOpen(true)}
-                  className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
-               >
-                  <Plus size={14} /> Assign Task
-               </button>
-            )}
-         </div>
+      {/* 0. Tasks Summary (Updated) */}
+      {(myTasks.overdue.length > 0 || myTasks.today.length > 0) && (
+        <div className="bg-white rounded-xl p-0 border border-slate-200 shadow-sm relative overflow-hidden animate-fade-in flex flex-col md:flex-row">
+           {/* Overdue Section */}
+           {myTasks.overdue.length > 0 && (
+              <div className="flex-1 bg-red-50 p-4 border-b md:border-b-0 md:border-r border-red-100">
+                 <div className="flex items-center gap-2 mb-3 text-red-800 font-bold">
+                    <Clock size={18} className="text-red-600" /> Overdue Tasks ({myTasks.overdue.length})
+                 </div>
+                 <div className="space-y-2">
+                    {myTasks.overdue.map(task => (
+                       <div key={task.id} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-red-100 shadow-sm">
+                          <button 
+                             onClick={() => toggleTodo(task.id, true)}
+                             className="w-5 h-5 rounded border border-red-300 hover:bg-red-50 flex items-center justify-center transition-colors"
+                          >
+                             <Check size={14} className="text-red-500 opacity-0 hover:opacity-100" />
+                          </button>
+                          <div>
+                             <p className="text-sm font-medium text-slate-800">{task.text}</p>
+                             <p className="text-[10px] text-red-500">Due: {task.dueDate}</p>
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+           )}
 
-         <div className="relative z-10">
-            {myTodos.length === 0 ? (
-               <div className="text-white/40 italic text-sm py-2">
-                  No pending tasks assigned to you.
-               </div>
-            ) : (
-               <div className="space-y-2">
-                  {myTodos.map(todo => (
-                     <div key={todo.id} className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors group">
-                        <button 
-                           onClick={() => toggleTodo(todo.id, true)}
-                           className="w-5 h-5 rounded border border-white/40 hover:border-emerald-400 flex items-center justify-center transition-colors flex-shrink-0"
-                        >
-                           <Check size={14} className="text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                        <div className="flex-1">
-                           <p className="text-sm font-medium text-white/90">{todo.text}</p>
-                           <p className="text-[10px] text-white/40">From: {todo.assignedBy} • {new Date(todo.createdAt).toLocaleDateString()}</p>
-                        </div>
-                     </div>
-                  ))}
-               </div>
-            )}
-         </div>
-      </div>
+           {/* Today Section */}
+           <div className="flex-1 bg-white p-4">
+                 <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold">
+                       <CheckSquare size={18} className="text-emerald-600" /> Today's Tasks
+                    </div>
+                    {/* Admin Assign Button */}
+                    {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
+                       <button 
+                          onClick={() => setIsTaskModalOpen(true)}
+                          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                       >
+                          <Plus size={12} /> Assign
+                       </button>
+                    )}
+                 </div>
+                 
+                 {myTasks.today.length === 0 ? (
+                    <div className="text-slate-400 text-sm italic py-2">
+                       All caught up for today!
+                    </div>
+                 ) : (
+                    <div className="space-y-2">
+                       {myTasks.today.map(task => (
+                          <div key={task.id} className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-100 hover:border-emerald-200 transition-colors group">
+                             <button 
+                                onClick={() => toggleTodo(task.id, true)}
+                                className="w-5 h-5 rounded border border-slate-300 hover:border-emerald-500 flex items-center justify-center transition-colors bg-white"
+                             >
+                                <Check size={14} className="text-emerald-600 opacity-0 group-hover:opacity-100" />
+                             </button>
+                             <div>
+                                <p className="text-sm font-medium text-slate-700">{task.text}</p>
+                                <p className="text-[10px] text-slate-400">By: {task.assignedBy}</p>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+           </div>
+        </div>
+      )}
 
       {/* 1. Last Checkout Section */}
       <div className="space-y-6">

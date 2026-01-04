@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType, AppSettings, Todo } from '../types';
-import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType, AppSettings, Todo, TaskTemplate } from '../types';
+import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES, getLocalISOString } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
@@ -19,7 +19,10 @@ interface StoreContextType {
   attendanceRecords: AttendanceRecord[];
   attendanceOverrides: AttendanceOverride[];
   appSettings: AppSettings;
+  
+  // Task System
   todos: Todo[];
+  taskTemplates: TaskTemplate[];
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -60,10 +63,13 @@ interface StoreContextType {
 
   updateAppSetting: (key: string, value: any) => Promise<void>;
 
-  // Todos
+  // Todos & Templates
   addTodo: (todo: Omit<Todo, 'id'>) => Promise<void>;
   toggleTodo: (id: string, isCompleted: boolean) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
+  addTaskTemplate: (template: Omit<TaskTemplate, 'id'>) => Promise<void>;
+  updateTaskTemplate: (template: TaskTemplate) => Promise<void>;
+  deleteTaskTemplate: (id: string) => Promise<void>;
 
   resetData: () => Promise<void>;
 }
@@ -83,8 +89,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [membershipRules, setMembershipRules] = useState<MembershipRule[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverride[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSettings>({ require_customer_phone: false, require_customer_name: false });
+  const [appSettings, setAppSettings] = useState<AppSettings>({ 
+      require_customer_phone: false, 
+      require_customer_name: false,
+      enable_beta_tasks: false 
+  });
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
 
   // Derived State
   const salesRecords = useMemo(() => {
@@ -220,6 +231,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload) => {
          handleRealtimeEvent(payload, setTodos, mapTodo);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_templates' }, (payload) => {
+         handleRealtimeEvent(payload, setTaskTemplates, mapTaskTemplate);
       })
       .subscribe();
 
@@ -391,7 +405,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     assignedBy: t.assigned_by,
     isCompleted: t.is_completed,
     createdAt: t.created_at_ts,
-    completedAt: t.completed_at_ts
+    completedAt: t.completed_at_ts,
+    dueDate: t.due_date,
+    templateId: t.template_id,
+    priority: t.priority || 'NORMAL'
+  });
+
+  const mapTaskTemplate = (t: any): TaskTemplate => ({
+    id: t.id,
+    title: t.title,
+    assignedTo: t.assigned_to,
+    assignedBy: t.assigned_by,
+    frequency: t.frequency,
+    weekDays: t.week_days,
+    isActive: t.is_active,
+    lastGeneratedDate: t.last_generated_date
   });
 
   // --- End Realtime Logic ---
@@ -464,6 +492,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { data: todosData } = await supabase.from('todos').select('*').order('created_at_ts', { ascending: false });
       if (todosData) setTodos(todosData.map(mapTodo));
 
+      const { data: tmplData } = await supabase.from('task_templates').select('*');
+      if (tmplData) setTaskTemplates(tmplData.map(mapTaskTemplate));
+
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
     }
@@ -473,6 +504,79 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
     return Date.now().toString(36) + Math.random().toString(36).substring(2);
   };
+
+  // --- Task Auto-Generator Logic ---
+  // This essentially acts as a "lazy cron job" that runs on client load
+  const processRecurringTasks = async () => {
+      const todayStr = getLocalISOString();
+      const todayDate = new Date();
+      const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon
+
+      for (const tmpl of taskTemplates) {
+          if (!tmpl.isActive) continue;
+          
+          // Check if already generated for today
+          if (tmpl.lastGeneratedDate === todayStr) continue;
+
+          let shouldGenerate = false;
+
+          if (tmpl.frequency === 'DAILY') {
+              shouldGenerate = true;
+          } else if (tmpl.frequency === 'WEEKLY') {
+              if (tmpl.weekDays && tmpl.weekDays.includes(dayOfWeek)) {
+                  shouldGenerate = true;
+              }
+          }
+
+          if (shouldGenerate) {
+              // 1. Create the Task
+              const newTodo: Todo = {
+                  id: generateId(),
+                  text: tmpl.title,
+                  assignedTo: tmpl.assignedTo,
+                  assignedBy: 'System (Recurring)',
+                  isCompleted: false,
+                  createdAt: Date.now(),
+                  dueDate: todayStr,
+                  templateId: tmpl.id,
+                  priority: 'NORMAL'
+              };
+
+              // 2. Add locally
+              setTodos(prev => [newTodo, ...prev]);
+
+              // 3. Sync to DB
+              if (isSupabaseConfigured()) {
+                  await supabase.from('todos').insert({
+                      id: newTodo.id,
+                      text: newTodo.text,
+                      assigned_to: newTodo.assignedTo,
+                      assigned_by: newTodo.assignedBy,
+                      is_completed: newTodo.isCompleted,
+                      created_at_ts: newTodo.createdAt,
+                      due_date: newTodo.dueDate,
+                      template_id: newTodo.templateId,
+                      priority: newTodo.priority
+                  });
+
+                  // 4. Update Template Last Generated
+                  await supabase.from('task_templates').update({
+                      last_generated_date: todayStr
+                  }).eq('id', tmpl.id);
+                  
+                  // Update local template state
+                  setTaskTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, lastGeneratedDate: todayStr } : t));
+              }
+          }
+      }
+  };
+
+  // Trigger generator when templates or app loads
+  useEffect(() => {
+      if (taskTemplates.length > 0) {
+          processRecurringTasks();
+      }
+  }, [taskTemplates]);
 
   // ... (Rest of operations remain the same, just ensuring db inserts use snake_case)
 
@@ -1050,7 +1154,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         assigned_by: newTodo.assignedBy,
         is_completed: newTodo.isCompleted,
         created_at_ts: newTodo.createdAt,
-        completed_at_ts: newTodo.completedAt
+        completed_at_ts: newTodo.completedAt,
+        due_date: newTodo.dueDate,
+        template_id: newTodo.templateId,
+        priority: newTodo.priority
       });
     }
     setTodos(prev => [newTodo, ...prev]);
@@ -1073,6 +1180,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTodos(prev => prev.filter(t => t.id !== id));
   };
 
+  const addTaskTemplate = async (templateData: Omit<TaskTemplate, 'id'>) => {
+      const newTemplate: TaskTemplate = {
+          id: generateId(),
+          ...templateData
+      };
+      if (isSupabaseConfigured()) {
+          await supabase.from('task_templates').insert({
+              id: newTemplate.id,
+              title: newTemplate.title,
+              assigned_to: newTemplate.assignedTo,
+              assigned_by: newTemplate.assignedBy,
+              frequency: newTemplate.frequency,
+              week_days: newTemplate.weekDays,
+              is_active: newTemplate.isActive,
+              last_generated_date: newTemplate.lastGeneratedDate
+          });
+      }
+      setTaskTemplates(prev => [...prev, newTemplate]);
+      processRecurringTasks(); // Trigger generation in case it matches today
+  };
+
+  const updateTaskTemplate = async (updated: TaskTemplate) => {
+      if (isSupabaseConfigured()) {
+          await supabase.from('task_templates').update({
+              title: updated.title,
+              assigned_to: updated.assignedTo,
+              frequency: updated.frequency,
+              week_days: updated.weekDays,
+              is_active: updated.isActive
+          }).eq('id', updated.id);
+      }
+      setTaskTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+      processRecurringTasks();
+  };
+
+  const deleteTaskTemplate = async (id: string) => {
+      if (isSupabaseConfigured()) {
+          await supabase.from('task_templates').delete().eq('id', id);
+      }
+      setTaskTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
@@ -1088,6 +1237,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('attendance').delete().neq('id', '0');
         await supabase.from('attendance_overrides').delete().neq('id', '0');
         await supabase.from('todos').delete().neq('id', '0');
+        await supabase.from('task_templates').delete().neq('id', '0');
         // Do not reset app_settings to default automatically to preserve remote config
     }
     setTransactions([]);
@@ -1103,17 +1253,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAttendanceRecords([]);
     setAttendanceOverrides([]);
     setTodos([]);
+    setTaskTemplates([]);
   };
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings, todos,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings, todos, taskTemplates,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
       addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, updateAppSetting,
-      addTodo, toggleTodo, deleteTodo,
+      addTodo, toggleTodo, deleteTodo, addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
       resetData 
     }}>
       {children}

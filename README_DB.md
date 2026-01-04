@@ -27,13 +27,15 @@ erDiagram
     USERS ||--o{ TRANSACTIONS : "performed by"
     USERS ||--o{ ATTENDANCE : "checks in"
     USERS ||--o{ TODOS : "assigned to"
+    TASK_TEMPLATES ||--o{ TODOS : "generates"
     
     %% Table Definitions
     BRANCHES { string id PK, string name }
     SKUS { string id PK, string name, int pieces_per_packet }
     TRANSACTIONS { string id PK, string type, int quantity_pieces }
     ORDERS { string id PK, jsonb items, numeric total_amount }
-    TODOS { string id PK, string text, boolean is_completed }
+    TODOS { string id PK, string text, boolean is_completed, string due_date }
+    TASK_TEMPLATES { string id PK, string frequency, boolean is_active }
 ```
 
 ---
@@ -100,12 +102,6 @@ The Single Source of Truth for revenue.
 - `custom_sku_items` (jsonb): Array of raw SKUs used manually.
 - `custom_sku_reason` (text).
 - `created_at` (timestamptz).
-
-#### Migration: Payment Split
-To enable split payments, run this query:
-```sql
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_split JSONB DEFAULT '[]'::jsonb;
-```
 
 ### `sales_records`
 *Used primarily for Manual Entries in the Reconciliation Page.*
@@ -181,14 +177,29 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_split JSONB DEFAULT '[]'::js
 
 ---
 
-## ✅ 4. Tasks
+## ✅ 4. Tasks (Enhanced)
 
-### `todos`
+### `task_templates` (New)
+Defines auto-repeating tasks.
+- `id` (text, PK).
+- `title` (text).
+- `assigned_to` (text).
+- `assigned_by` (text).
+- `frequency` (text): 'DAILY', 'WEEKLY', 'ONCE'.
+- `week_days` (jsonb): Array of integers [0-6] for weekly recurrence.
+- `is_active` (boolean).
+- `last_generated_date` (text): Tracks execution to prevent dupes.
+- `created_at` (timestamptz).
+
+### `todos` (Updated)
 - `id` (text, PK).
 - `text` (text).
 - `assigned_to` (text): FK to `users.id`.
 - `assigned_by` (text).
 - `is_completed` (boolean).
+- `due_date` (text): YYYY-MM-DD. **(New)**
+- `template_id` (text): Link to parent template. **(New)**
+- `priority` (text): 'NORMAL' | 'HIGH'. **(New)**
 - `created_at_ts` (bigint).
 - `completed_at_ts` (bigint).
 - `created_at` (timestamptz).

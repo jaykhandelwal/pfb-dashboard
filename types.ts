@@ -225,6 +225,7 @@ export type Permission =
   | 'MANAGE_MEMBERSHIP'
   | 'MANAGE_MENU'
   | 'MANAGE_SETTINGS' // New permission for App Settings
+  | 'MANAGE_TASKS' // New permission for full task management
   | 'MANAGE_ATTENDANCE';
 
 export interface User {
@@ -241,10 +242,25 @@ export interface User {
 export interface AppSettings {
   require_customer_phone: boolean;
   require_customer_name: boolean;
+  enable_beta_tasks: boolean;
   [key: string]: any; // Extensible
 }
 
-// --- Todo List ---
+// --- Todo / Task Management ---
+
+export type TaskFrequency = 'ONCE' | 'DAILY' | 'WEEKLY';
+
+export interface TaskTemplate {
+  id: string;
+  title: string;
+  assignedTo: string; // User ID
+  assignedBy: string; // User Name
+  frequency: TaskFrequency;
+  weekDays?: number[]; // 0=Sun, 1=Mon, etc. (For WEEKLY)
+  isActive: boolean;
+  lastGeneratedDate?: string; // YYYY-MM-DD
+}
+
 export interface Todo {
   id: string;
   text: string;
@@ -253,6 +269,11 @@ export interface Todo {
   isCompleted: boolean;
   createdAt: number;
   completedAt?: number;
+  
+  // New Fields for Enhanced Tasks
+  dueDate?: string; // YYYY-MM-DD
+  templateId?: string; // Link to parent template
+  priority?: 'NORMAL' | 'HIGH';
 }
 
 // Add global window extension for Android Bridge
