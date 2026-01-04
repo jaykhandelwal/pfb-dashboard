@@ -36,6 +36,7 @@ erDiagram
     ORDERS { string id PK, jsonb items, numeric total_amount }
     TODOS { string id PK, string text, boolean is_completed, string due_date }
     TASK_TEMPLATES { string id PK, string frequency, boolean is_active }
+    APP_SETTINGS { string key PK, jsonb value }
 ```
 
 ---
@@ -202,4 +203,14 @@ Defines auto-repeating tasks.
 - `priority` (text): 'NORMAL' | 'HIGH'. **(New)**
 - `created_at_ts` (bigint).
 - `completed_at_ts` (bigint).
+- `created_at` (timestamptz).
+
+---
+
+## ⚙️ 5. System Configuration
+
+### `app_settings`
+Global flags for app behavior.
+- `key` (text, PK): e.g., 'require_customer_phone'.
+- `value` (jsonb): e.g., true, false, or config object.
 - `created_at` (timestamptz).

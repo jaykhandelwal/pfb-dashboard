@@ -223,11 +223,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          handleRealtimeEvent(payload, setDeletedTransactions, mapDeletedTransaction);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
-         const { new: newSetting } = payload;
-         setAppSettings(prev => ({
-             ...prev,
-             [newSetting.key]: newSetting.value
-         }));
+         // Safe handler for app_settings changes
+         const { eventType, new: newSetting } = payload;
+         if ((eventType === 'INSERT' || eventType === 'UPDATE') && newSetting && newSetting.key) {
+             setAppSettings(prev => ({
+                 ...prev,
+                 [newSetting.key]: newSetting.value
+             }));
+         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload) => {
          handleRealtimeEvent(payload, setTodos, mapTodo);
@@ -480,9 +483,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { data: overrideData } = await supabase.from('attendance_overrides').select('*');
       if (overrideData) setAttendanceOverrides(overrideData.map(mapAttendanceOverride));
 
-      const { data: settingsData } = await supabase.from('app_settings').select('*');
+      // UPDATED SETTINGS FETCH
+      const { data: settingsData, error: settingsError } = await supabase.from('app_settings').select('*');
+      
+      if (settingsError) {
+          console.warn("StoreContext: Error fetching app_settings. Table might not exist.", settingsError);
+      }
+      
       if (settingsData) {
-          const settingsObj: any = { ...appSettings };
+          const settingsObj: any = { ...appSettings }; // Start with defaults
           settingsData.forEach((row: any) => {
               settingsObj[row.key] = row.value;
           });
@@ -1129,15 +1138,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  // UPDATED: updateAppSetting with Error Handling and Success Log
   const updateAppSetting = async (key: string, value: any) => {
+      const previousValue = appSettings[key];
+      
+      // Optimistic Update
       setAppSettings(prev => ({
           ...prev,
           [key]: value
       }));
 
       if (isSupabaseConfigured()) {
-          // Upsert logic for settings
-          await supabase.from('app_settings').upsert({ key, value });
+          const { error } = await supabase.from('app_settings').upsert({ key, value });
+          
+          if (error) {
+              console.error(`StoreContext: Failed to save setting '${key}'.`, error);
+              // Revert
+              setAppSettings(prev => ({
+                  ...prev,
+                  [key]: previousValue
+              }));
+              alert(`Failed to save setting. Database error: ${error.message}`);
+          } else {
+              console.log(`Setting '${key}' saved successfully.`);
+          }
       }
   };
 
