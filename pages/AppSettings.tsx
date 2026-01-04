@@ -1,26 +1,45 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2 } from 'lucide-react';
 
 const AppSettings: React.FC = () => {
   const { appSettings, updateAppSetting } = useStore();
   const { currentUser } = useAuth();
+  
+  // Local state to manage loading status per toggle to avoid race conditions
+  const [savingKeys, setSavingKeys] = useState<string[]>([]);
+  // Local state for toast
+  const [toastMsg, setToastMsg] = useState('');
 
-  const handleToggle = (key: string) => {
+  const handleToggle = async (key: string) => {
+    // Prevent double clicks
+    if (savingKeys.includes(key)) return;
+
     // Permission Check specifically for BETA features
     if (key === 'enable_beta_tasks' && currentUser?.role !== 'ADMIN') {
        alert("Beta features can only be activated by an Admin.");
        return;
     }
 
+    // Add to saving list
+    setSavingKeys(prev => [...prev, key]);
+
     const currentValue = appSettings[key];
-    updateAppSetting(key, !currentValue);
+    const success = await updateAppSetting(key, !currentValue);
+
+    // Remove from saving list
+    setSavingKeys(prev => prev.filter(k => k !== key));
+
+    if (success) {
+        setToastMsg('Setting saved successfully!');
+        setTimeout(() => setToastMsg(''), 3000);
+    }
   };
 
   return (
-    <div className="max-w-3xl mx-auto pb-16">
+    <div className="max-w-3xl mx-auto pb-16 relative">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
           <Sliders className="text-slate-600" /> Settings
@@ -53,15 +72,19 @@ const AppSettings: React.FC = () => {
                           </p>
                        </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                       <input 
-                          type="checkbox" 
-                          className="sr-only peer"
-                          checked={appSettings.require_customer_phone || false}
-                          onChange={() => handleToggle('require_customer_phone')}
-                       />
-                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
+                    {savingKeys.includes('require_customer_phone') ? (
+                        <Loader2 size={24} className="text-indigo-600 animate-spin" />
+                    ) : (
+                        <label className="relative inline-flex items-center cursor-pointer">
+                           <input 
+                              type="checkbox" 
+                              className="sr-only peer"
+                              checked={appSettings.require_customer_phone || false}
+                              onChange={() => handleToggle('require_customer_phone')}
+                           />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    )}
                  </div>
 
                  {/* Setting 2: Require Name */}
@@ -77,15 +100,19 @@ const AppSettings: React.FC = () => {
                           </p>
                        </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                       <input 
-                          type="checkbox" 
-                          className="sr-only peer"
-                          checked={appSettings.require_customer_name || false}
-                          onChange={() => handleToggle('require_customer_name')}
-                       />
-                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
+                    {savingKeys.includes('require_customer_name') ? (
+                        <Loader2 size={24} className="text-indigo-600 animate-spin" />
+                    ) : (
+                        <label className="relative inline-flex items-center cursor-pointer">
+                           <input 
+                              type="checkbox" 
+                              className="sr-only peer"
+                              checked={appSettings.require_customer_name || false}
+                              onChange={() => handleToggle('require_customer_name')}
+                           />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    )}
                  </div>
               </div>
            </div>
@@ -121,16 +148,20 @@ const AppSettings: React.FC = () => {
                           </p>
                        </div>
                     </div>
-                    <label className={`relative inline-flex items-center cursor-pointer ${currentUser?.role !== 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                       <input 
-                          type="checkbox" 
-                          className="sr-only peer"
-                          checked={appSettings.enable_beta_tasks || false}
-                          onChange={() => handleToggle('enable_beta_tasks')}
-                          disabled={currentUser?.role !== 'ADMIN'}
-                       />
-                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                    </label>
+                    {savingKeys.includes('enable_beta_tasks') ? (
+                        <Loader2 size={24} className="text-purple-600 animate-spin" />
+                    ) : (
+                        <label className={`relative inline-flex items-center cursor-pointer ${currentUser?.role !== 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                           <input 
+                              type="checkbox" 
+                              className="sr-only peer"
+                              checked={appSettings.enable_beta_tasks || false}
+                              onChange={() => handleToggle('enable_beta_tasks')}
+                              disabled={currentUser?.role !== 'ADMIN'}
+                           />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                    )}
                  </div>
               </div>
            </div>
@@ -144,6 +175,16 @@ const AppSettings: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Success Toast */}
+      {toastMsg && (
+        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 md:bottom-10 z-50">
+          <div className="bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 animate-fade-in-up">
+             <CheckCircle2 size={20} className="text-emerald-400" />
+             <span className="font-bold text-sm">{toastMsg}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

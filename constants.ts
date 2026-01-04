@@ -1,6 +1,3 @@
-
-
-
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -106,6 +103,7 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
   { id: 'VIEW_DASHBOARD', label: 'View Dashboard (Inventory Status)' },
   { id: 'VIEW_ANALYTICS', label: 'View Analytics & Reports' },
   { id: 'MANAGE_ATTENDANCE', label: 'Submit & View Attendance' },
+  { id: 'MANAGE_TASKS', label: 'Manage Tasks & Todos' },
   { id: 'MANAGE_OPERATIONS', label: 'Manage Operations (Check Out/Return)' },
   { id: 'MANAGE_INVENTORY', label: 'Manage Fridge Inventory' },
   { id: 'MANAGE_WASTAGE', label: 'Report Wastage' },
@@ -123,8 +121,8 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
 
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   ADMIN: ALL_PERMISSIONS.map(p => p.id),
-  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE', 'MANAGE_SETTINGS'],
-  STAFF: ['VIEW_DASHBOARD', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'], 
+  MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_TASKS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE', 'MANAGE_SETTINGS'],
+  STAFF: ['VIEW_DASHBOARD', 'MANAGE_TASKS', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'], 
 };
 
 export const INITIAL_ADMIN_USER: User = {
@@ -141,6 +139,7 @@ export const APP_PAGES = [
   { path: '/orders', label: 'POS & Orders' },
   { path: '/operations', label: 'Operations (Check In/Out)' },
   { path: '/attendance', label: 'Attendance' },
+  { path: '/tasks', label: 'Tasks' },
   { path: '/wastage', label: 'Wastage Report' },
   { path: '/inventory', label: 'Fridge Inventory' },
   { path: '/reconciliation', label: 'Sales Reconciliation' },

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType } from '../types';
@@ -72,7 +73,7 @@ const Reconciliation: React.FC = () => {
         // Explicitly check for string to satisfy TypeScript and narrow type
         if (typeof result === 'string') {
             try {
-              const parsedData = await parseSalesReportImage(result, skus);
+              const parsedData = await parseSalesReportImage(result as string, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {

@@ -79,6 +79,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
              if (Date.now() - timestamp < ONE_DAY && user) {
                 // Restore session from local storage immediately
                 // We trust the local storage user object temporarily even if DB fetch failed
+                
+                // --- PATCH: Ensure admins have MANAGE_TASKS (Legacy Fix) ---
+                if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
+                    user.permissions.push('MANAGE_TASKS');
+                }
+                // -----------------------------------------------------------
+
                 setCurrentUser(user);
                 
                 // If we successfully fetched fresh users, try to update the current user with fresh data
@@ -157,15 +164,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [users]);
 
   // Mapper
-  const mapUser = (u: any): User => ({
-     id: u.id,
-     name: u.name,
-     code: u.code,
-     role: u.role,
-     permissions: u.permissions,
-     defaultBranchId: u.default_branch_id,
-     defaultPage: u.default_page
-  });
+  const mapUser = (u: any): User => {
+     const user: User = {
+        id: u.id,
+        name: u.name,
+        code: u.code,
+        role: u.role,
+        permissions: u.permissions,
+        defaultBranchId: u.default_branch_id,
+        defaultPage: u.default_page
+     };
+     // Runtime patch for admins to get new permissions immediately
+     if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
+         user.permissions.push('MANAGE_TASKS');
+     }
+     return user;
+  };
 
   const persistSession = (user: User) => {
     localStorage.setItem('pakaja_session', JSON.stringify({

@@ -61,7 +61,7 @@ interface StoreContextType {
   addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
   setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, note?: string) => Promise<void>;
 
-  updateAppSetting: (key: string, value: any) => Promise<void>;
+  updateAppSetting: (key: string, value: any) => Promise<boolean>;
 
   // Todos & Templates
   addTodo: (todo: Omit<Todo, 'id'>) => Promise<void>;
@@ -92,7 +92,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [appSettings, setAppSettings] = useState<AppSettings>({ 
       require_customer_phone: false, 
       require_customer_name: false,
-      enable_beta_tasks: false 
+      enable_beta_tasks: true 
   });
   const [todos, setTodos] = useState<Todo[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
@@ -1139,7 +1139,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // UPDATED: updateAppSetting with Error Handling and Success Log
-  const updateAppSetting = async (key: string, value: any) => {
+  const updateAppSetting = async (key: string, value: any): Promise<boolean> => {
       const previousValue = appSettings[key];
       
       // Optimistic Update
@@ -1159,10 +1159,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   [key]: previousValue
               }));
               alert(`Failed to save setting. Database error: ${error.message}`);
+              return false;
           } else {
               console.log(`Setting '${key}' saved successfully.`);
+              return true;
           }
       }
+      return true; // Offline mode is always success
   };
 
   const addTodo = async (todoData: Omit<Todo, 'id'>) => {

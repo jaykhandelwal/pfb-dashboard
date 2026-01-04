@@ -490,8 +490,8 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 pb-10">
 
-      {/* 0. Tasks Summary (Updated) */}
-      {(myTasks.overdue.length > 0 || myTasks.today.length > 0) && (
+      {/* 0. Tasks Summary (Visible only if Beta Enabled) */}
+      {appSettings.enable_beta_tasks && (myTasks.overdue.length > 0 || myTasks.today.length > 0) && (
         <div className="bg-white rounded-xl p-0 border border-slate-200 shadow-sm relative overflow-hidden animate-fade-in flex flex-col md:flex-row">
            {/* Overdue Section */}
            {myTasks.overdue.length > 0 && (

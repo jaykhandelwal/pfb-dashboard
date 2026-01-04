@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useStore } from '../context/StoreContext';
 import { Permission } from '../types';
 
 interface LayoutProps {
@@ -25,6 +26,7 @@ type NavItem = {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, logout, hasPermission } = useAuth();
+  const { appSettings } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Track expanded state of dropdowns - Default collapsed
@@ -43,13 +45,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
     { path: '/attendance', label: 'Attendance', icon: <UserCheck size={20} />, permission: 'MANAGE_ATTENDANCE' },
-    { path: '/tasks', label: 'Tasks', icon: <CheckSquare size={20} />, permission: 'MANAGE_TASKS' },
+  ];
+
+  // Conditionally add Tasks based on Beta Flag
+  if (appSettings.enable_beta_tasks) {
+      navStructure.push({ path: '/tasks', label: 'Tasks', icon: <CheckSquare size={20} />, permission: 'MANAGE_TASKS' });
+  }
+
+  navStructure.push(
     { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },
     { path: '/inventory', label: 'Fridge Inventory', icon: <Snowflake size={20} />, permission: 'MANAGE_INVENTORY' },
-    { path: '/reconciliation', label: 'Reconciliation', icon: <Scale size={20} />, permission: 'MANAGE_RECONCILIATION' },
+    { path: '/reconciliation', label: 'Reconciliation', icon: <Scale size={20} />, permission: 'MANAGE_RECONCILIATION' }
+  );
     
-    // Sales Group
-    {
+  // Sales Group
+  navStructure.push({
       id: 'sales',
       label: 'Sales',
       icon: <TrendingUp size={20} />,
@@ -58,10 +68,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { path: '/customers', label: 'Customers', icon: <Contact size={18} />, permission: 'MANAGE_CUSTOMERS' },
         { path: '/membership', label: 'Membership Plan', icon: <Award size={18} />, permission: 'MANAGE_MEMBERSHIP' },
       ]
-    },
+  });
 
-    // Manage Group
-    {
+  // Manage Group
+  navStructure.push({
       id: 'manage',
       label: 'Manage',
       icon: <Settings size={20} />,
@@ -73,10 +83,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { path: '/users', label: 'User Management', icon: <Users size={18} />, permission: 'MANAGE_USERS' },
         { path: '/settings', label: 'Settings', icon: <Sliders size={18} />, permission: 'MANAGE_SETTINGS' },
       ]
-    },
+  });
 
-    { path: '/logs', label: 'Transaction Logs', icon: <History size={20} />, permission: 'VIEW_LOGS' },
-  ];
+  navStructure.push({ path: '/logs', label: 'Transaction Logs', icon: <History size={20} />, permission: 'VIEW_LOGS' });
 
   // Helper to filter nav items based on permission
   const getFilteredNav = (items: NavItem[]): NavItem[] => {

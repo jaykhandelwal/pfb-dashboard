@@ -24,7 +24,7 @@ const Tasks: React.FC = () => {
 
   // --- Derived Data ---
   const myTasks = useMemo(() => {
-    if (!currentUser) return [];
+    if (!currentUser) return { overdue: [], today: [], upcoming: [], completed: [] };
     
     const todayStr = getLocalISOString();
     
