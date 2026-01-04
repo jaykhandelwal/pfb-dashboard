@@ -2,9 +2,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { DailyReportItem, TransactionType } from '../types';
+import { DailyReportItem, TransactionType, Todo } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays } from 'lucide-react';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, AreaChart, Area, LineChart } from 'recharts';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
@@ -62,14 +62,42 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 };
 
 const Dashboard: React.FC = () => {
-  const { transactions, salesRecords, skus, branches, orders } = useStore();
-  const { hasPermission } = useAuth();
+  const { transactions, salesRecords, skus, branches, orders, todos, addTodo, toggleTodo, deleteTodo } = useStore();
+  const { hasPermission, currentUser, users } = useAuth();
   
   // Dashboard State
   const [timeRange, setTimeRange] = useState<TimeRange>('TODAY');
   const [dashboardBranch, setDashboardBranch] = useState<string>('ALL');
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
+
+  // Todo State
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [newTaskText, setNewTaskText] = useState('');
+  const [assignedUserId, setAssignedUserId] = useState('');
+
+  // --- 0. Todo Logic ---
+  const myTodos = useMemo(() => {
+    if (!currentUser) return [];
+    return todos.filter(t => t.assignedTo === currentUser.id && !t.isCompleted);
+  }, [todos, currentUser]);
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskText || !assignedUserId) return;
+
+    await addTodo({
+      text: newTaskText,
+      assignedTo: assignedUserId,
+      assignedBy: currentUser?.name || 'Admin',
+      isCompleted: false,
+      createdAt: Date.now()
+    });
+
+    setNewTaskText('');
+    setAssignedUserId('');
+    setIsTaskModalOpen(false);
+  };
 
   // --- 1. Last Checkout Logic ---
   const lastCheckouts = useMemo(() => {
@@ -448,6 +476,50 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-10">
+
+      {/* 0. My Tasks Section */}
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-6 text-white shadow-lg relative overflow-hidden">
+         <div className="flex justify-between items-center mb-4 relative z-10">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+               <CheckSquare className="text-emerald-400" /> My Tasks
+            </h2>
+            
+            {/* Admin Assign Button */}
+            {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
+               <button 
+                  onClick={() => setIsTaskModalOpen(true)}
+                  className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
+               >
+                  <Plus size={14} /> Assign Task
+               </button>
+            )}
+         </div>
+
+         <div className="relative z-10">
+            {myTodos.length === 0 ? (
+               <div className="text-white/40 italic text-sm py-2">
+                  No pending tasks assigned to you.
+               </div>
+            ) : (
+               <div className="space-y-2">
+                  {myTodos.map(todo => (
+                     <div key={todo.id} className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/10 hover:bg-white/10 transition-colors group">
+                        <button 
+                           onClick={() => toggleTodo(todo.id, true)}
+                           className="w-5 h-5 rounded border border-white/40 hover:border-emerald-400 flex items-center justify-center transition-colors flex-shrink-0"
+                        >
+                           <Check size={14} className="text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                        <div className="flex-1">
+                           <p className="text-sm font-medium text-white/90">{todo.text}</p>
+                           <p className="text-[10px] text-white/40">From: {todo.assignedBy} • {new Date(todo.createdAt).toLocaleDateString()}</p>
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            )}
+         </div>
+      </div>
 
       {/* 1. Last Checkout Section */}
       <div className="space-y-6">
@@ -857,6 +929,56 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
+      )}
+
+      {/* Assign Task Modal */}
+      {isTaskModalOpen && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h3 className="font-bold text-slate-700">Assign New Task</h3>
+                  <button onClick={() => setIsTaskModalOpen(false)}><X size={20} className="text-slate-400" /></button>
+               </div>
+               <form onSubmit={handleCreateTask} className="p-4 space-y-4">
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Description</label>
+                     <input 
+                        type="text"
+                        required
+                        autoFocus
+                        placeholder="e.g. Clean the deep fryer"
+                        value={newTaskText}
+                        onChange={(e) => setNewTaskText(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none"
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Assign To</label>
+                     <div className="relative">
+                        <UserIcon size={16} className="absolute left-3 top-2.5 text-slate-400" />
+                        <select 
+                           required
+                           value={assignedUserId}
+                           onChange={(e) => setAssignedUserId(e.target.value)}
+                           className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none bg-white"
+                        >
+                           <option value="">Select Staff Member</option>
+                           {users.map(u => (
+                              <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                           ))}
+                        </select>
+                     </div>
+                  </div>
+                  <button 
+                     type="submit"
+                     disabled={!newTaskText || !assignedUserId}
+                     className="w-full py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors disabled:opacity-50"
+                  >
+                     Assign Task
+                  </button>
+               </form>
+            </div>
+         </div>
       )}
 
     </div>

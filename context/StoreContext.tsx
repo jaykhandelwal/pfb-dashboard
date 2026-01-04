@@ -1,5 +1,6 @@
+
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType, AppSettings } from '../types';
+import { SKU, Branch, Transaction, SalesRecord, ArchivedTransaction, Customer, MembershipRule, MenuItem, AttendanceRecord, Order, OrderItem, MenuCategory, AttendanceOverride, AttendanceOverrideType, AppSettings, Todo } from '../types';
 import { INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES, INITIAL_MENU_ITEMS, INITIAL_MENU_CATEGORIES } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -18,6 +19,7 @@ interface StoreContextType {
   attendanceRecords: AttendanceRecord[];
   attendanceOverrides: AttendanceOverride[];
   appSettings: AppSettings;
+  todos: Todo[];
   
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -58,6 +60,11 @@ interface StoreContextType {
 
   updateAppSetting: (key: string, value: any) => Promise<void>;
 
+  // Todos
+  addTodo: (todo: Omit<Todo, 'id'>) => Promise<void>;
+  toggleTodo: (id: string, isCompleted: boolean) => Promise<void>;
+  deleteTodo: (id: string) => Promise<void>;
+
   resetData: () => Promise<void>;
 }
 
@@ -77,6 +84,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverride[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>({ require_customer_phone: false, require_customer_name: false });
+  const [todos, setTodos] = useState<Todo[]>([]);
 
   // Derived State
   const salesRecords = useMemo(() => {
@@ -209,6 +217,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              ...prev,
              [newSetting.key]: newSetting.value
          }));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload) => {
+         handleRealtimeEvent(payload, setTodos, mapTodo);
       })
       .subscribe();
 
@@ -373,6 +384,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deletedBy: t.deleted_by
   });
 
+  const mapTodo = (t: any): Todo => ({
+    id: t.id,
+    text: t.text,
+    assignedTo: t.assigned_to,
+    assignedBy: t.assigned_by,
+    isCompleted: t.is_completed,
+    createdAt: t.created_at_ts,
+    completedAt: t.completed_at_ts
+  });
+
   // --- End Realtime Logic ---
 
   const fetchData = async () => {
@@ -439,6 +460,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           setAppSettings(settingsObj);
       }
+
+      const { data: todosData } = await supabase.from('todos').select('*').order('created_at_ts', { ascending: false });
+      if (todosData) setTodos(todosData.map(mapTodo));
 
     } catch (error) {
       console.warn("StoreContext: Error fetching data (Offline Mode):", error);
@@ -1013,6 +1037,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  const addTodo = async (todoData: Omit<Todo, 'id'>) => {
+    const newTodo: Todo = {
+      id: generateId(),
+      ...todoData
+    };
+    if (isSupabaseConfigured()) {
+      await supabase.from('todos').insert({
+        id: newTodo.id,
+        text: newTodo.text,
+        assigned_to: newTodo.assignedTo,
+        assigned_by: newTodo.assignedBy,
+        is_completed: newTodo.isCompleted,
+        created_at_ts: newTodo.createdAt,
+        completed_at_ts: newTodo.completedAt
+      });
+    }
+    setTodos(prev => [newTodo, ...prev]);
+  };
+
+  const toggleTodo = async (id: string, isCompleted: boolean) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from('todos').update({
+        is_completed: isCompleted,
+        completed_at_ts: isCompleted ? Date.now() : null
+      }).eq('id', id);
+    }
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, isCompleted, completedAt: isCompleted ? Date.now() : undefined } : t));
+  };
+
+  const deleteTodo = async (id: string) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from('todos').delete().eq('id', id);
+    }
+    setTodos(prev => prev.filter(t => t.id !== id));
+  };
+
   const resetData = async () => {
     if (isSupabaseConfigured()) {
         await supabase.from('transactions').delete().neq('id', '0');
@@ -1027,6 +1087,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('membership_rules').delete().neq('id', '0');
         await supabase.from('attendance').delete().neq('id', '0');
         await supabase.from('attendance_overrides').delete().neq('id', '0');
+        await supabase.from('todos').delete().neq('id', '0');
         // Do not reset app_settings to default automatically to preserve remote config
     }
     setTransactions([]);
@@ -1041,16 +1102,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setMembershipRules([]);
     setAttendanceRecords([]);
     setAttendanceOverrides([]);
+    setTodos([]);
   };
 
   return (
     <StoreContext.Provider value={{ 
-      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings,
+      skus, menuItems, menuCategories, branches, transactions, salesRecords, orders, deletedTransactions, customers, membershipRules, attendanceRecords, attendanceOverrides, appSettings, todos,
       addBatchTransactions, deleteTransactionBatch, addSalesRecords, addOrder, deleteOrder, deleteSalesRecordsForDate, 
       addSku, updateSku, deleteSku, reorderSku, addMenuItem, updateMenuItem, deleteMenuItem, 
       addMenuCategory, updateMenuCategory, deleteMenuCategory, reorderMenuCategory,
       addBranch, updateBranch, deleteBranch,
-      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, updateAppSetting, resetData 
+      addCustomer, updateCustomer, addMembershipRule, deleteMembershipRule, addAttendance, setAttendanceStatus, updateAppSetting,
+      addTodo, toggleTodo, deleteTodo,
+      resetData 
     }}>
       {children}
     </StoreContext.Provider>

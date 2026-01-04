@@ -26,12 +26,14 @@ erDiagram
     
     USERS ||--o{ TRANSACTIONS : "performed by"
     USERS ||--o{ ATTENDANCE : "checks in"
+    USERS ||--o{ TODOS : "assigned to"
     
     %% Table Definitions
     BRANCHES { string id PK, string name }
     SKUS { string id PK, string name, int pieces_per_packet }
     TRANSACTIONS { string id PK, string type, int quantity_pieces }
     ORDERS { string id PK, jsonb items, numeric total_amount }
+    TODOS { string id PK, string text, boolean is_completed }
 ```
 
 ---
@@ -175,4 +177,18 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_split JSONB DEFAULT '[]'::js
 - `value` (text).
 - `description` (text).
 - `time_frame_days` (int).
+- `created_at` (timestamptz).
+
+---
+
+## ✅ 4. Tasks
+
+### `todos`
+- `id` (text, PK).
+- `text` (text).
+- `assigned_to` (text): FK to `users.id`.
+- `assigned_by` (text).
+- `is_completed` (boolean).
+- `created_at_ts` (bigint).
+- `completed_at_ts` (bigint).
 - `created_at` (timestamptz).

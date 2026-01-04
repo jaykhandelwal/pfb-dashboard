@@ -244,6 +244,17 @@ export interface AppSettings {
   [key: string]: any; // Extensible
 }
 
+// --- Todo List ---
+export interface Todo {
+  id: string;
+  text: string;
+  assignedTo: string; // userId
+  assignedBy: string; // userName
+  isCompleted: boolean;
+  createdAt: number;
+  completedAt?: number;
+}
+
 // Add global window extension for Android Bridge
 declare global {
   interface Window {
