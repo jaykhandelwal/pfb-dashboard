@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { DailyReportItem, TransactionType } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line } from 'recharts';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, AreaChart, Area, LineChart } from 'recharts';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
 
@@ -310,6 +311,111 @@ const Dashboard: React.FC = () => {
     return { reportData: Object.values(report), trendData: trendArray, reconciliationData: reconArray };
   }, [transactions, orders, skus, dateRangeFilter, dashboardBranch, hasPermission]);
 
+  // --- 6. Advanced Sales Analytics (New Graphs) ---
+  const { revenueTrend, branchKeys, topMenuData } = useMemo(() => {
+      if (!hasPermission('VIEW_ANALYTICS')) return { revenueTrend: [], branchKeys: [], topMenuData: [] };
+
+      const dailyMap: Record<string, any> = {};
+      const menuMap: Record<string, number> = {};
+      const bKeys = new Set<string>();
+
+      // Sort orders for timeline
+      const sortedOrders = [...orders].sort((a,b) => a.timestamp - b.timestamp);
+
+      sortedOrders.forEach(o => {
+          if (!dateRangeFilter(o.date)) return;
+          
+          const dateKey = o.date;
+          if (!dailyMap[dateKey]) {
+              dailyMap[dateKey] = { 
+                  date: dateKey, 
+                  displayDate: new Date(dateKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                  total: 0 
+              };
+          }
+
+          // Total Revenue & Top Items (Filtered by selected branch if applicable)
+          if (dashboardBranch === 'ALL' || o.branchId === dashboardBranch) {
+              dailyMap[dateKey].total += o.totalAmount;
+              
+              // Process Menu Items
+              if (o.items && Array.isArray(o.items)) {
+                  o.items.forEach(item => {
+                      menuMap[item.name] = (menuMap[item.name] || 0) + item.quantity;
+                  });
+              }
+          }
+
+          // Branch Specific Data (For comparison graph - mainly relevant when ALL is selected)
+          if (dashboardBranch === 'ALL') {
+              dailyMap[dateKey][o.branchId] = (dailyMap[dateKey][o.branchId] || 0) + o.totalAmount;
+              bKeys.add(o.branchId);
+          } else if (o.branchId === dashboardBranch) {
+              dailyMap[dateKey][o.branchId] = (dailyMap[dateKey][o.branchId] || 0) + o.totalAmount;
+              bKeys.add(o.branchId);
+          }
+      });
+
+      const trendArray = Object.values(dailyMap).sort((a,b) => a.date.localeCompare(b.date));
+      
+      const menuArray = Object.entries(menuMap)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a,b) => b.value - a.value)
+          .slice(0, 8); // Top 8 items
+
+      return { revenueTrend: trendArray, branchKeys: Array.from(bKeys), topMenuData: menuArray };
+  }, [orders, dateRangeFilter, dashboardBranch, hasPermission]);
+
+  // --- 7. Last 7 Days Performance Table Data ---
+  const last7DaysPerformance = useMemo(() => {
+      if (!hasPermission('VIEW_ANALYTICS')) return [];
+
+      const today = new Date();
+      // Generate last 7 days dates
+      const dates = [];
+      for (let i = 0; i < 7; i++) {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          dates.push(getLocalISOString(d));
+      }
+
+      const stats = dates.map(dateStr => {
+          const dayOrders = orders.filter(o => 
+              o.date === dateStr && 
+              (dashboardBranch === 'ALL' || o.branchId === dashboardBranch)
+          );
+
+          let totalRevenue = 0;
+          let cash = 0;
+          let online = 0;
+
+          dayOrders.forEach(o => {
+              totalRevenue += o.totalAmount;
+              if (o.paymentMethod === 'CASH') {
+                  cash += o.totalAmount;
+              } else if (o.paymentMethod === 'SPLIT') {
+                  o.paymentSplit?.forEach(s => {
+                      if (s.method === 'CASH') cash += s.amount;
+                      else online += s.amount;
+                  });
+              } else {
+                  online += o.totalAmount;
+              }
+          });
+
+          return {
+              date: dateStr,
+              displayDate: new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+              orders: dayOrders.length,
+              cash,
+              online,
+              total: totalRevenue
+          };
+      });
+
+      return stats;
+  }, [orders, dashboardBranch, hasPermission]);
+
   // --- Derived Metrics (Simple Counts) ---
   const totalTaken = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.taken, 0);
   const totalReturned = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.returned, 0);
@@ -333,6 +439,8 @@ const Dashboard: React.FC = () => {
     setAiInsight(insight);
     setLoadingAi(false);
   };
+
+  const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
 
   useEffect(() => {
     setAiInsight(null);
@@ -494,6 +602,71 @@ const Dashboard: React.FC = () => {
              />
           </div>
 
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Revenue Trends</h3>
+          
+          {/* Revenue & Branch Trends (New Charts) */}
+          <div className="grid grid-cols-1 gap-6">
+             {/* Total Revenue Area Chart */}
+             <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+                <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
+                   <Activity size={16} className="text-emerald-600"/> Daily Revenue (₹)
+                </h3>
+                <div className="h-64">
+                   <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={revenueTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                         <defs>
+                            <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                               <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                               <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                            </linearGradient>
+                         </defs>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
+                         <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
+                         <YAxis stroke="#94a3b8" fontSize={10} />
+                         <Tooltip 
+                           contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
+                           labelStyle={{ fontWeight: 'bold', color: '#403424' }}
+                         />
+                         <Area type="monotone" dataKey="total" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                      </AreaChart>
+                   </ResponsiveContainer>
+                </div>
+             </div>
+
+             {/* Branch Comparison Line Chart (Only when ALL selected) */}
+             {dashboardBranch === 'ALL' && branchKeys.length > 1 && (
+               <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+                  <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
+                     <Store size={16} className="text-blue-600"/> Branch Performance Comparison
+                  </h3>
+                  <div className="h-64">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={revenueTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
+                           <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
+                           <YAxis stroke="#94a3b8" fontSize={10} />
+                           <Tooltip 
+                             contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
+                           />
+                           <Legend iconSize={10} fontSize={10} verticalAlign="top" height={36}/>
+                           {branchKeys.map((key, index) => (
+                              <Line 
+                                key={key}
+                                type="monotone" 
+                                dataKey={key} 
+                                name={getBranchName(key)}
+                                stroke={COLORS[index % COLORS.length]} 
+                                strokeWidth={2}
+                                dot={false}
+                              />
+                           ))}
+                        </LineChart>
+                     </ResponsiveContainer>
+                  </div>
+               </div>
+             )}
+          </div>
+
           <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Operational Stats</h3>
 
           {/* Operational Stats Grid */}
@@ -524,7 +697,104 @@ const Dashboard: React.FC = () => {
             />
           </div>
 
-          {/* Reconciliation Chart (New) */}
+          {/* Charts Row 1 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Top Selling Menu Items (New Chart) */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+              <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
+                 <Sparkles size={16} className="text-amber-500" /> Best Sellers (Menu Items)
+              </h3>
+              <div className="h-64">
+                {topMenuData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topMenuData} layout="vertical" margin={{ left: 10, right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e5e5" />
+                      <XAxis type="number" stroke="#94a3b8" fontSize={10} />
+                      <YAxis dataKey="name" type="category" width={110} style={{ fontSize: '10px', fill: '#403424' }} stroke="#e5e5e5" tickFormatter={(value) => value.length > 15 ? value.substring(0, 15) + '...' : value} />
+                      <Tooltip 
+                         cursor={{fill: '#f3f4f6'}}
+                         contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
+                      <Bar dataKey="value" name="Sold Qty" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={16} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                   <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">
+                     No sales data available.
+                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Category Distribution */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+              <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Inventory Category Share</h3>
+              <div className="h-64 flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoryData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      fill="#8884d8"
+                      labelLine={false}
+                      label={({ name, percent }) => percent > 0.1 ? `${name}` : ''}
+                      fontSize={10}
+                    >
+                      {categoryData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend verticalAlign="bottom" height={36} iconSize={8} fontSize={10}/>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Last 7 Days Performance Table */}
+          <div className="bg-white rounded-xl shadow-sm border border-[#403424]/10 overflow-hidden">
+             <div className="p-4 border-b border-[#403424]/10 flex items-center gap-2 bg-[#f9faf7]">
+                <CalendarDays size={16} className="text-[#95a77c]" />
+                <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide">Last 7 Days Performance</h3>
+             </div>
+             <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                   <thead className="text-xs text-[#403424]/50 bg-white border-b border-[#403424]/10 uppercase font-semibold">
+                      <tr>
+                         <th className="p-3">Date</th>
+                         <th className="p-3 text-center">Orders</th>
+                         <th className="p-3 text-right">Cash</th>
+                         <th className="p-3 text-right">Online</th>
+                         <th className="p-3 text-right font-bold text-[#403424]">Total Revenue</th>
+                      </tr>
+                   </thead>
+                   <tbody className="divide-y divide-[#403424]/5">
+                      {last7DaysPerformance.map((row, idx) => (
+                         <tr key={idx} className="hover:bg-[#f9faf7] transition-colors">
+                            <td className="p-3 font-medium text-[#403424]">{row.displayDate}</td>
+                            <td className="p-3 text-center text-[#403424]/70">{row.orders}</td>
+                            <td className="p-3 text-right text-emerald-600">₹{row.cash.toLocaleString()}</td>
+                            <td className="p-3 text-right text-blue-600">₹{row.online.toLocaleString()}</td>
+                            <td className="p-3 text-right font-bold text-[#403424]">₹{row.total.toLocaleString()}</td>
+                         </tr>
+                      ))}
+                      {last7DaysPerformance.length === 0 && (
+                         <tr>
+                            <td colSpan={5} className="p-6 text-center text-[#403424]/40 italic">No sales data for the last 7 days.</td>
+                         </tr>
+                      )}
+                   </tbody>
+                </table>
+             </div>
+          </div>
+
+          {/* Reconciliation Chart */}
           <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
             <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
                <Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation
@@ -554,56 +824,6 @@ const Dashboard: React.FC = () => {
             <p className="text-xs text-[#403424]/40 mt-2 text-center italic">
                Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.
             </p>
-          </div>
-
-          {/* Charts Row 1 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Consumption by SKU */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-              <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Volume (Net Consumed Pcs)</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reportData.filter(i => i.sold > 0).sort((a,b) => b.sold - a.sold).slice(0, 10)} layout="vertical" margin={{ left: 10, right: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e5e5" />
-                    <XAxis type="number" stroke="#94a3b8" fontSize={10} />
-                    <YAxis dataKey="skuName" type="category" width={100} style={{ fontSize: '10px', fill: '#403424' }} stroke="#e5e5e5" />
-                    <Tooltip 
-                       contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    />
-                    <Bar dataKey="sold" name="Consumed" fill="#95a77c" radius={[0, 4, 4, 0]} barSize={16} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Category Distribution */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-              <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Category Share</h3>
-              <div className="h-64 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      labelLine={false}
-                      label={({ name, percent }) => percent > 0.1 ? `${name}` : ''}
-                      fontSize={10}
-                    >
-                      {categoryData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" height={36} iconSize={8} fontSize={10}/>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
           </div>
         </div>
       )}

@@ -128,7 +128,7 @@ const MenuManagement: React.FC = () => {
         const itemEntry: any = {
             id: item.id,
             category: catName,
-            label: item.name,
+            // label removed
             name: cleanName,
             item_image: `${item.id}.jpg`, // Changed to .jpg
             includes: {}
@@ -195,8 +195,8 @@ const MenuManagement: React.FC = () => {
     const staticItems = [
         {
             id: "custom_amount",
-            category: "Addons",
-            label: "Custom Amount",
+            category: "Addon",
+            // label removed
             name: "Custom Amount",
             item_image: "custom_amount.jpg", // Changed to .jpg
             is_modal: true,
@@ -206,8 +206,8 @@ const MenuManagement: React.FC = () => {
         },
         {
             id: "custom_pieces",
-            category: "Addons",
-            label: "Custom Pieces",
+            category: "Addon",
+            // label removed
             name: "Custom Pieces",
             item_image: "custom_pieces.jpg", // Changed to .jpg
             is_modal: true,

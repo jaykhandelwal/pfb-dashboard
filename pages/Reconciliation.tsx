@@ -72,7 +72,7 @@ const Reconciliation: React.FC = () => {
         // Explicitly check for string to satisfy TypeScript and narrow type
         if (typeof result === 'string') {
             try {
-              const parsedData = await parseSalesReportImage(result as string, skus);
+              const parsedData = await parseSalesReportImage(result, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {
