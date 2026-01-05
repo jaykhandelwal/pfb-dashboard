@@ -251,7 +251,7 @@ const Wastage: React.FC = () => {
   };
 
   const getSourceLabel = () => {
-    if (branchId === 'FRIDGE') return 'Main Fridge (Central)';
+    if (branchId === 'FRIDGE') return 'Deep Freezer (Central)';
     const b = branches.find(br => br.id === branchId);
     return b ? b.name : 'Unknown';
   };
@@ -289,7 +289,7 @@ const Wastage: React.FC = () => {
                      : 'bg-white text-slate-600 border-slate-200 hover:bg-white hover:border-slate-400'
                  }`}
                >
-                 <Snowflake size={14} /> Main Fridge (Central)
+                 <Snowflake size={14} /> Deep Freezer (Central)
                </button>
 
                {/* Branches */}
@@ -311,7 +311,7 @@ const Wastage: React.FC = () => {
            {branchId === 'FRIDGE' && (
               <div className="mt-2 text-xs text-red-600 font-medium flex items-center gap-1 animate-fade-in">
                   <AlertTriangle size={12} />
-                  Warning: Items reported here will be deducted directly from the Main Fridge Inventory.
+                  Warning: Items reported here will be deducted directly from the Deep Freezer.
               </div>
            )}
         </div>

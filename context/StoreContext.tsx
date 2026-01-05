@@ -10,6 +10,7 @@ import {
   INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_MENU_CATEGORIES, 
   INITIAL_MENU_ITEMS, INITIAL_MEMBERSHIP_RULES, INITIAL_CUSTOMERS 
 } from '../constants';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface StoreContextType {
   transactions: Transaction[];
@@ -114,7 +115,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from LocalStorage
+  // Load from LocalStorage & Setup Realtime
   useEffect(() => {
     try {
       const load = (key: string, setter: any, fallback: any) => {
@@ -142,6 +143,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const storedSettings = localStorage.getItem('pakaja_appSettings');
       if (storedSettings) {
           setAppSettings(prev => ({ ...prev, ...JSON.parse(storedSettings) }));
+      }
+
+      // --- SUPABASE REALTIME SYNC (Customers & Coupons) ---
+      if (isSupabaseConfigured()) {
+          // 1. Initial Fetch for Coupons (Source of Truth)
+          supabase.from('customer_coupons').select('*').then(({ data, error }) => {
+              if (data && !error) {
+                  setCustomerCoupons(data as CustomerCoupon[]);
+                  save('customerCoupons', data);
+              }
+          });
+
+          // 2. Realtime Listener
+          const channel = supabase.channel('public:customer_coupons')
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_coupons' }, (payload: any) => {
+                  const { eventType, new: newRecord, old: oldRecord } = payload;
+                  
+                  setCustomerCoupons(prev => {
+                      let updated = [...prev];
+                      if (eventType === 'INSERT') {
+                          // Prevent duplicate if we optimized locally
+                          if (!updated.find(c => c.id === newRecord.id)) {
+                              updated.push(newRecord as CustomerCoupon);
+                          }
+                      } else if (eventType === 'UPDATE') {
+                          updated = updated.map(c => c.id === newRecord.id ? newRecord as CustomerCoupon : c);
+                      } else if (eventType === 'DELETE') {
+                          updated = updated.filter(c => c.id !== oldRecord.id);
+                      }
+                      save('customerCoupons', updated);
+                      return updated;
+                  });
+              })
+              .subscribe();
+
+          return () => { supabase.removeChannel(channel); };
       }
 
     } catch (e) {
@@ -350,13 +387,49 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // --- Orders & Customers & Coupons ---
   const addOrder = async (order: Order, redeemedCouponId?: string) => {
+    // 1. Save Order Locally
     const updatedOrders = [...orders, order];
     setOrders(updatedOrders);
     save('orders', updatedOrders);
 
+    // 2. Sync to Supabase (If Online)
+    // NOTE: This triggers the SQL Function `handle_new_order_loyalty` on the server
+    if (isSupabaseConfigured()) {
+        try {
+            await supabase.from('orders').insert({
+                id: order.id,
+                branch_id: order.branchId,
+                customer_id: order.customerId,
+                customer_name: order.customerName,
+                platform: order.platform,
+                total_amount: order.totalAmount,
+                status: order.status,
+                payment_method: order.paymentMethod,
+                payment_split: order.paymentSplit,
+                date: order.date,
+                timestamp: order.timestamp,
+                items: order.items,
+                custom_amount: order.customAmount,
+                custom_amount_reason: order.customAmountReason,
+                custom_sku_items: order.customSkuItems,
+                custom_sku_reason: order.customSkuReason
+            });
+
+            // Mark coupon as used in DB
+            if (redeemedCouponId) {
+                await supabase.from('customer_coupons')
+                    .update({ status: 'USED' })
+                    .eq('id', redeemedCouponId);
+            }
+        } catch (e) {
+            console.error("Supabase Order Sync Failed:", e);
+        }
+    }
+
+    // 3. Local State Updates (Optimistic UI)
     let currentCustomerOrderCount = 0;
 
-    // Update Customer Stats
+    // Update Local Customer Stats
     if (order.customerId) {
         let customer = customers.find(c => c.id === order.customerId || c.phoneNumber === order.customerId);
         let newCustomers = [...customers];
@@ -388,18 +461,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         save('customers', newCustomers);
     }
 
-    // --- COUPON LOGIC (Simulating DB Trigger) ---
+    // --- COUPON LOGIC ---
     let updatedCoupons = [...customerCoupons];
 
-    // 1. Mark coupon as USED if provided
+    // Mark as USED locally
     if (redeemedCouponId) {
         updatedCoupons = updatedCoupons.map(c => 
             c.id === redeemedCouponId ? { ...c, status: 'USED' } : c
         );
     }
 
-    // 2. Generate NEXT Coupon (Trigger Simulation)
-    if (order.customerId && membershipRules.length > 0) {
+    // IMPORTANT: If Supabase is configured, we rely on the Realtime Subscription 
+    // to add the new coupon (generated by the SQL Trigger). 
+    // We ONLY generate it locally if we are OFFLINE/DEMO mode to avoid duplicates.
+    if (!isSupabaseConfigured() && order.customerId && membershipRules.length > 0) {
         // Calculate next target (Current + 1)
         const nextOrderCount = currentCustomerOrderCount + 1;
         
@@ -412,7 +487,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // If rule exists for NEXT visit, create coupon
         if (nextRule) {
             const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + (nextRule.validityDays || 3650)); // Default 10 years if no expiry
+            expiryDate.setDate(expiryDate.getDate() + (nextRule.validityDays || 3650));
 
             const newCoupon: CustomerCoupon = {
                 id: `cpn-${Date.now()}`,
@@ -433,6 +508,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deleteOrder = async (id: string) => {
     const order = orders.find(o => o.id === id);
     if (!order) return;
+
+    if (isSupabaseConfigured()) {
+        await supabase.from('orders').delete().eq('id', id);
+    }
 
     // Revert Customer Stats
     if (order.customerId) {
@@ -484,7 +563,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       if (expiry < now) {
           // It's expired, update status internally (lazy update)
-          // Ideally we'd update state, but for read-only check we just return expired status
           const rule = membershipRules.find(r => r.id === coupon.ruleId);
           if (!rule) return null;
           return { coupon, rule, status: 'EXPIRED' };

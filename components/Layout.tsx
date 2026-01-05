@@ -54,7 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   navStructure.push(
     { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },
-    { path: '/inventory', label: 'Fridge Inventory', icon: <Snowflake size={20} />, permission: 'MANAGE_INVENTORY' },
+    { path: '/inventory', label: 'Deep Freezer', icon: <Snowflake size={20} />, permission: 'MANAGE_INVENTORY' },
     { path: '/reconciliation', label: 'Reconciliation', icon: <Scale size={20} />, permission: 'MANAGE_RECONCILIATION' }
   );
     
@@ -170,7 +170,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <aside className="w-64 bg-[#eff2e7] text-[#403424] flex-shrink-0 hidden md:flex flex-col shadow-xl z-20 border-r border-[#403424]/5">
         <div className="p-6 border-b border-[#403424]/10 flex flex-col items-center">
           <img src="https://pakaja.b-cdn.net/assets/logo.png" alt="Pakaja" className="h-16 w-auto object-contain mb-2" />
-          <p className="text-xs text-[#403424] tracking-widest uppercase mt-1">Inventory Ops</p>
+          <p className="text-xs text-[#403424] tracking-widest uppercase mt-1">Pakaja Operations</p>
         </div>
         
         <div className="px-6 py-4 flex items-center gap-3 border-b border-[#403424]/10">

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
@@ -182,7 +183,7 @@ const Inventory: React.FC = () => {
       <div className="mb-8 flex flex-col xl:flex-row xl:items-end justify-between gap-4">
         <div>
            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-             <Snowflake className="text-violet-600" /> Fridge Inventory
+             <Snowflake className="text-violet-600" /> Deep Freezer Stock
            </h2>
            <p className="text-slate-500 mt-1">Manage central stock, track levels, and reconcile inventory.</p>
         </div>
@@ -520,7 +521,7 @@ const Inventory: React.FC = () => {
                  </button>
               </div>
               <div className="p-6">
-                <p className="text-slate-600 mb-4">You are about to add stock to the fridge inventory.</p>
+                <p className="text-slate-600 mb-4">You are about to add stock to the deep freezer inventory.</p>
                 <div className="bg-violet-50 p-3 rounded-lg border border-violet-100 mb-4">
                   <div className="text-xs font-bold text-violet-800 uppercase mb-2">Summary</div>
                   <ul className="text-sm space-y-1">

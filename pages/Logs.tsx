@@ -20,7 +20,7 @@ const Logs: React.FC = () => {
 
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
   const getBranchName = (id: string) => {
-    if (id === 'FRIDGE') return 'Main Fridge';
+    if (id === 'FRIDGE') return 'Deep Freezer';
     return branches.find(b => b.id === id)?.name || id;
   };
 
@@ -232,7 +232,7 @@ const Logs: React.FC = () => {
                   className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer pr-4"
                 >
                   <option value="ALL">All Branches</option>
-                  <option value="FRIDGE">Main Fridge</option>
+                  <option value="FRIDGE">Deep Freezer</option>
                   {branches.map(b => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
