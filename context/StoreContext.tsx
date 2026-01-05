@@ -14,20 +14,25 @@ import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 // --- DATA MAPPERS (DB snake_case <-> App camelCase) ---
 
+// Helper to safely get a timestamp number. Prevents NaN.
+const getSafeTimestamp = (obj: any): number => {
+    if (obj.timestamp && !isNaN(Number(obj.timestamp))) return Number(obj.timestamp);
+    if (obj.created_at) return new Date(obj.created_at).getTime();
+    if (obj.createdAt) return new Date(obj.createdAt).getTime(); // handle camelCase source
+    return Date.now(); // Last resort fallback
+};
+
 const mapTransactionFromDB = (t: any): Transaction => ({
   id: t.id,
-  // Fallback to camelCase if snake_case is missing (handles mixed data sources)
   batchId: t.batch_id || t.batchId, 
   date: t.date,
-  timestamp: Number(t.timestamp), // Ensure strictly Number
+  timestamp: getSafeTimestamp(t),
   skuId: t.sku_id || t.skuId,
   branchId: t.branch_id || t.branchId,
   type: t.type,
-  // CRITICAL FIX: Check for both 'quantity_pieces' and 'quantity', default to 0 to prevent NaN
-  quantityPieces: Number(t.quantity_pieces || t.quantity || 0), 
+  quantityPieces: Number(t.quantity_pieces || t.quantityPieces || t.quantity || 0), 
   userId: t.user_id || t.userId,
   userName: t.user_name || t.userName,
-  // Handle legacy single image vs new array
   imageUrls: t.image_urls || (t.image_url ? [t.image_url] : [])
 });
 
@@ -47,7 +52,6 @@ const mapTransactionToDB = (t: Partial<Transaction>) => ({
 
 const mapOrderItemFromDB = (i: any): OrderItem => ({
   id: i.id,
-  // Deep map: Check snake_case inside the JSON blob
   menuItemId: i.menuItemId || i.menu_item_id, 
   name: i.name,
   price: Number(i.price || 0),
@@ -70,8 +74,7 @@ const mapOrderFromDB = (o: any): Order => ({
   paymentMethod: o.payment_method || o.paymentMethod,
   paymentSplit: o.payment_split || o.paymentSplit,
   date: o.date,
-  timestamp: Number(o.timestamp),
-  // CRITICAL FIX: Map the items array contents
+  timestamp: getSafeTimestamp(o),
   items: Array.isArray(o.items) ? o.items.map(mapOrderItemFromDB) : [],
   customAmount: Number(o.custom_amount || o.customAmount || 0),
   customAmountReason: o.custom_amount_reason || o.customAmountReason,
@@ -91,21 +94,25 @@ const mapOrderToDB = (o: Order) => ({
   payment_split: o.paymentSplit,
   date: o.date,
   timestamp: o.timestamp,
-  items: o.items, // We store as JSON, usually keys are preserved as is.
+  items: o.items, 
   custom_amount: o.customAmount,
   custom_amount_reason: o.customAmountReason,
   custom_sku_items: o.customSkuItems,
   custom_sku_reason: o.customSkuReason
 });
 
-const mapSkuFromDB = (s: any): SKU => ({
-  id: s.id,
-  name: s.name,
-  category: s.category,
-  dietary: s.dietary,
-  piecesPerPacket: Number(s.pieces_per_packet || s.piecesPerPacket || 1),
-  order: Number(s.order || 0)
-});
+const mapSkuFromDB = (s: any): SKU => {
+  // Prevent Division by Zero later in the app
+  const rawPieces = Number(s.pieces_per_packet || s.piecesPerPacket || 0);
+  return {
+    id: s.id,
+    name: s.name,
+    category: s.category,
+    dietary: s.dietary,
+    piecesPerPacket: rawPieces > 0 ? rawPieces : 1, // Safe default
+    order: Number(s.order || 0)
+  };
+};
 
 const mapSkuToDB = (s: SKU) => ({
   id: s.id,
@@ -124,7 +131,7 @@ const mapSalesRecordFromDB = (r: any): SalesRecord => ({
   platform: r.platform,
   skuId: r.sku_id || r.skuId,
   quantitySold: Number(r.quantity_sold || r.quantitySold || 0),
-  timestamp: Number(r.timestamp),
+  timestamp: getSafeTimestamp(r),
   customerId: r.customer_id || r.customerId,
   orderAmount: Number(r.order_amount || r.orderAmount || 0)
 });
@@ -187,7 +194,7 @@ const mapAttendanceFromDB = (a: any): AttendanceRecord => ({
   userName: a.user_name || a.userName,
   branchId: a.branch_id || a.branchId,
   date: a.date,
-  timestamp: Number(a.timestamp),
+  timestamp: getSafeTimestamp(a),
   imageUrl: a.image_url || a.imageUrl
 });
 
@@ -207,7 +214,7 @@ const mapTodoFromDB = (t: any): Todo => ({
   assignedTo: t.assigned_to || t.assignedTo,
   assignedBy: t.assigned_by || t.assignedBy,
   isCompleted: t.is_completed || t.isCompleted,
-  createdAt: Number(t.created_at_ts || t.createdAt),
+  createdAt: Number(t.created_at_ts || t.createdAt || Date.now()),
   completedAt: t.completed_at_ts ? Number(t.completed_at_ts) : undefined,
   dueDate: t.due_date || t.dueDate,
   templateId: t.template_id || t.templateId,
@@ -260,7 +267,6 @@ const mapMenuItemFromDB = (m: any): MenuItem => ({
   halfPrice: m.half_price ? Number(m.half_price) : undefined,
   description: m.description,
   category: m.category,
-  // Handle JSON ingredients which might be in mixed case
   ingredients: Array.isArray(m.ingredients) ? m.ingredients.map((i: any) => ({
       skuId: i.skuId || i.sku_id,
       quantity: Number(i.quantity || 0)

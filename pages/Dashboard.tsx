@@ -22,8 +22,12 @@ interface InventoryTileProps {
 }
 
 const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, isLow = false }) => {
-  const packets = Math.floor(quantity / piecesPerPacket);
-  const loose = quantity % piecesPerPacket;
+  // Guard against division by zero or NaN
+  const packetSize = piecesPerPacket > 0 ? piecesPerPacket : 1;
+  const safeQty = isNaN(quantity) ? 0 : quantity;
+  
+  const packets = Math.floor(safeQty / packetSize);
+  const loose = safeQty % packetSize;
 
   return (
     <div 
@@ -650,14 +654,16 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
              {skus.map(sku => {
                 const balance = stockLevels[sku.id] || 0;
-                const isLow = balance < (sku.piecesPerPacket * 10);
+                // Add robust packet size check
+                const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
+                const isLow = balance < (pktSize * 10);
                 
                 return (
                   <InventoryTile 
                     key={sku.id}
                     skuName={sku.name}
                     quantity={balance}
-                    piecesPerPacket={sku.piecesPerPacket}
+                    piecesPerPacket={pktSize}
                     isLow={isLow}
                   />
                 )

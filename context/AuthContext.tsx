@@ -170,8 +170,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         code: u.code,
         role: u.role,
         permissions: u.permissions,
-        defaultBranchId: u.default_branch_id,
-        defaultPage: u.default_page
+        // Robust mapping for snake_case or camelCase
+        defaultBranchId: u.default_branch_id || u.defaultBranchId, 
+        defaultPage: u.default_page || u.defaultPage
      };
      // Runtime patch for admins to get new permissions immediately
      if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
