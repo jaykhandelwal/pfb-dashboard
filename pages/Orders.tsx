@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
 import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle, User, Phone } from 'lucide-react';
 import { getLocalISOString } from '../constants';
+import { sendWhatsAppInvoice } from '../services/webhookService';
 
 const Orders: React.FC = () => {
   const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings } = useStore();
@@ -290,7 +291,7 @@ const Orders: React.FC = () => {
      }
 
      const orderDate = getLocalISOString();
-
+     const orderId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ord-${Date.now()}`;
      const finalCustomSkuItems = orderCustomSku?.items.map(i => ({ skuId: i.skuId, quantity: i.qty })) || [];
 
      let finalPaymentMethod: any = posPaymentMethod;
@@ -304,6 +305,7 @@ const Orders: React.FC = () => {
      }
 
      await addOrder({
+        id: orderId,
         branchId: posBranchId,
         date: orderDate,
         platform: posPlatform,
@@ -319,6 +321,26 @@ const Orders: React.FC = () => {
         customSkuItems: finalCustomSkuItems,
         customSkuReason: orderCustomSku?.reason
      });
+
+     // --- WEBHOOK TRIGGER (Beta) ---
+     if (appSettings.enable_whatsapp_webhook && appSettings.whatsapp_webhook_url) {
+         await sendWhatsAppInvoice(appSettings.whatsapp_webhook_url, {
+             orderId,
+             orderDate,
+             cart,
+             cartTotal,
+             menuItems,
+             skus,
+             currentUser,
+             linkedCustomer,
+             customAmount: orderCustomAmount,
+             customSku: orderCustomSku,
+             paymentMethod: posPaymentMethod,
+             branchId: posBranchId,
+             platform: posPlatform
+         });
+     }
+     // -----------------------------
 
      setCart([]);
      setOrderCustomAmount(null);

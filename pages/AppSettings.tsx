@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2 } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock } from 'lucide-react';
 
 const AppSettings: React.FC = () => {
   const { appSettings, updateAppSetting, isLoading } = useStore();
@@ -12,14 +12,16 @@ const AppSettings: React.FC = () => {
   const [savingKeys, setSavingKeys] = useState<string[]>([]);
   // Local state for toast
   const [toastMsg, setToastMsg] = useState('');
+  // Local state for input fields (to debounce or handle blur save)
+  const [webhookUrl, setWebhookUrl] = useState(appSettings.whatsapp_webhook_url || '');
 
   const handleToggle = async (key: string) => {
     // Prevent double clicks
     if (savingKeys.includes(key)) return;
 
     // Permission Check specifically for BETA features
-    if (key === 'enable_beta_tasks' && currentUser?.role !== 'ADMIN') {
-       alert("Beta features can only be activated by an Admin.");
+    if ((key === 'enable_beta_tasks' || key === 'enable_whatsapp_webhook') && currentUser?.role !== 'ADMIN') {
+       alert("Beta/Admin features can only be managed by an Admin.");
        return;
     }
 
@@ -36,6 +38,19 @@ const AppSettings: React.FC = () => {
         setToastMsg('Setting saved successfully!');
         setTimeout(() => setToastMsg(''), 3000);
     }
+  };
+
+  const handleTextSave = async (key: string, value: string) => {
+      if (appSettings[key] === value) return; // No change
+
+      setSavingKeys(prev => [...prev, key]);
+      const success = await updateAppSetting(key, value);
+      setSavingKeys(prev => prev.filter(k => k !== key));
+
+      if (success) {
+          setToastMsg('URL saved successfully!');
+          setTimeout(() => setToastMsg(''), 3000);
+      }
   };
 
   if (isLoading) {
@@ -127,16 +142,94 @@ const AppSettings: React.FC = () => {
            </div>
         </section>
 
-        {/* Section 2: Beta Features */}
+        {/* Section 2: Integrations (New) */}
+        {currentUser?.role === 'ADMIN' && (
+            <section>
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1 flex items-center gap-2">
+                    <Globe size={14} className="text-sky-500"/> Integrations & Webhooks
+                </h3>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-sky-50">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold text-sky-900">WhatsApp Invoice Integration</h3>
+                                <p className="text-xs text-sky-700">
+                                    Send order details to a remote server for WhatsApp messaging.
+                                </p>
+                            </div>
+                            <div className="bg-white/50 px-2 py-1 rounded text-[10px] font-bold text-sky-800 border border-sky-100">
+                                BETA
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div className="flex gap-4">
+                                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                    <MessageSquare size={20} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-slate-700">Enable WhatsApp Webhook</h4>
+                                    <p className="text-sm text-slate-500">
+                                        Triggers a POST request when an order is completed.
+                                    </p>
+                                </div>
+                            </div>
+                            {savingKeys.includes('enable_whatsapp_webhook') ? (
+                                <Loader2 size={24} className="text-emerald-600 animate-spin" />
+                            ) : (
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer"
+                                        checked={appSettings.enable_whatsapp_webhook || false}
+                                        onChange={() => handleToggle('enable_whatsapp_webhook')}
+                                    />
+                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                                </label>
+                            )}
+                        </div>
+
+                        {appSettings.enable_whatsapp_webhook && (
+                            <div className="ml-14 animate-fade-in">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Webhook Endpoint URL</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="url"
+                                        value={webhookUrl}
+                                        onChange={(e) => setWebhookUrl(e.target.value)}
+                                        placeholder="https://api.example.com/send-invoice"
+                                        className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-slate-600"
+                                    />
+                                    <button
+                                        onClick={() => handleTextSave('whatsapp_webhook_url', webhookUrl)}
+                                        disabled={savingKeys.includes('whatsapp_webhook_url')}
+                                        className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50"
+                                    >
+                                        {savingKeys.includes('whatsapp_webhook_url') ? <Loader2 size={16} className="animate-spin"/> : 'Save'}
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
+                                    <Lock size={10} /> Endpoint must accept JSON payloads securely.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
+        )}
+
+        {/* Section 3: Beta Features */}
         <section>
            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1 flex items-center gap-2">
-              <FlaskConical size={14} className="text-purple-500"/> Beta Features
+              <FlaskConical size={14} className="text-purple-500"/> Other Experimental Features
            </h3>
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-6 border-b border-slate-100 bg-purple-50">
-                 <h3 className="font-bold text-purple-900">Experimental Lab</h3>
+                 <h3 className="font-bold text-purple-900">Task Management Beta</h3>
                  <p className="text-xs text-purple-700">
-                    New features in development. Only Admins can enable these globally.
+                    Staff task assignment and tracking system.
                  </p>
               </div>
 
@@ -150,7 +243,6 @@ const AppSettings: React.FC = () => {
                        <div>
                           <h4 className="font-bold text-slate-700 flex items-center gap-2">
                              Task Management
-                             <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200 uppercase font-bold">Beta</span>
                           </h4>
                           <p className="text-sm text-slate-500">
                              Enable the "My Tasks" section on the Dashboard. Allows Admins to assign tasks to staff.

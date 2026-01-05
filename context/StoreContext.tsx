@@ -94,7 +94,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [appSettings, setAppSettings] = useState<AppSettings>({ 
       require_customer_phone: false, 
       require_customer_name: false,
-      enable_beta_tasks: true 
+      enable_beta_tasks: true,
+      enable_whatsapp_webhook: false,
+      whatsapp_webhook_url: ''
   });
   const [todos, setTodos] = useState<Todo[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);

@@ -12,15 +12,12 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class GlobalErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null
-    };
-  }
+class GlobalErrorBoundary extends React.Component<Props, State> {
+  state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null
+  };
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error, errorInfo: null };
