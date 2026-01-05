@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Award, Plus, Trash2, Save, Gift, Percent, X } from 'lucide-react';
+import { Award, Plus, Trash2, Save, Gift, Percent, X, Clock, Repeat } from 'lucide-react';
 import { MembershipRewardType, MembershipRule } from '../types';
 
 const MembershipSettings: React.FC = () => {
@@ -13,6 +13,7 @@ const MembershipSettings: React.FC = () => {
   const [rewardType, setRewardType] = useState<MembershipRewardType>('DISCOUNT_PERCENT');
   const [rewardValue, setRewardValue] = useState<string>('20'); // Stores discount % or SKU ID
   const [desc, setDesc] = useState('');
+  const [validityDays, setValidityDays] = useState<string>('15'); // New Field
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,13 +24,15 @@ const MembershipSettings: React.FC = () => {
       type: rewardType,
       value: rewardType === 'DISCOUNT_PERCENT' ? Number(rewardValue) : rewardValue,
       description: desc,
-      timeFrameDays: 30 // Default logic
+      timeFrameDays: 30, // Default logic
+      validityDays: Number(validityDays) // New Field
     });
     
     setIsAdding(false);
     // Reset form
     setTriggerCount(5);
     setDesc('');
+    setValidityDays('15');
   };
 
   const getRewardLabel = (rule: MembershipRule) => {
@@ -40,6 +43,8 @@ const MembershipSettings: React.FC = () => {
        return `Free: ${sku ? sku.name : 'Unknown Item'}`;
     }
   };
+
+  const maxTrigger = membershipRules.length > 0 ? Math.max(...membershipRules.map(r => r.triggerOrderCount)) : 0;
 
   return (
     <div className="pb-16 max-w-4xl mx-auto">
@@ -79,11 +84,19 @@ const MembershipSettings: React.FC = () => {
                </div>
             ))}
 
-            {/* End Point (Infinity) */}
+            {/* End Point (Cycle) */}
             <div className="relative z-10 flex flex-col items-center">
-               <div className="w-8 h-8 rounded-full bg-slate-100 border-4 border-white shadow-sm flex items-center justify-center text-slate-400">∞</div>
+               <div className="w-8 h-8 rounded-full bg-slate-100 border-4 border-white shadow-sm flex items-center justify-center text-slate-400">
+                  <Repeat size={14} />
+               </div>
+               {maxTrigger > 0 && <span className="text-[10px] font-bold text-slate-400 mt-2 w-16 text-center">Resets after #{maxTrigger}</span>}
             </div>
          </div>
+         {maxTrigger > 0 && (
+            <p className="text-center text-xs text-slate-400 mt-8 bg-slate-50 py-2 rounded-lg border border-slate-100 mx-auto max-w-sm">
+               Cycle repeats automatically. Order #{maxTrigger + 5} will trigger the Order #5 reward.
+            </p>
+         )}
       </div>
 
       {/* Rules List & Add Form */}
@@ -107,7 +120,7 @@ const MembershipSettings: React.FC = () => {
          {isAdding && (
             <div className="p-6 bg-slate-50 border-b border-slate-200 animate-fade-in">
                <form onSubmit={handleAdd} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Trigger (Order #)</label>
                         <input 
@@ -157,6 +170,21 @@ const MembershipSettings: React.FC = () => {
                            </select>
                         )}
                      </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                           Expiry (Days) <Clock size={12} />
+                        </label>
+                        <input 
+                           type="number" 
+                           min="0"
+                           required
+                           value={validityDays}
+                           onChange={e => setValidityDays(e.target.value)}
+                           className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                           placeholder="e.g. 15"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">0 = No Expiry</p>
+                     </div>
                   </div>
                   <div>
                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
@@ -203,6 +231,11 @@ const MembershipSettings: React.FC = () => {
                               {rule.type === 'DISCOUNT_PERCENT' ? 'Discount' : 'Freebie'}
                            </span>
                            <span className="text-xs text-slate-400">Value: {getRewardLabel(rule)}</span>
+                           {rule.validityDays && rule.validityDays > 0 && (
+                              <span className="text-[10px] text-orange-600 font-medium flex items-center gap-1 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
+                                 <Clock size={10} /> Valid {rule.validityDays} Days
+                              </span>
+                           )}
                         </div>
                      </div>
                   </div>

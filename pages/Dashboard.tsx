@@ -125,6 +125,7 @@ const Dashboard: React.FC = () => {
     if (!newTaskText || !assignedUserId) return;
 
     await addTodo({
+      id: `task-${Date.now()}`,
       text: newTaskText,
       assignedTo: assignedUserId,
       assignedBy: currentUser?.name || 'Admin',

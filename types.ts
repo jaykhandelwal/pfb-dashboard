@@ -202,7 +202,24 @@ export interface MembershipRule {
   type: MembershipRewardType;
   value: string | number; // e.g. 20 (percent) or 'sku-1' (item ID)
   description: string;
-  timeFrameDays?: number; // Optional: "Within 30 days"
+  timeFrameDays?: number; // Optional: "Within 30 days" (Legacy)
+  validityDays?: number; // New: Offer expires X days after previous order
+}
+
+export interface CustomerCoupon {
+  id: string;
+  customerId: string;
+  ruleId: string; // Link to MembershipRule
+  status: 'ACTIVE' | 'USED' | 'EXPIRED';
+  expiresAt: string; // ISO Date
+  createdAt: string; // ISO Date
+}
+
+export interface RewardResult {
+  coupon: CustomerCoupon;
+  rule: MembershipRule;
+  status: 'ACTIVE' | 'EXPIRED';
+  daysLeft?: number;
 }
 
 // --- Auth & User Management ---

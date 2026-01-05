@@ -1,5 +1,4 @@
 
-// ... (imports remain same)
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType } from '../types';
@@ -75,9 +74,7 @@ const Reconciliation: React.FC = () => {
         
         if (typeof result === 'string') {
             try {
-              // Explicitly treat result as string to satisfy compiler
-              const base64String = result;
-              const parsedData = await parseSalesReportImage(base64String, skus);
+              const parsedData = await parseSalesReportImage(result as string, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {

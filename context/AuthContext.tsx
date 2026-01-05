@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Permission } from '../types';
 import { INITIAL_ADMIN_USER } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -117,7 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured()) return;
 
     const channel = supabase.channel('auth-users')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload: any) => {
          const { eventType, new: newRecord, old: oldRecord } = payload;
          
          setUsers(prev => {

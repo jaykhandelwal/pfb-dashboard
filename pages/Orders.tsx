@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle, User, Phone } from 'lucide-react';
+import { SalesPlatform, OrderItem, MenuItem, RewardResult } from '../types';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle, User, Phone, Gift, Tag, AlertCircle, Ticket } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 import { sendWhatsAppInvoice } from '../services/webhookService';
 
 const Orders: React.FC = () => {
-  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings } = useStore();
+  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward } = useStore();
   const { currentUser } = useAuth(); // Strict role check
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
@@ -33,8 +33,12 @@ const Orders: React.FC = () => {
   
   // Customer State
   const [customerSearch, setCustomerSearch] = useState('');
-  const [linkedCustomer, setLinkedCustomer] = useState<{name: string, phone: string} | null>(null);
+  const [linkedCustomer, setLinkedCustomer] = useState<{name: string, phone: string, id: string} | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  
+  // Loyalty State
+  const [activeRewardResult, setActiveRewardResult] = useState<RewardResult | null>(null);
+  const [isRewardApplied, setIsRewardApplied] = useState(false);
   
   // New Customer Form State
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -131,14 +135,29 @@ const Orders: React.FC = () => {
   };
 
   // -- POS LOGIC --
-  const addToCart = (item: MenuItem, variant: 'FULL' | 'HALF' = 'FULL') => {
-     const priceToUse = variant === 'HALF' && item.halfPrice ? item.halfPrice : item.price;
+  const addToCart = (item: MenuItem, variant: 'FULL' | 'HALF' = 'FULL', priceOverride?: number) => {
+     const priceToUse = priceOverride !== undefined 
+        ? priceOverride 
+        : (variant === 'HALF' && item.halfPrice ? item.halfPrice : item.price);
+        
      const cartItemKey = `${item.id}-${variant}`;
 
      setCart(prev => {
-        const existing = prev.find(i => `${i.menuItemId}-${i.variant || 'FULL'}` === cartItemKey);
+        // If price override is present (Free Item), treat as unique entry
+        if (priceOverride === 0) {
+             return [...prev, {
+              id: `reward-${Date.now()}`,
+              menuItemId: item.id,
+              name: item.name,
+              price: 0,
+              quantity: 1,
+              variant: variant
+           } as OrderItem];
+        }
+
+        const existing = prev.find(i => `${i.menuItemId}-${i.variant || 'FULL'}` === cartItemKey && i.price === priceToUse);
         if(existing) {
-           return prev.map(i => `${i.menuItemId}-${i.variant || 'FULL'}` === cartItemKey ? { ...i, quantity: i.quantity + 1 } : i);
+           return prev.map(i => `${i.menuItemId}-${i.variant || 'FULL'}` === cartItemKey && i.price === priceToUse ? { ...i, quantity: i.quantity + 1 } : i);
         } else {
            return [...prev, {
               id: `temp-${Date.now()}`,
@@ -153,7 +172,8 @@ const Orders: React.FC = () => {
   };
 
   const applyCustomAmount = () => {
-    if (!customAmountVal || parseFloat(customAmountVal) <= 0) return;
+    if (!customAmountVal) return;
+    // Allow negative for discounts, though typically handled via reward logic
     
     setOrderCustomAmount({
       amount: parseFloat(customAmountVal),
@@ -230,13 +250,18 @@ const Orders: React.FC = () => {
 
   const remainingSplit = cartTotal - splitTotal;
 
-  // Link Existing Customer
+  // Link Existing Customer & Check Rewards
   const handleLinkCustomer = (phone: string, name?: string) => {
-     setLinkedCustomer({ name: name || 'Unknown', phone });
+     setLinkedCustomer({ name: name || 'Unknown', phone, id: phone });
      setIsCustomerModalOpen(false);
      setCustomerSearch('');
      setNewCustomerName('');
      setNewCustomerPhone('');
+     
+     // Loyalty Check
+     const result = checkCustomerReward(phone);
+     setActiveRewardResult(result);
+     setIsRewardApplied(false); // Reset application status when switching customers
   };
 
   // Create & Link New Customer
@@ -250,18 +275,45 @@ const Orders: React.FC = () => {
           return;
       }
       if (newCustomerPhone && newCustomerPhone.length !== 10) {
-          // Visual validation already shown, but safety check here
           return;
       }
       
       const phoneToUse = newCustomerPhone || 'NoPhone-' + Date.now();
       const nameToUse = newCustomerName || 'New Customer';
 
-      setLinkedCustomer({ name: nameToUse, phone: phoneToUse });
+      setLinkedCustomer({ name: nameToUse, phone: phoneToUse, id: phoneToUse });
+      setActiveRewardResult(null); // New customers have no rewards yet
       setIsCustomerModalOpen(false);
       setCustomerSearch('');
       setNewCustomerName('');
       setNewCustomerPhone('');
+  };
+
+  // Apply Reward Logic
+  const applyReward = () => {
+      if (!activeRewardResult || activeRewardResult.status === 'EXPIRED') return;
+      
+      const { rule } = activeRewardResult;
+
+      if (rule.type === 'DISCOUNT_PERCENT') {
+          const discountVal = (cartTotal * (Number(rule.value) / 100));
+          // Apply as negative custom amount (or modify existing custom amount logic)
+          setOrderCustomAmount({
+              amount: -Math.floor(discountVal),
+              reason: `Loyalty Coupon (${rule.value}%)`
+          });
+      } else if (rule.type === 'FREE_ITEM') {
+          // Find menu item where ingredients[0].skuId === rule.value
+          const menuItem = menuItems.find(m => m.ingredients && m.ingredients[0]?.skuId === String(rule.value));
+          
+          if (menuItem) {
+              addToCart(menuItem, 'FULL', 0); // Add with price 0
+          } else {
+              alert("Configuration Error: Cannot find a menu item for the reward SKU.");
+              return;
+          }
+      }
+      setIsRewardApplied(true);
   };
 
   const submitOrder = async () => {
@@ -304,10 +356,14 @@ const Orders: React.FC = () => {
          if (parseFloat(splitInputs.CARD) > 0) paymentSplitData.push({ method: 'CARD', amount: parseFloat(splitInputs.CARD) });
      }
 
+     // Pass redeemed coupon ID if applied
+     const couponId = isRewardApplied && activeRewardResult?.coupon ? activeRewardResult.coupon.id : undefined;
+
      await addOrder({
         id: orderId,
         branchId: posBranchId,
         date: orderDate,
+        timestamp: Date.now(),
         platform: posPlatform,
         totalAmount: cartTotal,
         status: 'COMPLETED',
@@ -320,7 +376,7 @@ const Orders: React.FC = () => {
         customAmountReason: orderCustomAmount?.reason,
         customSkuItems: finalCustomSkuItems,
         customSkuReason: orderCustomSku?.reason
-     });
+     }, couponId);
 
      // --- WEBHOOK TRIGGER (Beta) ---
      if (appSettings.enable_whatsapp_webhook && appSettings.whatsapp_webhook_url) {
@@ -346,6 +402,8 @@ const Orders: React.FC = () => {
      setOrderCustomAmount(null);
      setOrderCustomSku(null);
      setLinkedCustomer(null);
+     setActiveRewardResult(null);
+     setIsRewardApplied(false);
      setPosPaymentMethod('CASH');
      setPaymentMode('SINGLE');
      setSplitInputs({ CASH: '', UPI: '', CARD: '' });
@@ -545,7 +603,9 @@ const Orders: React.FC = () => {
                                             <span className="font-bold text-indigo-600 block">Custom Charge</span>
                                             <span className="text-slate-400 italic">{order.customAmountReason}</span>
                                         </div>
-                                        <span className="font-bold text-slate-700">₹{order.customAmount}</span>
+                                        <span className={`font-bold ${order.customAmount < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
+                                            {order.customAmount < 0 ? '-' : ''}₹{Math.abs(order.customAmount)}
+                                        </span>
                                     </div>
                                 )}
                                 {order.customSkuItems && order.customSkuItems.length > 0 && (
@@ -838,6 +898,46 @@ const Orders: React.FC = () => {
                   </div>
                </div>
 
+               {/* Loyalty Status Banner (Updated for Coupon Architecture) */}
+               {linkedCustomer && activeRewardResult && !isRewardApplied && (
+                   <div className={`p-3 border-b animate-fade-in flex items-center justify-between ${
+                       activeRewardResult.status === 'EXPIRED' 
+                       ? 'bg-red-50 border-red-100' 
+                       : 'bg-indigo-50 border-indigo-100'
+                   }`}>
+                       {activeRewardResult.status === 'EXPIRED' ? (
+                           <div className="flex items-center gap-2 text-red-700 w-full">
+                               <AlertCircle size={16} className="shrink-0" />
+                               <div className="text-xs font-bold">
+                                   Coupon Expired <br/>
+                                   <span className="text-[10px] font-normal text-red-600">
+                                       Valid until {new Date(activeRewardResult.coupon.expiresAt).toLocaleDateString()}
+                                   </span>
+                               </div>
+                           </div>
+                       ) : (
+                           <>
+                               <div className="flex items-center gap-2 text-indigo-700">
+                                   <Ticket size={16} className="shrink-0" />
+                                   <div className="text-xs font-bold">
+                                       Active Coupon Available: <br/>
+                                       <span className="text-[10px] font-normal text-indigo-600">
+                                           {activeRewardResult.rule.description} 
+                                           {activeRewardResult.daysLeft !== undefined && ` (${activeRewardResult.daysLeft} days left)`}
+                                       </span>
+                                   </div>
+                               </div>
+                               <button 
+                                 onClick={applyReward}
+                                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                               >
+                                   Redeem
+                               </button>
+                           </>
+                       )}
+                   </div>
+               )}
+
                <div className="p-3 border-b border-slate-100 bg-slate-50">
                   {linkedCustomer ? (
                      <div className="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg">
@@ -846,7 +946,7 @@ const Orders: React.FC = () => {
                            <div className="text-sm font-bold text-slate-700">{linkedCustomer.name}</div>
                            <div className="text-xs text-slate-400">{linkedCustomer.phone}</div>
                         </div>
-                        <button onClick={() => setLinkedCustomer(null)} className="text-red-400 hover:text-red-600">
+                        <button onClick={() => { setLinkedCustomer(null); setActiveRewardResult(null); setIsRewardApplied(false); }} className="text-red-400 hover:text-red-600">
                            <X size={16} />
                         </button>
                      </div>
@@ -887,6 +987,7 @@ const Orders: React.FC = () => {
                               <div className="text-sm font-medium text-slate-700">
                                  {item.name} 
                                  {item.variant === 'HALF' && <span className="text-xs text-slate-400 ml-1">(Half)</span>}
+                                 {item.price === 0 && <span className="text-xs text-amber-600 font-bold ml-1">(Coupon)</span>}
                               </div>
                               <div className="text-xs text-slate-400">
                                  ₹{item.price} x {item.quantity}
@@ -913,7 +1014,9 @@ const Orders: React.FC = () => {
                                  <div className="text-xs text-indigo-500 italic">{orderCustomAmount.reason}</div>
                              </div>
                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-indigo-800">₹{orderCustomAmount.amount}</span>
+                                <span className={`font-bold ${orderCustomAmount.amount < 0 ? 'text-emerald-700' : 'text-indigo-800'}`}>
+                                    {orderCustomAmount.amount < 0 ? '-' : ''}₹{Math.abs(orderCustomAmount.amount)}
+                                </span>
                                 <button onClick={() => setOrderCustomAmount(null)} className="text-indigo-400 hover:text-red-500"><X size={16}/></button>
                              </div>
                          </div>

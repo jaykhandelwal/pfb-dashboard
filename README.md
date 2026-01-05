@@ -1,5 +1,4 @@
 
-
 # Pakaja Inventory & Analytics System
 
 A comprehensive inventory management PWA (Progressive Web App) designed for Momo/Food carts. This application handles stock tracking, daily operations (check-in/check-out), wastage reporting, staff attendance, sales reconciliation, and customer loyalty.
@@ -12,7 +11,7 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 *   **Wastage Reporting**: Camera-integrated reporting system to log spoiled items. Evidence photos are stored in the `wastage/` folder on BunnyCDN.
 *   **Inventory Management**: Admin interface to add restock (incoming from supplier) and perform stocktakes (adjustments).
 *   **Sales Reconciliation**: Compare physical inventory usage against reported sales from POS, Zomato, and Swiggy.
-*   **CRM & Loyalty**: Track customer purchase history automatically and manage membership rewards (Discounts/Freebies). Customers are uniquely identified by their **Phone Number**.
+*   **CRM & Loyalty**: Track customer purchase history automatically. **Coupons are auto-generated** based on order milestones.
 *   **Menu Management**: Define recipes linked to raw SKUs to automate consumption calculations based on sales. Supports **Half Plates** with explicit recipe definitions.
 *   **Staff Attendance**: Selfie-based check-in system for staff with location tagging context. Selfies are stored in the `attendance/` folder on BunnyCDN.
 *   **Analytics**: Visual charts for consumption, category splits, variance reports, and wastage trends.
@@ -32,202 +31,147 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 
 ---
 
-## ⚙️ Logic Configuration (Hardcoded)
+## 🔌 Database Integration & Triggers
 
-Certain operational logic is hardcoded for performance and simplicity. If you need to change **Plate Sizes** (used to calculate approximate sales in the Returns view), edit the following file:
+To enable the "Set and Forget" loyalty system, you must run the following SQL in your Supabase SQL Editor. This sets up the automatic coupon generation logic.
 
-**File:** `src/pages/Operations.tsx`
-
-**Function:** `getPlateSize`
-
-```typescript
-// To change plate sizes, update the return values below:
-const getPlateSize = (sku: SKU) => {
-    // Priority 1: Category Defaults (Hardcoded)
-    if (sku.category === SKUCategory.STEAM) return 8;   // Change 8 to new size
-    if (sku.category === SKUCategory.KURKURE) return 6; // Change 6 to new size
-    if (sku.category === SKUCategory.ROLL) return 2;    // Change 2 to new size
-    
-    // Priority 2: Menu Lookup (Fallback)
-    // ...
-};
-```
-
----
-
-## 🔌 Database Integration (Single Table Architecture)
-
-We use a simplified **Single Table** approach for Orders. Inventory consumption is stored as a "Snapshot" inside the Order JSON itself. This avoids the need for complex database triggers or multiple API calls.
-
-### 1. Database Schema Setup
-
-Run this in your Supabase SQL Editor to create the necessary table.
+### 1. Create Core Tables
 
 ```sql
--- 1. Create the ORDERS table (Single Source of Truth)
--- We use TEXT for id to support the frontend's offline ID generator
-CREATE TABLE IF NOT EXISTS orders (
+-- Existing tables (ensure these exist)
+CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
-    branch_id TEXT NOT NULL,
-    customer_id TEXT,             -- Linked to customers table
-    customer_name TEXT,
-    platform TEXT NOT NULL,       -- 'POS', 'ZOMATO', 'SWIGGY'
-    total_amount NUMERIC DEFAULT 0,
-    status TEXT DEFAULT 'COMPLETED',
-    payment_method TEXT DEFAULT 'CASH', -- Can be 'CASH', 'UPI', 'CARD'
-    date TEXT NOT NULL,           -- YYYY-MM-DD
-    timestamp BIGINT NOT NULL,
-    items JSONB DEFAULT '[]'::jsonb, -- Stores the Menu Item AND Ingredients Snapshot
-    
-    -- Custom Additions
-    custom_amount NUMERIC DEFAULT 0,
-    custom_amount_reason TEXT,
-    custom_sku_items JSONB DEFAULT '[]'::jsonb, -- Stores array of { skuId, quantity }
-    custom_sku_reason TEXT,
+    name TEXT,
+    phone_number TEXT,
+    total_spend NUMERIC DEFAULT 0,
+    order_count INTEGER DEFAULT 0,
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    last_order_date TEXT
+);
 
+CREATE TABLE IF NOT EXISTS membership_rules (
+    id TEXT PRIMARY KEY,
+    trigger_order_count INTEGER,
+    type TEXT, -- 'DISCOUNT_PERCENT' or 'FREE_ITEM'
+    value TEXT, 
+    description TEXT,
+    validity_days INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Update MENU_ITEMS table
-ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS half_price NUMERIC;
-ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS half_ingredients JSONB DEFAULT '[]'::jsonb;
+-- NEW: Coupon Table for Android/Web consumption
+CREATE TABLE IF NOT EXISTS customer_coupons (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    customer_id TEXT REFERENCES customers(id),
+    rule_id TEXT REFERENCES membership_rules(id),
+    status TEXT DEFAULT 'ACTIVE', -- 'ACTIVE', 'USED', 'EXPIRED'
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 3. Indexes & RLS
-CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(date);
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Enable access to all users" ON orders FOR ALL USING (true) WITH CHECK (true);
+-- Enable RLS
+ALTER TABLE customer_coupons ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable access to all users" ON customer_coupons FOR ALL USING (true) WITH CHECK (true);
+```
+
+### 2. Create the Logic Trigger (The Brain)
+
+This trigger runs *automatically* whenever a new order is inserted into the `orders` table. It handles the math so your apps don't have to.
+
+```sql
+-- Function to handle loyalty logic on new order
+CREATE OR REPLACE FUNCTION handle_new_order_loyalty() 
+RETURNS TRIGGER AS $$
+DECLARE
+    curr_count INTEGER;
+    next_count INTEGER;
+    max_cycle INTEGER;
+    cycle_pos INTEGER;
+    rule_record RECORD;
+    expiry_date TIMESTAMPTZ;
+BEGIN
+    -- 1. Update Customer Stats
+    UPDATE customers 
+    SET order_count = order_count + 1, 
+        total_spend = total_spend + NEW.total_amount,
+        last_order_date = NEW.date
+    WHERE id = NEW.customer_id
+    RETURNING order_count INTO curr_count;
+
+    -- If customer didn't exist (edge case), create them
+    IF curr_count IS NULL THEN
+        INSERT INTO customers (id, name, phone_number, order_count, total_spend, last_order_date)
+        VALUES (NEW.customer_id, NEW.customer_name, NEW.customer_id, 1, NEW.total_amount, NEW.date)
+        RETURNING 1 INTO curr_count;
+    END IF;
+
+    -- 2. Calculate Next Target
+    next_count := curr_count + 1;
+
+    -- 3. Determine Cyclical Position
+    SELECT MAX(trigger_order_count) INTO max_cycle FROM membership_rules;
+    
+    IF max_cycle IS NOT NULL AND max_cycle > 0 THEN
+        cycle_pos := next_count % max_cycle;
+        IF cycle_pos = 0 THEN cycle_pos := max_cycle; END IF;
+
+        -- 4. Check for Matching Rule
+        SELECT * INTO rule_record FROM membership_rules WHERE trigger_order_count = cycle_pos LIMIT 1;
+
+        -- 5. If Rule Found, Create Coupon
+        IF rule_record IS NOT NULL THEN
+            -- Calculate expiry (Default 1 year if not set)
+            expiry_date := NOW() + (COALESCE(rule_record.validity_days, 365) || ' days')::INTERVAL;
+
+            INSERT INTO customer_coupons (customer_id, rule_id, status, expires_at)
+            VALUES (NEW.customer_id, rule_record.id, 'ACTIVE', expiry_date);
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Attach Trigger to Orders Table
+DROP TRIGGER IF EXISTS on_order_created_loyalty ON orders;
+CREATE TRIGGER on_order_created_loyalty
+AFTER INSERT ON orders
+FOR EACH ROW
+WHEN (NEW.customer_id IS NOT NULL)
+EXECUTE FUNCTION handle_new_order_loyalty();
 ```
 
 ---
 
-## 📱 Payload Examples for Android Developer
+## 📱 Android Integration: The "Lazy" Way
 
-Use these JSON payloads when sending data to the `orders` table via Supabase REST API or SDK. 
+Thanks to the trigger above, the Android app logic is now extremely simple. You no longer need to calculate cycles or order counts.
 
-**Note:** The keys below use `snake_case` (e.g., `branch_id`, `custom_amount`) matching the database columns.
+### 1. Fetching Coupons
+When a user is added to the cart, simply query the `customer_coupons` table.
 
-### 🚨 CRITICAL: Inventory Consumption Logic
-The Android app **MUST** calculate the `consumed` array for every item before sending it to Supabase. 
-1. Fetch the `menu_items` table.
-2. Read the `ingredients` JSON for the selected item.
-3. Multiply ingredient quantities by the order quantity.
-4. Attach this list as the `consumed` property in the payload.
-
-**If `consumed` is missing or null, the web dashboard will not be able to track inventory deductions.**
-
-### Scenario 1: Standard Order
-*2 Plates of Veg Steam Momos (No custom extras) paid via UPI*
-
-```json
-{
-  "id": "android-unique-id-101",
-  "branch_id": "branch-1",
-  "platform": "POS",
-  "date": "2024-03-22",
-  "timestamp": 1711100000000,
-  "payment_method": "UPI",  // Options: "CASH", "UPI", "CARD"
-  "total_amount": 200, 
-  "items": [
-    {
-      "id": "line-item-1",
-      "menuItemId": "menu-veg-steam",
-      "name": "Veg Steam Full Plate",
-      "price": 100,
-      "quantity": 2,
-      "variant": "FULL",
-      
-      // ---------------------------------------------------------
-      // IMPORTANT: This array is mandatory for inventory tracking
-      // ---------------------------------------------------------
-      "consumed": [
-        { "skuId": "sku-1", "quantity": 20 } 
-      ]
-    }
-  ]
-}
+```sql
+SELECT * FROM customer_coupons 
+WHERE customer_id = 'PHONE_NUMBER' 
+  AND status = 'ACTIVE' 
+  AND expires_at > NOW();
 ```
 
-### Scenario 2: Order with Custom Amount
-*Standard Order + ₹50 Delivery Charge*
+*   If rows are returned, the customer has rewards available.
+*   Display them to the cashier.
 
-```json
-{
-  "id": "android-unique-id-102",
-  "branch_id": "branch-1",
-  "platform": "POS",
-  "payment_method": "CASH",
-  "total_amount": 250, // (Item Total 200 + Custom 50)
-  "custom_amount": 50,
-  "custom_amount_reason": "Delivery Charge",
-  "items": [
-    {
-      "menuItemId": "menu-veg-steam",
-      "price": 100,
-      "quantity": 2,
-      "consumed": [{ "skuId": "sku-1", "quantity": 20 }]
-    }
-  ]
-}
+### 2. Redeeming Coupons
+When the cashier applies a coupon to the cart, store the `coupon_id`.
+When the order is successfully placed, update that coupon status.
+
+```sql
+-- Run this when order is successful
+UPDATE customer_coupons 
+SET status = 'USED' 
+WHERE id = 'THE_COUPON_ID';
 ```
 
-### Scenario 3: Order with Custom Raw Items
-*Standard Order + Staff Meal (Uses Inventory, No extra cost)*
-
-```json
-{
-  "id": "android-unique-id-103",
-  "branch_id": "branch-1",
-  "platform": "POS",
-  "payment_method": "CASH",
-  "total_amount": 200, // Price is only for the Menu Item
-  "custom_sku_items": [
-      { "skuId": "sku-2", "quantity": 10 },
-      { "skuId": "sku-12", "quantity": 1 }
-  ],
-  "custom_sku_reason": "Staff Meal (Ramesh)",
-  "items": [
-    {
-      "menuItemId": "menu-veg-steam",
-      "price": 100,
-      "quantity": 2,
-      "consumed": [{ "skuId": "sku-1", "quantity": 20 }]
-    }
-  ]
-}
-```
-
-### Scenario 4: Complex Order
-*Includes Custom Amount AND Multiple Raw Items*
-
-```json
-{
-  "id": "android-unique-id-104",
-  "branch_id": "branch-1",
-  "platform": "ZOMATO",
-  "payment_method": "ONLINE", // Or "CASH" if COD
-  "total_amount": 150, // (100 Item + 50 Packaging)
-  
-  // Custom Money
-  "custom_amount": 50,
-  "custom_amount_reason": "Extra Packaging Fee",
-
-  // Custom Inventory Usage
-  "custom_sku_items": [
-     { "skuId": "sku-10", "quantity": 2 }, // Extra Mayo
-     { "skuId": "sku-9", "quantity": 2 }   // Extra Chutney
-  ],
-  "custom_sku_reason": "Customer requested extra sauce",
-
-  "items": [
-    {
-      "menuItemId": "menu-veg-steam",
-      "price": 100,
-      "quantity": 1,
-      "consumed": [{ "skuId": "sku-1", "quantity": 10 }]
-    }
-  ]
-}
-```
+*(Note: The `orders` insert will trigger the generation of the NEXT coupon automatically)*
 
 ---
 
@@ -261,20 +205,3 @@ The Android app **MUST** calculate the `consumed` array for every item before se
 
 *   **User**: Admin
 *   **Access Code**: `admin`
-
-## 📂 Project Structure
-
-*   `/components`: Reusable UI components.
-*   `/context`: Global state (AuthContext, StoreContext).
-*   `/pages`: Main application views (Operations, Orders, Wastage, Dashboard, etc.).
-*   `/types`: TypeScript interfaces.
-*   `/services`: API integrations.
-
-## 🤖 AI Features
-
-The **Gemini Analyst** (found in Dashboard) and **Vision Tools** (Reconciliation) help with:
-1.  **Consumption Data**: Compares sales vs. returns.
-2.  **Vision Analysis**: Parses screenshots of Zomato/Swiggy reports into data.
-3.  **Trends**: Highlights top-selling categories.
-
-Ensure `process.env.API_KEY` is set to enable these features.
