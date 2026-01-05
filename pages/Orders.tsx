@@ -1,11 +1,9 @@
 
-
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle, User, Phone } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Orders: React.FC = () => {
@@ -31,9 +29,16 @@ const Orders: React.FC = () => {
   const [splitInputs, setSplitInputs] = useState({ CASH: '', UPI: '', CARD: '' });
 
   const [cart, setCart] = useState<OrderItem[]>([]);
+  
+  // Customer State
   const [customerSearch, setCustomerSearch] = useState('');
   const [linkedCustomer, setLinkedCustomer] = useState<{name: string, phone: string} | null>(null);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  
+  // New Customer Form State
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+
   const [showSuccess, setShowSuccess] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
@@ -74,6 +79,36 @@ const Orders: React.FC = () => {
      const cats = new Set(menuItems.map(m => m.category || 'Uncategorized'));
      return ['All', ...Array.from(cats).sort()];
   }, [menuItems]);
+
+  // -- EFFECTS --
+  
+  // Auto-fill new customer form based on search input
+  useEffect(() => {
+      if (!customerSearch) {
+          setNewCustomerName('');
+          setNewCustomerPhone('');
+          return;
+      }
+
+      const isNumeric = /^\d+$/.test(customerSearch);
+      if (isNumeric) {
+          // Limit to 10 digits even if search is longer
+          setNewCustomerPhone(customerSearch.slice(0, 10));
+          // Don't clear name if user is typing a phone number after typing a name
+      } else {
+          setNewCustomerName(customerSearch);
+          // Don't clear phone if user is typing a name
+      }
+  }, [customerSearch]);
+
+  // -- HANDLERS --
+
+  const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value.replace(/\D/g, ''); // Strip non-digits
+      if (val.length <= 10) {
+          setNewCustomerPhone(val);
+      }
+  };
 
   // -- HISTORY LOGIC --
   const filteredOrders = useMemo(() => {
@@ -194,10 +229,38 @@ const Orders: React.FC = () => {
 
   const remainingSplit = cartTotal - splitTotal;
 
+  // Link Existing Customer
   const handleLinkCustomer = (phone: string, name?: string) => {
      setLinkedCustomer({ name: name || 'Unknown', phone });
      setIsCustomerModalOpen(false);
      setCustomerSearch('');
+     setNewCustomerName('');
+     setNewCustomerPhone('');
+  };
+
+  // Create & Link New Customer
+  const handleCreateAndLinkCustomer = () => {
+      if (appSettings.require_customer_phone && !newCustomerPhone) {
+          alert("Phone Number is required.");
+          return;
+      }
+      if (appSettings.require_customer_name && !newCustomerName) {
+          alert("Customer Name is required.");
+          return;
+      }
+      if (newCustomerPhone && newCustomerPhone.length !== 10) {
+          // Visual validation already shown, but safety check here
+          return;
+      }
+      
+      const phoneToUse = newCustomerPhone || 'NoPhone-' + Date.now();
+      const nameToUse = newCustomerName || 'New Customer';
+
+      setLinkedCustomer({ name: nameToUse, phone: phoneToUse });
+      setIsCustomerModalOpen(false);
+      setCustomerSearch('');
+      setNewCustomerName('');
+      setNewCustomerPhone('');
   };
 
   const submitOrder = async () => {
@@ -286,6 +349,11 @@ const Orders: React.FC = () => {
      if (selectedCategory === 'All') return menuItems;
      return menuItems.filter(m => (m.category || 'Uncategorized') === selectedCategory);
   }, [menuItems, selectedCategory]);
+
+  // Validation Logic
+  const isPhoneInvalid = useMemo(() => {
+      return newCustomerPhone.length > 0 && newCustomerPhone.length !== 10;
+  }, [newCustomerPhone]);
 
   return (
     <div className="pb-16 h-[calc(100vh-80px)] flex flex-col relative">
@@ -874,7 +942,7 @@ const Orders: React.FC = () => {
               <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                       <h3 className="font-bold text-slate-700">Find Customer</h3>
+                       <h3 className="font-bold text-slate-700">Find or Add Customer</h3>
                        <button onClick={() => setIsCustomerModalOpen(false)}><X size={20} className="text-slate-400" /></button>
                     </div>
                     <div className="p-4">
@@ -882,7 +950,7 @@ const Orders: React.FC = () => {
                           <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
                           <input 
                              type="text" 
-                             placeholder="Search Name or Phone..." 
+                             placeholder="Search by Name or Phone..." 
                              autoFocus
                              value={customerSearch}
                              onChange={e => setCustomerSearch(e.target.value)}
@@ -890,7 +958,7 @@ const Orders: React.FC = () => {
                           />
                        </div>
                        
-                       <div className="max-h-60 overflow-y-auto space-y-2">
+                       <div className="max-h-40 overflow-y-auto space-y-2 mb-2">
                           {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phoneNumber.includes(customerSearch)).slice(0, 5).map(c => (
                              <button 
                                 key={c.id}
@@ -904,15 +972,52 @@ const Orders: React.FC = () => {
                                 <div className="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100">Select</div>
                              </button>
                           ))}
-                          
-                          {customerSearch.length > 0 && !customers.some(c => c.phoneNumber === customerSearch) && (
-                             <button
-                                onClick={() => handleLinkCustomer(customerSearch, appSettings.require_customer_name ? "" : "New Customer")}
-                                className="w-full p-3 rounded-lg border-2 border-dashed border-emerald-200 text-emerald-600 font-bold text-sm hover:bg-emerald-50 flex justify-center items-center gap-2 mt-2"
+                       </div>
+
+                       {/* Explicit "Add New" Section */}
+                       <div className="border-t border-slate-100 pt-4 mt-2">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
+                             <Plus size={12} /> Add New Customer
+                          </h4>
+                          <div className="space-y-3">
+                             <div className="relative">
+                                <Phone size={16} className={`absolute left-3 top-2.5 ${isPhoneInvalid ? 'text-red-400' : 'text-slate-400'}`} />
+                                <input 
+                                   type="tel"
+                                   placeholder="Phone Number"
+                                   value={newCustomerPhone}
+                                   onChange={handlePhoneInput}
+                                   maxLength={10}
+                                   className={`w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                                       isPhoneInvalid
+                                           ? 'border-red-500 focus:border-red-500 focus:ring-red-200 bg-red-50 text-red-900'
+                                           : (appSettings.require_customer_phone ? 'border-indigo-200 focus:ring-indigo-500' : 'border-slate-200 focus:ring-emerald-500')
+                                   }`}
+                                />
+                                {isPhoneInvalid && <span className="text-[10px] text-red-600 font-bold mt-1 block">Phone number must be exactly 10 digits.</span>}
+                                {appSettings.require_customer_phone && !isPhoneInvalid && <span className="absolute right-3 top-2.5 text-[10px] text-red-500 font-bold">*Required</span>}
+                             </div>
+                             
+                             <div className="relative">
+                                <User size={16} className="absolute left-3 top-2.5 text-slate-400" />
+                                <input 
+                                   type="text"
+                                   placeholder="Customer Name"
+                                   value={newCustomerName}
+                                   onChange={e => setNewCustomerName(e.target.value)}
+                                   className={`w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${appSettings.require_customer_name ? 'border-indigo-200 focus:ring-indigo-500' : 'border-slate-200 focus:ring-emerald-500'}`}
+                                />
+                                {appSettings.require_customer_name && <span className="absolute right-3 top-2.5 text-[10px] text-red-500 font-bold">*Required</span>}
+                             </div>
+
+                             <button 
+                                onClick={handleCreateAndLinkCustomer}
+                                disabled={isPhoneInvalid}
+                                className={`w-full py-2 bg-slate-800 text-white rounded-lg text-sm font-bold transition-colors shadow-sm ${isPhoneInvalid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-700'}`}
                              >
-                                <Plus size={16} /> Create New: {customerSearch}
+                                Link Customer
                              </button>
-                          )}
+                          </div>
                        </div>
                     </div>
                  </div>

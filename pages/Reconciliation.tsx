@@ -69,11 +69,12 @@ const Reconciliation: React.FC = () => {
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
+        // Access result directly from reader to ensure type safety in callback scope
         const result = reader.result;
-        // Explicitly check for string to satisfy TypeScript and narrow type
+        
         if (typeof result === 'string') {
             try {
-              const parsedData = await parseSalesReportImage(result as string, skus);
+              const parsedData = await parseSalesReportImage(result, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {

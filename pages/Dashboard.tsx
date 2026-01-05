@@ -81,16 +81,42 @@ const Dashboard: React.FC = () => {
     if (!currentUser) return { overdue: [], today: [], upcoming: [] };
     
     const todayStr = getLocalISOString();
+    const now = Date.now();
+    const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
     
-    // Sort logic
-    const userTasks = todos
-      .filter(t => t.assignedTo === currentUser.id && !t.isCompleted)
-      .sort((a,b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+    // Filter tasks:
+    // 1. Assigned to current user
+    // 2. Either NOT completed OR (Completed within last 48 hours)
+    const relevantTasks = todos.filter(t => {
+       if (t.assignedTo !== currentUser.id) return false;
+       if (!t.isCompleted) return true; // Keep all active
+       // Keep completed if within 48 hours
+       return (t.completedAt && (now - t.completedAt < FORTY_EIGHT_HOURS));
+    });
+
+    const overdue = relevantTasks
+        .filter(t => !t.isCompleted && t.dueDate && t.dueDate < todayStr)
+        .sort((a,b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+    const upcoming = relevantTasks
+        .filter(t => !t.isCompleted && t.dueDate && t.dueDate > todayStr)
+        .sort((a,b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+    const activeToday = relevantTasks
+        .filter(t => !t.isCompleted && (!t.dueDate || t.dueDate === todayStr));
+    
+    const recentlyCompleted = relevantTasks
+        .filter(t => t.isCompleted)
+        .sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0));
+
+    // Combine for the "Today" view (Active Today + All Recent Completed)
+    // Active tasks appear first
+    const today = [...activeToday, ...recentlyCompleted];
 
     return {
-       overdue: userTasks.filter(t => t.dueDate && t.dueDate < todayStr),
-       today: userTasks.filter(t => !t.dueDate || t.dueDate === todayStr),
-       upcoming: userTasks.filter(t => t.dueDate && t.dueDate > todayStr)
+       overdue,
+       today,
+       upcoming
     };
   }, [todos, currentUser]);
 
@@ -542,16 +568,34 @@ const Dashboard: React.FC = () => {
                  ) : (
                     <div className="space-y-2">
                        {myTasks.today.map(task => (
-                          <div key={task.id} className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-100 hover:border-emerald-200 transition-colors group">
+                          <div 
+                            key={task.id} 
+                            className={`flex items-center gap-3 p-2 rounded-lg border transition-colors group ${
+                                task.isCompleted 
+                                ? 'bg-emerald-50 border-emerald-100' 
+                                : 'bg-slate-50 border-slate-100 hover:border-emerald-200'
+                            }`}
+                          >
                              <button 
-                                onClick={() => toggleTodo(task.id, true)}
-                                className="w-5 h-5 rounded border border-slate-300 hover:border-emerald-500 flex items-center justify-center transition-colors bg-white"
+                                onClick={() => toggleTodo(task.id, !task.isCompleted)}
+                                className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                    task.isCompleted 
+                                    ? 'bg-emerald-500 border-emerald-500 text-white' 
+                                    : 'bg-white border-slate-300 hover:border-emerald-500'
+                                }`}
                              >
-                                <Check size={14} className="text-emerald-600 opacity-0 group-hover:opacity-100" />
+                                <Check size={14} className={`${task.isCompleted ? 'opacity-100' : 'text-emerald-600 opacity-0 group-hover:opacity-100'}`} />
                              </button>
-                             <div>
-                                <p className="text-sm font-medium text-slate-700">{task.text}</p>
-                                <p className="text-[10px] text-slate-400">By: {task.assignedBy}</p>
+                             <div className="flex-1">
+                                <p className={`text-sm font-medium ${task.isCompleted ? 'text-emerald-800 line-through decoration-emerald-500/50' : 'text-slate-700'}`}>
+                                    {task.text}
+                                </p>
+                                <div className="flex justify-between items-center">
+                                    <p className={`text-[10px] ${task.isCompleted ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                        {task.isCompleted ? 'Completed' : `By: ${task.assignedBy}`}
+                                    </p>
+                                    {task.isCompleted && <span className="text-[10px] text-emerald-500 font-medium">Undo</span>}
+                                </div>
                              </div>
                           </div>
                        ))}
