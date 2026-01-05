@@ -4,13 +4,287 @@ import {
   Transaction, SKU, Branch, SalesRecord, Order, DailyReportItem, 
   Todo, AppSettings, MenuItem, MenuCategory, Customer, MembershipRule, 
   RewardResult, AttendanceRecord, AttendanceOverride, TaskTemplate,
-  TransactionType, SalesPlatform, AttendanceOverrideType, ArchivedTransaction, CustomerCoupon
+  TransactionType, SalesPlatform, AttendanceOverrideType, ArchivedTransaction, CustomerCoupon, OrderItem
 } from '../types';
 import { 
   INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_MENU_CATEGORIES, 
   INITIAL_MENU_ITEMS, INITIAL_MEMBERSHIP_RULES, INITIAL_CUSTOMERS 
 } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+
+// --- DATA MAPPERS (DB snake_case <-> App camelCase) ---
+
+const mapTransactionFromDB = (t: any): Transaction => ({
+  id: t.id,
+  // Fallback to camelCase if snake_case is missing (handles mixed data sources)
+  batchId: t.batch_id || t.batchId, 
+  date: t.date,
+  timestamp: Number(t.timestamp), // Ensure strictly Number
+  skuId: t.sku_id || t.skuId,
+  branchId: t.branch_id || t.branchId,
+  type: t.type,
+  // CRITICAL FIX: Check for both 'quantity_pieces' and 'quantity', default to 0 to prevent NaN
+  quantityPieces: Number(t.quantity_pieces || t.quantity || 0), 
+  userId: t.user_id || t.userId,
+  userName: t.user_name || t.userName,
+  // Handle legacy single image vs new array
+  imageUrls: t.image_urls || (t.image_url ? [t.image_url] : [])
+});
+
+const mapTransactionToDB = (t: Partial<Transaction>) => ({
+  id: t.id,
+  batch_id: t.batchId,
+  date: t.date,
+  timestamp: t.timestamp,
+  sku_id: t.skuId,
+  branch_id: t.branchId,
+  type: t.type,
+  quantity_pieces: t.quantityPieces,
+  user_id: t.userId,
+  user_name: t.userName,
+  image_urls: t.imageUrls
+});
+
+const mapOrderItemFromDB = (i: any): OrderItem => ({
+  id: i.id,
+  // Deep map: Check snake_case inside the JSON blob
+  menuItemId: i.menuItemId || i.menu_item_id, 
+  name: i.name,
+  price: Number(i.price || 0),
+  quantity: Number(i.quantity || 0),
+  variant: i.variant,
+  consumed: Array.isArray(i.consumed) ? i.consumed.map((c: any) => ({
+      skuId: c.skuId || c.sku_id,
+      quantity: Number(c.quantity || 0)
+  })) : undefined
+});
+
+const mapOrderFromDB = (o: any): Order => ({
+  id: o.id,
+  branchId: o.branch_id || o.branchId,
+  customerId: o.customer_id || o.customerId,
+  customerName: o.customer_name || o.customerName,
+  platform: o.platform,
+  totalAmount: Number(o.total_amount || o.totalAmount || 0),
+  status: o.status,
+  paymentMethod: o.payment_method || o.paymentMethod,
+  paymentSplit: o.payment_split || o.paymentSplit,
+  date: o.date,
+  timestamp: Number(o.timestamp),
+  // CRITICAL FIX: Map the items array contents
+  items: Array.isArray(o.items) ? o.items.map(mapOrderItemFromDB) : [],
+  customAmount: Number(o.custom_amount || o.customAmount || 0),
+  customAmountReason: o.custom_amount_reason || o.customAmountReason,
+  customSkuItems: o.custom_sku_items || o.customSkuItems,
+  customSkuReason: o.custom_sku_reason || o.customSkuReason
+});
+
+const mapOrderToDB = (o: Order) => ({
+  id: o.id,
+  branch_id: o.branchId,
+  customer_id: o.customerId,
+  customer_name: o.customerName,
+  platform: o.platform,
+  total_amount: o.totalAmount,
+  status: o.status,
+  payment_method: o.paymentMethod,
+  payment_split: o.paymentSplit,
+  date: o.date,
+  timestamp: o.timestamp,
+  items: o.items, // We store as JSON, usually keys are preserved as is.
+  custom_amount: o.customAmount,
+  custom_amount_reason: o.customAmountReason,
+  custom_sku_items: o.customSkuItems,
+  custom_sku_reason: o.customSkuReason
+});
+
+const mapSkuFromDB = (s: any): SKU => ({
+  id: s.id,
+  name: s.name,
+  category: s.category,
+  dietary: s.dietary,
+  piecesPerPacket: Number(s.pieces_per_packet || s.piecesPerPacket || 1),
+  order: Number(s.order || 0)
+});
+
+const mapSkuToDB = (s: SKU) => ({
+  id: s.id,
+  name: s.name,
+  category: s.category,
+  dietary: s.dietary,
+  pieces_per_packet: s.piecesPerPacket,
+  order: s.order
+});
+
+const mapSalesRecordFromDB = (r: any): SalesRecord => ({
+  id: r.id,
+  orderId: r.order_id || r.orderId,
+  date: r.date,
+  branchId: r.branch_id || r.branchId,
+  platform: r.platform,
+  skuId: r.sku_id || r.skuId,
+  quantitySold: Number(r.quantity_sold || r.quantitySold || 0),
+  timestamp: Number(r.timestamp),
+  customerId: r.customer_id || r.customerId,
+  orderAmount: Number(r.order_amount || r.orderAmount || 0)
+});
+
+const mapSalesRecordToDB = (r: SalesRecord) => ({
+  id: r.id,
+  order_id: r.orderId,
+  date: r.date,
+  branch_id: r.branchId,
+  platform: r.platform,
+  sku_id: r.skuId,
+  quantity_sold: r.quantitySold,
+  timestamp: r.timestamp,
+  customer_id: r.customerId,
+  order_amount: r.orderAmount
+});
+
+const mapCustomerFromDB = (c: any): Customer => ({
+  id: c.id,
+  name: c.name,
+  phoneNumber: c.phone_number || c.phoneNumber,
+  totalSpend: Number(c.total_spend || c.totalSpend || 0),
+  orderCount: Number(c.order_count || c.orderCount || 0),
+  joinedAt: c.joined_at || c.joinedAt,
+  lastOrderDate: c.last_order_date || c.lastOrderDate
+});
+
+const mapRuleFromDB = (r: any): MembershipRule => ({
+  id: r.id,
+  triggerOrderCount: Number(r.trigger_order_count || r.triggerOrderCount || 0),
+  type: r.type,
+  value: r.value,
+  description: r.description,
+  timeFrameDays: Number(r.time_frame_days || r.timeFrameDays || 30),
+  validityDays: Number(r.validity_days || r.validityDays || 0)
+});
+
+const mapRuleToDB = (r: MembershipRule) => ({
+  id: r.id,
+  trigger_order_count: r.triggerOrderCount,
+  type: r.type,
+  value: r.value,
+  description: r.description,
+  time_frame_days: r.timeFrameDays,
+  validity_days: r.validityDays
+});
+
+const mapCouponFromDB = (c: any): CustomerCoupon => ({
+  id: c.id,
+  customerId: c.customer_id || c.customerId,
+  ruleId: c.rule_id || c.ruleId,
+  status: c.status,
+  expiresAt: c.expires_at || c.expiresAt,
+  createdAt: c.created_at || c.createdAt
+});
+
+const mapAttendanceFromDB = (a: any): AttendanceRecord => ({
+  id: a.id,
+  userId: a.user_id || a.userId,
+  userName: a.user_name || a.userName,
+  branchId: a.branch_id || a.branchId,
+  date: a.date,
+  timestamp: Number(a.timestamp),
+  imageUrl: a.image_url || a.imageUrl
+});
+
+const mapAttendanceToDB = (a: AttendanceRecord) => ({
+  id: a.id,
+  user_id: a.userId,
+  user_name: a.userName,
+  branch_id: a.branchId,
+  date: a.date,
+  timestamp: a.timestamp,
+  image_url: a.imageUrl
+});
+
+const mapTodoFromDB = (t: any): Todo => ({
+  id: t.id,
+  text: t.text,
+  assignedTo: t.assigned_to || t.assignedTo,
+  assignedBy: t.assigned_by || t.assignedBy,
+  isCompleted: t.is_completed || t.isCompleted,
+  createdAt: Number(t.created_at_ts || t.createdAt),
+  completedAt: t.completed_at_ts ? Number(t.completed_at_ts) : undefined,
+  dueDate: t.due_date || t.dueDate,
+  templateId: t.template_id || t.templateId,
+  priority: t.priority
+});
+
+const mapTodoToDB = (t: Todo) => ({
+  id: t.id,
+  text: t.text,
+  assigned_to: t.assignedTo,
+  assigned_by: t.assignedBy,
+  is_completed: t.isCompleted,
+  created_at_ts: t.createdAt,
+  completed_at_ts: t.completedAt,
+  due_date: t.dueDate,
+  template_id: t.templateId,
+  priority: t.priority
+});
+
+const mapTemplateFromDB = (t: any): TaskTemplate => ({
+  id: t.id,
+  title: t.title,
+  assignedTo: t.assigned_to || t.assignedTo,
+  assignedBy: t.assigned_by || t.assignedBy,
+  frequency: t.frequency,
+  weekDays: t.week_days || t.weekDays,
+  monthDays: t.month_days || t.monthDays,
+  startDate: t.start_date || t.startDate,
+  isActive: t.is_active || t.isActive,
+  lastGeneratedDate: t.last_generated_date || t.lastGeneratedDate
+});
+
+const mapTemplateToDB = (t: TaskTemplate) => ({
+  id: t.id,
+  title: t.title,
+  assigned_to: t.assignedTo,
+  assigned_by: t.assignedBy,
+  frequency: t.frequency,
+  week_days: t.weekDays,
+  month_days: t.monthDays,
+  start_date: t.startDate,
+  is_active: t.isActive,
+  last_generated_date: t.lastGeneratedDate
+});
+
+const mapMenuItemFromDB = (m: any): MenuItem => ({
+  id: m.id,
+  name: m.name,
+  price: Number(m.price || 0),
+  halfPrice: m.half_price ? Number(m.half_price) : undefined,
+  description: m.description,
+  category: m.category,
+  // Handle JSON ingredients which might be in mixed case
+  ingredients: Array.isArray(m.ingredients) ? m.ingredients.map((i: any) => ({
+      skuId: i.skuId || i.sku_id,
+      quantity: Number(i.quantity || 0)
+  })) : [],
+  halfIngredients: Array.isArray(m.half_ingredients || m.halfIngredients) 
+    ? (m.half_ingredients || m.halfIngredients).map((i: any) => ({
+      skuId: i.skuId || i.sku_id,
+      quantity: Number(i.quantity || 0)
+    })) 
+    : undefined
+});
+
+const mapMenuItemToDB = (m: MenuItem) => ({
+  id: m.id,
+  name: m.name,
+  price: m.price,
+  half_price: m.halfPrice,
+  description: m.description,
+  category: m.category,
+  ingredients: m.ingredients,
+  half_ingredients: m.halfIngredients
+});
+
+// ----------------------------------------------
 
 interface StoreContextType {
   transactions: Transaction[];
@@ -183,20 +457,64 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     supabase.from('app_settings').select('*')
                 ]);
 
-                // Update State & LocalStorage
-                if (txData) { setTransactions(txData); save('transactions', txData); }
-                if (ordData) { setOrders(ordData); save('orders', ordData); }
-                if (skuData) { setSkus(skuData); save('skus', skuData); }
+                // Update State & LocalStorage with MAPPED data
+                if (txData) { 
+                    const mapped = txData.map(mapTransactionFromDB);
+                    setTransactions(mapped); 
+                    save('transactions', mapped); 
+                }
+                if (ordData) { 
+                    const mapped = ordData.map(mapOrderFromDB);
+                    setOrders(mapped); 
+                    save('orders', mapped); 
+                }
+                if (skuData) { 
+                    const mapped = skuData.map(mapSkuFromDB);
+                    setSkus(mapped); 
+                    save('skus', mapped); 
+                }
                 if (brData) { setBranches(brData); save('branches', brData); }
-                if (menuData) { setMenuItems(menuData); save('menuItems', menuData); }
+                if (menuData) { 
+                    const mapped = menuData.map(mapMenuItemFromDB);
+                    setMenuItems(mapped); 
+                    save('menuItems', mapped); 
+                }
                 if (catData) { setMenuCategories(catData); save('menuCategories', catData); }
-                if (custData) { setCustomers(custData); save('customers', custData); }
-                if (ruleData) { setMembershipRules(ruleData); save('membershipRules', ruleData); }
-                if (cpnData) { setCustomerCoupons(cpnData); save('customerCoupons', cpnData); }
-                if (attData) { setAttendanceRecords(attData); save('attendanceRecords', attData); }
-                if (tmplData) { setTaskTemplates(tmplData); save('taskTemplates', tmplData); }
-                if (todoData) { setTodos(todoData); save('todos', todoData); }
-                if (salesData) { setSalesRecords(salesData); save('salesRecords', salesData); }
+                if (custData) { 
+                    const mapped = custData.map(mapCustomerFromDB);
+                    setCustomers(mapped); 
+                    save('customers', mapped); 
+                }
+                if (ruleData) { 
+                    const mapped = ruleData.map(mapRuleFromDB);
+                    setMembershipRules(mapped); 
+                    save('membershipRules', mapped); 
+                }
+                if (cpnData) { 
+                    const mapped = cpnData.map(mapCouponFromDB);
+                    setCustomerCoupons(mapped); 
+                    save('customerCoupons', mapped); 
+                }
+                if (attData) { 
+                    const mapped = attData.map(mapAttendanceFromDB);
+                    setAttendanceRecords(mapped); 
+                    save('attendanceRecords', mapped); 
+                }
+                if (tmplData) { 
+                    const mapped = tmplData.map(mapTemplateFromDB);
+                    setTaskTemplates(mapped); 
+                    save('taskTemplates', mapped); 
+                }
+                if (todoData) { 
+                    const mapped = todoData.map(mapTodoFromDB);
+                    setTodos(mapped); 
+                    save('todos', mapped); 
+                }
+                if (salesData) { 
+                    const mapped = salesData.map(mapSalesRecordFromDB);
+                    setSalesRecords(mapped); 
+                    save('salesRecords', mapped); 
+                }
                 
                 if (settingsData) {
                     const settingsMap = settingsData.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
@@ -223,9 +541,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 setCustomerCoupons(prev => {
                     let updated = [...prev];
                     if (eventType === 'INSERT') {
-                        if (!updated.find(c => c.id === newRecord.id)) updated.push(newRecord as CustomerCoupon);
+                        if (!updated.find(c => c.id === newRecord.id)) updated.push(mapCouponFromDB(newRecord));
                     } else if (eventType === 'UPDATE') {
-                        updated = updated.map(c => c.id === newRecord.id ? newRecord as CustomerCoupon : c);
+                        updated = updated.map(c => c.id === newRecord.id ? mapCouponFromDB(newRecord) : c);
                     } else if (eventType === 'DELETE') {
                         updated = updated.filter(c => c.id !== oldRecord.id);
                     }
@@ -261,7 +579,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (isSupabaseConfigured()) {
         try {
-            await supabase.from('transactions').insert(newTxs);
+            const mappedTxs = newTxs.map(mapTransactionToDB);
+            await supabase.from('transactions').insert(mappedTxs);
         } catch (e) { console.error("Supabase Insert Error", e); }
     }
   };
@@ -314,7 +633,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('salesRecords', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('sales_records').insert(newRecords); } catch (e) { console.error(e); }
+        try { 
+            const mapped = newRecords.map(mapSalesRecordToDB);
+            await supabase.from('sales_records').insert(mapped); 
+        } catch (e) { console.error(e); }
     }
   };
 
@@ -343,7 +665,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('skus', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('skus').insert(newSku); } catch (e) { console.error(e); }
+        try { await supabase.from('skus').insert(mapSkuToDB(newSku)); } catch (e) { console.error(e); }
     }
   };
 
@@ -353,7 +675,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('skus', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('skus').update(sku).eq('id', sku.id); } catch (e) { console.error(e); }
+        try { await supabase.from('skus').update(mapSkuToDB(sku)).eq('id', sku.id); } catch (e) { console.error(e); }
     }
   };
 
@@ -382,7 +704,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('skus', ordered);
 
     if (isSupabaseConfigured()) {
-        // Bulk update order? Usually just update changed rows
         try {
             await Promise.all(ordered.map(s => supabase.from('skus').update({ order: s.order }).eq('id', s.id)));
         } catch (e) { console.error(e); }
@@ -429,7 +750,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('menuItems', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('menu_items').insert(newItem); } catch (e) { console.error(e); }
+        try { await supabase.from('menu_items').insert(mapMenuItemToDB(newItem)); } catch (e) { console.error(e); }
     }
   };
 
@@ -439,7 +760,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('menuItems', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('menu_items').update(item).eq('id', item.id); } catch (e) { console.error(e); }
+        try { await supabase.from('menu_items').update(mapMenuItemToDB(item)).eq('id', item.id); } catch (e) { console.error(e); }
     }
   };
 
@@ -538,24 +859,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // NOTE: This triggers the SQL Function `handle_new_order_loyalty` on the server
     if (isSupabaseConfigured()) {
         try {
-            await supabase.from('orders').insert({
-                id: order.id,
-                branch_id: order.branchId,
-                customer_id: order.customerId,
-                customer_name: order.customerName,
-                platform: order.platform,
-                total_amount: order.totalAmount,
-                status: order.status,
-                payment_method: order.paymentMethod,
-                payment_split: order.paymentSplit,
-                date: order.date,
-                timestamp: order.timestamp,
-                items: order.items,
-                custom_amount: order.customAmount,
-                custom_amount_reason: order.customAmountReason,
-                custom_sku_items: order.customSkuItems,
-                custom_sku_reason: order.customSkuReason
-            });
+            await supabase.from('orders').insert(mapOrderToDB(order));
 
             // Mark coupon as used in DB
             if (redeemedCouponId) {
@@ -681,7 +985,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('membershipRules', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('membership_rules').insert(newRule); } catch (e) { console.error(e); }
+        try { await supabase.from('membership_rules').insert(mapRuleToDB(newRule)); } catch (e) { console.error(e); }
     }
   };
 
@@ -739,15 +1043,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (isSupabaseConfigured()) {
         try { 
-            await supabase.from('attendance').insert({
-                id: newRecord.id,
-                user_id: newRecord.userId,
-                user_name: newRecord.userName,
-                branch_id: newRecord.branchId,
-                date: newRecord.date,
-                timestamp: newRecord.timestamp,
-                image_url: newRecord.imageUrl
-            }); 
+            await supabase.from('attendance').insert(mapAttendanceToDB(newRecord)); 
         } catch (e) { console.error(e); }
     }
   };
@@ -779,7 +1075,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('todos', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('todos').insert(todo); } catch (e) { console.error(e); }
+        try { await supabase.from('todos').insert(mapTodoToDB(todo)); } catch (e) { console.error(e); }
     }
   };
 
@@ -813,7 +1109,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('taskTemplates', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('task_templates').insert(newTmpl); } catch (e) { console.error(e); }
+        try { await supabase.from('task_templates').insert(mapTemplateToDB(newTmpl)); } catch (e) { console.error(e); }
     }
   };
 
@@ -823,7 +1119,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     save('taskTemplates', updated);
 
     if (isSupabaseConfigured()) {
-        try { await supabase.from('task_templates').update(template).eq('id', template.id); } catch (e) { console.error(e); }
+        try { await supabase.from('task_templates').update(mapTemplateToDB(template)).eq('id', template.id); } catch (e) { console.error(e); }
     }
   };
 
