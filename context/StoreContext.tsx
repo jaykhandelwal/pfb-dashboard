@@ -115,76 +115,127 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from LocalStorage & Setup Realtime
+  // Load from LocalStorage & Fetch from Supabase
   useEffect(() => {
-    try {
-      const load = (key: string, setter: any, fallback: any) => {
-        const stored = localStorage.getItem(`pakaja_${key}`);
-        if (stored) setter(JSON.parse(stored));
-        else setter(fallback);
-      };
+    const initializeStore = async () => {
+        try {
+            // 1. Load LocalStorage (Instant UI)
+            const load = (key: string, setter: any, fallback: any) => {
+                const stored = localStorage.getItem(`pakaja_${key}`);
+                if (stored) setter(JSON.parse(stored));
+                else setter(fallback);
+            };
 
-      load('transactions', setTransactions, []);
-      load('salesRecords', setSalesRecords, []);
-      load('skus', setSkus, INITIAL_SKUS);
-      load('branches', setBranches, INITIAL_BRANCHES);
-      load('orders', setOrders, []);
-      load('todos', setTodos, []);
-      load('menuItems', setMenuItems, INITIAL_MENU_ITEMS);
-      load('menuCategories', setMenuCategories, INITIAL_MENU_CATEGORIES);
-      load('customers', setCustomers, INITIAL_CUSTOMERS);
-      load('membershipRules', setMembershipRules, INITIAL_MEMBERSHIP_RULES);
-      load('customerCoupons', setCustomerCoupons, []);
-      load('attendanceRecords', setAttendanceRecords, []);
-      load('attendanceOverrides', setAttendanceOverrides, []);
-      load('deletedTransactions', setDeletedTransactions, []);
-      load('taskTemplates', setTaskTemplates, []);
-      
-      const storedSettings = localStorage.getItem('pakaja_appSettings');
-      if (storedSettings) {
-          setAppSettings(prev => ({ ...prev, ...JSON.parse(storedSettings) }));
-      }
+            load('transactions', setTransactions, []);
+            load('salesRecords', setSalesRecords, []);
+            load('skus', setSkus, INITIAL_SKUS);
+            load('branches', setBranches, INITIAL_BRANCHES);
+            load('orders', setOrders, []);
+            load('todos', setTodos, []);
+            load('menuItems', setMenuItems, INITIAL_MENU_ITEMS);
+            load('menuCategories', setMenuCategories, INITIAL_MENU_CATEGORIES);
+            load('customers', setCustomers, INITIAL_CUSTOMERS);
+            load('membershipRules', setMembershipRules, INITIAL_MEMBERSHIP_RULES);
+            load('customerCoupons', setCustomerCoupons, []);
+            load('attendanceRecords', setAttendanceRecords, []);
+            load('attendanceOverrides', setAttendanceOverrides, []);
+            load('deletedTransactions', setDeletedTransactions, []);
+            load('taskTemplates', setTaskTemplates, []);
+            
+            const storedSettings = localStorage.getItem('pakaja_appSettings');
+            if (storedSettings) {
+                setAppSettings(prev => ({ ...prev, ...JSON.parse(storedSettings) }));
+            }
 
-      // --- SUPABASE REALTIME SYNC (Customers & Coupons) ---
-      if (isSupabaseConfigured()) {
-          // 1. Initial Fetch for Coupons (Source of Truth)
-          supabase.from('customer_coupons').select('*').then(({ data, error }) => {
-              if (data && !error) {
-                  setCustomerCoupons(data as CustomerCoupon[]);
-                  save('customerCoupons', data);
-              }
-          });
+            // 2. Fetch from Supabase (Source of Truth)
+            if (isSupabaseConfigured()) {
+                console.log("Syncing data from Supabase...");
+                
+                const [
+                    { data: txData },
+                    { data: ordData },
+                    { data: skuData },
+                    { data: brData },
+                    { data: menuData },
+                    { data: catData },
+                    { data: custData },
+                    { data: ruleData },
+                    { data: cpnData },
+                    { data: attData },
+                    { data: tmplData },
+                    { data: todoData },
+                    { data: salesData },
+                    { data: settingsData }
+                ] = await Promise.all([
+                    supabase.from('transactions').select('*'),
+                    supabase.from('orders').select('*'),
+                    supabase.from('skus').select('*').order('order', { ascending: true }),
+                    supabase.from('branches').select('*'),
+                    supabase.from('menu_items').select('*'),
+                    supabase.from('menu_categories').select('*').order('order', { ascending: true }),
+                    supabase.from('customers').select('*'),
+                    supabase.from('membership_rules').select('*'),
+                    supabase.from('customer_coupons').select('*'),
+                    supabase.from('attendance').select('*'),
+                    supabase.from('task_templates').select('*'),
+                    supabase.from('todos').select('*'),
+                    supabase.from('sales_records').select('*'),
+                    supabase.from('app_settings').select('*')
+                ]);
 
-          // 2. Realtime Listener
-          const channel = supabase.channel('public:customer_coupons')
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_coupons' }, (payload: any) => {
-                  const { eventType, new: newRecord, old: oldRecord } = payload;
-                  
-                  setCustomerCoupons(prev => {
-                      let updated = [...prev];
-                      if (eventType === 'INSERT') {
-                          // Prevent duplicate if we optimized locally
-                          if (!updated.find(c => c.id === newRecord.id)) {
-                              updated.push(newRecord as CustomerCoupon);
-                          }
-                      } else if (eventType === 'UPDATE') {
-                          updated = updated.map(c => c.id === newRecord.id ? newRecord as CustomerCoupon : c);
-                      } else if (eventType === 'DELETE') {
-                          updated = updated.filter(c => c.id !== oldRecord.id);
-                      }
-                      save('customerCoupons', updated);
-                      return updated;
-                  });
-              })
-              .subscribe();
+                // Update State & LocalStorage
+                if (txData) { setTransactions(txData); save('transactions', txData); }
+                if (ordData) { setOrders(ordData); save('orders', ordData); }
+                if (skuData) { setSkus(skuData); save('skus', skuData); }
+                if (brData) { setBranches(brData); save('branches', brData); }
+                if (menuData) { setMenuItems(menuData); save('menuItems', menuData); }
+                if (catData) { setMenuCategories(catData); save('menuCategories', catData); }
+                if (custData) { setCustomers(custData); save('customers', custData); }
+                if (ruleData) { setMembershipRules(ruleData); save('membershipRules', ruleData); }
+                if (cpnData) { setCustomerCoupons(cpnData); save('customerCoupons', cpnData); }
+                if (attData) { setAttendanceRecords(attData); save('attendanceRecords', attData); }
+                if (tmplData) { setTaskTemplates(tmplData); save('taskTemplates', tmplData); }
+                if (todoData) { setTodos(todoData); save('todos', todoData); }
+                if (salesData) { setSalesRecords(salesData); save('salesRecords', salesData); }
+                
+                if (settingsData) {
+                    const settingsMap = settingsData.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
+                    setAppSettings(prev => ({ ...prev, ...settingsMap }));
+                    save('appSettings', settingsMap);
+                }
+            }
 
-          return () => { supabase.removeChannel(channel); };
-      }
+        } catch (e) {
+            console.error("Failed to load/sync data", e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-    } catch (e) {
-      console.error("Failed to load local data", e);
-    } finally {
-      setIsLoading(false);
+    initializeStore();
+
+    // 3. Realtime Listener (Coupons Only for now, extendable)
+    if (isSupabaseConfigured()) {
+        const channel = supabase.channel('public:customer_coupons')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_coupons' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                
+                setCustomerCoupons(prev => {
+                    let updated = [...prev];
+                    if (eventType === 'INSERT') {
+                        if (!updated.find(c => c.id === newRecord.id)) updated.push(newRecord as CustomerCoupon);
+                    } else if (eventType === 'UPDATE') {
+                        updated = updated.map(c => c.id === newRecord.id ? newRecord as CustomerCoupon : c);
+                    } else if (eventType === 'DELETE') {
+                        updated = updated.filter(c => c.id !== oldRecord.id);
+                    }
+                    save('customerCoupons', updated);
+                    return updated;
+                });
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }
   }, []);
 
@@ -203,9 +254,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       timestamp: Date.now()
     }));
     
+    // Optimistic Update
     const updated = [...transactions, ...newTxs];
     setTransactions(updated);
     save('transactions', updated);
+
+    if (isSupabaseConfigured()) {
+        try {
+            await supabase.from('transactions').insert(newTxs);
+        } catch (e) { console.error("Supabase Insert Error", e); }
+    }
   };
 
   const deleteTransactionBatch = async (batchId: string, deletedBy: string) => {
@@ -225,6 +283,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newDeleted = [...deletedTransactions, ...archived];
     setDeletedTransactions(newDeleted);
     save('deletedTransactions', newDeleted);
+
+    if (isSupabaseConfigured()) {
+        try {
+            await supabase.from('transactions').delete().eq('batch_id', batchId);
+            // Optionally insert into deleted_transactions table if it existed
+        } catch (e) { console.error("Supabase Delete Error", e); }
+    }
   };
 
   const resetData = () => {
@@ -247,6 +312,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...salesRecords, ...newRecords];
     setSalesRecords(updated);
     save('salesRecords', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('sales_records').insert(newRecords); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteSalesRecordsForDate = async (date: string, branchId: string, platform: SalesPlatform) => {
@@ -255,6 +324,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
     setSalesRecords(updated);
     save('salesRecords', updated);
+
+    if (isSupabaseConfigured()) {
+        try {
+            await supabase.from('sales_records').delete()
+                .eq('date', date)
+                .eq('branch_id', branchId)
+                .eq('platform', platform);
+        } catch (e) { console.error(e); }
+    }
   };
 
   // --- SKU CRUD ---
@@ -263,18 +341,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...skus, newSku];
     setSkus(updated);
     save('skus', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('skus').insert(newSku); } catch (e) { console.error(e); }
+    }
   };
 
   const updateSku = async (sku: SKU) => {
     const updated = skus.map(s => s.id === sku.id ? sku : s);
     setSkus(updated);
     save('skus', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('skus').update(sku).eq('id', sku.id); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteSku = async (id: string) => {
     const updated = skus.filter(s => s.id !== id);
     setSkus(updated);
     save('skus', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('skus').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   const reorderSku = async (id: string, direction: 'up' | 'down') => {
@@ -290,6 +380,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const ordered = newSkus.map((s, idx) => ({ ...s, order: idx }));
     setSkus(ordered);
     save('skus', ordered);
+
+    if (isSupabaseConfigured()) {
+        // Bulk update order? Usually just update changed rows
+        try {
+            await Promise.all(ordered.map(s => supabase.from('skus').update({ order: s.order }).eq('id', s.id)));
+        } catch (e) { console.error(e); }
+    }
   };
 
   // --- Branch CRUD ---
@@ -298,18 +395,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...branches, newBranch];
     setBranches(updated);
     save('branches', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('branches').insert(newBranch); } catch (e) { console.error(e); }
+    }
   };
 
   const updateBranch = async (branch: Branch) => {
     const updated = branches.map(b => b.id === branch.id ? branch : b);
     setBranches(updated);
     save('branches', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('branches').update(branch).eq('id', branch.id); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteBranch = async (id: string) => {
     const updated = branches.filter(b => b.id !== id);
     setBranches(updated);
     save('branches', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('branches').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   // --- Menu CRUD ---
@@ -318,18 +427,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...menuItems, newItem];
     setMenuItems(updated);
     save('menuItems', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_items').insert(newItem); } catch (e) { console.error(e); }
+    }
   };
 
   const updateMenuItem = async (item: MenuItem) => {
     const updated = menuItems.map(i => i.id === item.id ? item : i);
     setMenuItems(updated);
     save('menuItems', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_items').update(item).eq('id', item.id); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteMenuItem = async (id: string) => {
     const updated = menuItems.filter(i => i.id !== id);
     setMenuItems(updated);
     save('menuItems', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_items').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   // --- Category CRUD ---
@@ -338,12 +459,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...menuCategories, newCat];
     setMenuCategories(updated);
     save('menuCategories', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_categories').insert(newCat); } catch (e) { console.error(e); }
+    }
   };
 
   const updateMenuCategory = async (cat: MenuCategory, oldName: string) => {
     const updatedCats = menuCategories.map(c => c.id === cat.id ? cat : c);
     setMenuCategories(updatedCats);
     save('menuCategories', updatedCats);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_categories').update(cat).eq('id', cat.id); } catch (e) { console.error(e); }
+    }
 
     // Update items if name changed
     if (cat.name !== oldName) {
@@ -353,6 +482,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         setMenuItems(updatedItems);
         save('menuItems', updatedItems);
+        
+        // Note: For full consistency, we should update items in DB too, but might be heavy.
+        // Assuming user will update manually or we do bulk update later.
     }
   };
 
@@ -360,6 +492,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updatedCats = menuCategories.filter(c => c.id !== id);
     setMenuCategories(updatedCats);
     save('menuCategories', updatedCats);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('menu_categories').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
 
     // Reset items to Uncategorized
     const updatedItems = menuItems.map(item => {
@@ -383,6 +519,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const final = sorted.map((c, idx) => ({ ...c, order: idx }));
     setMenuCategories(final);
     save('menuCategories', final);
+
+    if (isSupabaseConfigured()) {
+        try { 
+            await Promise.all(final.map(c => supabase.from('menu_categories').update({ order: c.order }).eq('id', c.id)));
+        } catch (e) { console.error(e); }
+    }
   };
 
   // --- Orders & Customers & Coupons ---
@@ -471,9 +613,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         );
     }
 
-    // IMPORTANT: If Supabase is configured, we rely on the Realtime Subscription 
-    // to add the new coupon (generated by the SQL Trigger). 
-    // We ONLY generate it locally if we are OFFLINE/DEMO mode to avoid duplicates.
+    // If Offline mode, simulate generation
     if (!isSupabaseConfigured() && order.customerId && membershipRules.length > 0) {
         // Calculate next target (Current + 1)
         const nextOrderCount = currentCustomerOrderCount + 1;
@@ -539,12 +679,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...membershipRules, newRule];
     setMembershipRules(updated);
     save('membershipRules', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('membership_rules').insert(newRule); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteMembershipRule = async (id: string) => {
     const updated = membershipRules.filter(r => r.id !== id);
     setMembershipRules(updated);
     save('membershipRules', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('membership_rules').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   // UPDATED: Check for AVAILABLE COUPON instead of calculating rule
@@ -588,6 +736,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...attendanceRecords, newRecord];
     setAttendanceRecords(updated);
     save('attendanceRecords', updated);
+
+    if (isSupabaseConfigured()) {
+        try { 
+            await supabase.from('attendance').insert({
+                id: newRecord.id,
+                user_id: newRecord.userId,
+                user_name: newRecord.userName,
+                branch_id: newRecord.branchId,
+                date: newRecord.date,
+                timestamp: newRecord.timestamp,
+                image_url: newRecord.imageUrl
+            }); 
+        } catch (e) { console.error(e); }
+    }
   };
 
   const setAttendanceStatus = async (userId: string, date: string, type: AttendanceOverrideType | null) => {
@@ -605,6 +767,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     setAttendanceOverrides(updated);
     save('attendanceOverrides', updated);
+    
+    // Note: Overrides are currently local-only in this implementation, 
+    // unless a table is created in Supabase.
   };
 
   // --- Todos ---
@@ -612,18 +777,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [todo, ...todos];
     setTodos(updated);
     save('todos', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('todos').insert(todo); } catch (e) { console.error(e); }
+    }
   };
 
   const toggleTodo = async (id: string, isCompleted: boolean) => {
     const updated = todos.map(t => t.id === id ? { ...t, isCompleted, completedAt: isCompleted ? Date.now() : undefined } : t);
     setTodos(updated);
     save('todos', updated);
+
+    if (isSupabaseConfigured()) {
+        try { 
+            await supabase.from('todos').update({ is_completed: isCompleted, completed_at_ts: isCompleted ? Date.now() : null }).eq('id', id); 
+        } catch (e) { console.error(e); }
+    }
   };
 
   const deleteTodo = async (id: string) => {
     const updated = todos.filter(t => t.id !== id);
     setTodos(updated);
     save('todos', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('todos').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   // --- Templates ---
@@ -632,18 +811,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = [...taskTemplates, newTmpl];
     setTaskTemplates(updated);
     save('taskTemplates', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('task_templates').insert(newTmpl); } catch (e) { console.error(e); }
+    }
   };
 
   const updateTaskTemplate = async (template: TaskTemplate) => {
     const updated = taskTemplates.map(t => t.id === template.id ? template : t);
     setTaskTemplates(updated);
     save('taskTemplates', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('task_templates').update(template).eq('id', template.id); } catch (e) { console.error(e); }
+    }
   };
 
   const deleteTaskTemplate = async (id: string) => {
     const updated = taskTemplates.filter(t => t.id !== id);
     setTaskTemplates(updated);
     save('taskTemplates', updated);
+
+    if (isSupabaseConfigured()) {
+        try { await supabase.from('task_templates').delete().eq('id', id); } catch (e) { console.error(e); }
+    }
   };
 
   // --- Settings ---
@@ -651,6 +842,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = { ...appSettings, [key]: value };
     setAppSettings(updated);
     save('appSettings', updated);
+
+    if (isSupabaseConfigured()) {
+        try { 
+            const { error } = await supabase.from('app_settings').upsert({ key, value });
+            if(error) throw error;
+        } catch (e) { 
+            console.error(e);
+            return false;
+        }
+    }
     return true;
   };
 

@@ -1,22 +1,21 @@
+
 import { createClient } from '@supabase/supabase-js';
 
-// Helper to safely access env vars in different environments (Vite vs Standard Node)
-const getEnv = (key: string) => {
-  // Check process.env (Standard Node/Webpack)
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key];
-  }
-  // Check import.meta.env (Vite)
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
-    // @ts-ignore
-    return import.meta.env[`VITE_${key}`];
-  }
-  return '';
-};
+// Explicitly access Vite environment variables to ensure static replacement during build.
+// Vite replaces `import.meta.env.VITE_KEY` strings statically. Dynamic access (e.g. env[key]) often fails in production.
+// We guard the access to prevent runtime crashes if import.meta.env is undefined in some environments.
 
-const supabaseUrl = getEnv('SUPABASE_URL');
-const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
+// @ts-ignore
+const viteSupabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_SUPABASE_URL : undefined;
+// @ts-ignore
+const viteSupabaseKey = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_SUPABASE_ANON_KEY : undefined;
+
+// Fallback for non-Vite environments (e.g. standard Node.js)
+const processSupabaseUrl = typeof process !== 'undefined' && process.env ? process.env.SUPABASE_URL : undefined;
+const processSupabaseKey = typeof process !== 'undefined' && process.env ? process.env.SUPABASE_ANON_KEY : undefined;
+
+const supabaseUrl = viteSupabaseUrl || processSupabaseUrl || '';
+const supabaseAnonKey = viteSupabaseKey || processSupabaseKey || '';
 
 // Export a helper to check if we are in "Online" mode
 export const isSupabaseConfigured = () => {
