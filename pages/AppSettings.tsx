@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug } from 'lucide-react';
 
 const AppSettings: React.FC = () => {
   const { appSettings, updateAppSetting, isLoading } = useStore();
@@ -20,7 +20,7 @@ const AppSettings: React.FC = () => {
     if (savingKeys.includes(key)) return;
 
     // Permission Check specifically for BETA features
-    if ((key === 'enable_beta_tasks' || key === 'enable_whatsapp_webhook') && currentUser?.role !== 'ADMIN') {
+    if ((key === 'enable_beta_tasks' || key === 'enable_whatsapp_webhook' || key === 'debug_whatsapp_webhook') && currentUser?.role !== 'ADMIN') {
        alert("Beta/Admin features can only be managed by an Admin.");
        return;
     }
@@ -192,27 +192,55 @@ const AppSettings: React.FC = () => {
                         </div>
 
                         {appSettings.enable_whatsapp_webhook && (
-                            <div className="ml-14 animate-fade-in">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Webhook Endpoint URL</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="url"
-                                        value={webhookUrl}
-                                        onChange={(e) => setWebhookUrl(e.target.value)}
-                                        placeholder="https://api.example.com/send-invoice"
-                                        className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-slate-600"
-                                    />
-                                    <button
-                                        onClick={() => handleTextSave('whatsapp_webhook_url', webhookUrl)}
-                                        disabled={savingKeys.includes('whatsapp_webhook_url')}
-                                        className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50"
-                                    >
-                                        {savingKeys.includes('whatsapp_webhook_url') ? <Loader2 size={16} className="animate-spin"/> : 'Save'}
-                                    </button>
+                            <div className="ml-14 animate-fade-in space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Webhook Endpoint URL</label>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="url"
+                                            value={webhookUrl}
+                                            onChange={(e) => setWebhookUrl(e.target.value)}
+                                            placeholder="https://api.example.com/send-invoice"
+                                            className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-slate-600"
+                                        />
+                                        <button
+                                            onClick={() => handleTextSave('whatsapp_webhook_url', webhookUrl)}
+                                            disabled={savingKeys.includes('whatsapp_webhook_url')}
+                                            className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50"
+                                        >
+                                            {savingKeys.includes('whatsapp_webhook_url') ? <Loader2 size={16} className="animate-spin"/> : 'Save'}
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
+                                        <Lock size={10} /> Endpoint must accept JSON payloads securely.
+                                    </p>
                                 </div>
-                                <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-                                    <Lock size={10} /> Endpoint must accept JSON payloads securely.
-                                </p>
+
+                                {/* Debug Toggle */}
+                                <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+                                    <div className="flex gap-3 items-center">
+                                        <div className="p-1.5 bg-amber-100 text-amber-600 rounded">
+                                            <Bug size={16} />
+                                        </div>
+                                        <div>
+                                            <h5 className="font-bold text-slate-700 text-sm">Debug Mode</h5>
+                                            <p className="text-xs text-slate-500">Show payload popup before sending.</p>
+                                        </div>
+                                    </div>
+                                    {savingKeys.includes('debug_whatsapp_webhook') ? (
+                                        <Loader2 size={20} className="text-amber-500 animate-spin" />
+                                    ) : (
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                className="sr-only peer"
+                                                checked={appSettings.debug_whatsapp_webhook || false}
+                                                onChange={() => handleToggle('debug_whatsapp_webhook')}
+                                            />
+                                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                                        </label>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

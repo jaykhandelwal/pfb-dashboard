@@ -264,8 +264,9 @@ export interface AppSettings {
   require_customer_phone: boolean;
   require_customer_name: boolean;
   enable_beta_tasks: boolean;
-  enable_whatsapp_webhook: boolean; // New Beta Feature
-  whatsapp_webhook_url: string; // New Beta Feature
+  enable_whatsapp_webhook: boolean; 
+  whatsapp_webhook_url: string; 
+  debug_whatsapp_webhook: boolean; // New Debug Feature
   [key: string]: any; // Extensible
 }
 

@@ -1,7 +1,7 @@
 
 import { MenuItem, OrderItem, SKU, User } from "../types";
 
-interface WebhookItem {
+export interface WebhookItem {
   id: string;
   name: string;
   code_name: string;
@@ -21,7 +21,7 @@ interface WebhookItem {
   } | null;
 }
 
-interface WebhookPayload {
+export interface WebhookPayload {
   status: string;
   orderID: string;
   username: string;
@@ -43,7 +43,7 @@ interface WebhookPayload {
   timestamp: number;
 }
 
-interface WebhookContext {
+export interface WebhookContext {
   orderId: string;
   orderDate: string;
   cart: OrderItem[];
@@ -59,11 +59,7 @@ interface WebhookContext {
   platform: string;
 }
 
-export const sendWhatsAppInvoice = async (
-  webhookUrl: string,
-  context: WebhookContext
-) => {
-  try {
+export const constructWebhookPayload = (context: WebhookContext): WebhookPayload => {
     const {
       orderId,
       orderDate,
@@ -170,7 +166,7 @@ export const sendWhatsAppInvoice = async (
     }
 
     // 4. Construct Final Payload
-    const payload: WebhookPayload = {
+    return {
       status: "completed",
       orderID: orderId,
       username: currentUser?.name || "Unknown",
@@ -205,14 +201,24 @@ export const sendWhatsAppInvoice = async (
       date: orderDate,
       timestamp: Date.now(),
     };
+};
 
-    // 5. Send Request (Fire & Forget)
-    fetch(webhookUrl, {
+export const sendWebhookRequest = async (url: string, payload: WebhookPayload) => {
+    return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }).catch((err) => console.error("WhatsApp Webhook Failed:", err));
+    });
+};
 
+export const sendWhatsAppInvoice = async (
+  webhookUrl: string,
+  context: WebhookContext
+) => {
+  try {
+    const payload = constructWebhookPayload(context);
+    // Fire & Forget in default mode
+    sendWebhookRequest(webhookUrl, payload).catch((err) => console.error("WhatsApp Webhook Failed:", err));
   } catch (error) {
     console.error("Error constructing webhook payload:", error);
   }

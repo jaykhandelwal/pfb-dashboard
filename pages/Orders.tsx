@@ -1,15 +1,14 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem, RewardResult } from '../types';
-import { Receipt, Filter, Calendar, Store, Clock, UtensilsCrossed, PlusCircle, MinusCircle, Plus, Search, CheckCircle2, ShoppingCart, IndianRupee, X, Box, PlusSquare, Trash2, ChevronRight, ArrowLeft, ChevronUp, CreditCard, Banknote, Smartphone, Split, AlertTriangle, User, Phone, Gift, Tag, AlertCircle, Ticket } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCart, IndianRupee, X, Box, Trash2, ChevronRight, User, AlertCircle, Phone, Tag } from 'lucide-react';
 import { getLocalISOString } from '../constants';
-import { sendWhatsAppInvoice } from '../services/webhookService';
+import { sendWhatsAppInvoice, WebhookContext } from '../services/webhookService';
 
 const Orders: React.FC = () => {
   const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward } = useStore();
-  const { currentUser } = useAuth(); // Strict role check
+  const { currentUser } = useAuth(); 
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
   // -- HISTORY STATE --
@@ -17,9 +16,6 @@ const Orders: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState<string>('ALL');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('ALL');
   
-  // -- DELETE MODAL STATE --
-  const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
-
   // -- NEW ORDER STATE --
   const [posBranchId, setPosBranchId] = useState<string>(branches[0]?.id || '');
   const [posPlatform, setPosPlatform] = useState<SalesPlatform>('POS');
@@ -44,7 +40,6 @@ const Orders: React.FC = () => {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
 
-  const [showSuccess, setShowSuccess] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   // -- MOBILE UI STATE --
@@ -60,23 +55,25 @@ const Orders: React.FC = () => {
 
   // -- CUSTOM SKU STATE (ORDER LEVEL) --
   const [isCustomSkuOpen, setIsCustomSkuOpen] = useState(false);
-  // Replaced singular object with structure holding array
   const [orderCustomSku, setOrderCustomSku] = useState<{ items: { skuId: string, qty: number }[], reason: string } | null>(null);
   
   // Temp state for modal builder
   const [customSkuList, setCustomSkuList] = useState<{skuId: string, qty: number}[]>([]);
   const [tempSkuId, setTempSkuId] = useState('');
   const [tempSkuQty, setTempSkuQty] = useState('');
-  const [customSkuReason, setCustomSkuReason] = useState('');
+  const [customSkuReasonVal, setCustomSkuReasonVal] = useState('');
 
   // -- HELPERS --
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
   
-  const getCategoryColor = (catName: string) => {
-     if (catName === 'All') return '#475569'; // Slate-600 default
-     const cat = menuCategories.find(c => c.name === catName);
-     return cat?.color || '#94a3b8'; // Slate-400 fallback
+  const getPlatformStyle = (platform: SalesPlatform) => {
+    switch (platform) {
+      case 'POS': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'ZOMATO': return 'bg-red-100 text-red-800 border-red-200';
+      case 'SWIGGY': return 'bg-orange-100 text-orange-800 border-orange-200';
+      default: return 'bg-slate-100 text-slate-800 border-slate-200';
+    }
   };
 
   // Derive unique categories for filter
@@ -97,12 +94,9 @@ const Orders: React.FC = () => {
 
       const isNumeric = /^\d+$/.test(customerSearch);
       if (isNumeric) {
-          // Limit to 10 digits even if search is longer
           setNewCustomerPhone(customerSearch.slice(0, 10));
-          // Don't clear name if user is typing a phone number after typing a name
       } else {
           setNewCustomerName(customerSearch);
-          // Don't clear phone if user is typing a name
       }
   }, [customerSearch]);
 
@@ -124,15 +118,6 @@ const Orders: React.FC = () => {
       return true;
     });
   }, [orders, date, selectedBranch, selectedPlatform]);
-
-  const getPlatformStyle = (platform: SalesPlatform) => {
-    switch (platform) {
-      case 'POS': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'ZOMATO': return 'bg-red-100 text-red-800 border-red-200';
-      case 'SWIGGY': return 'bg-orange-100 text-orange-800 border-orange-200';
-      default: return 'bg-slate-100 text-slate-800 border-slate-200';
-    }
-  };
 
   // -- POS LOGIC --
   const addToCart = (item: MenuItem, variant: 'FULL' | 'HALF' = 'FULL', priceOverride?: number) => {
@@ -171,58 +156,6 @@ const Orders: React.FC = () => {
      });
   };
 
-  const applyCustomAmount = () => {
-    if (!customAmountVal) return;
-    // Allow negative for discounts, though typically handled via reward logic
-    
-    setOrderCustomAmount({
-      amount: parseFloat(customAmountVal),
-      reason: customAmountReason || 'Miscellaneous'
-    });
-
-    setIsCustomAmountOpen(false);
-    setCustomAmountVal('');
-    setCustomAmountReason('');
-  };
-
-  const openCustomSkuModal = () => {
-      if (orderCustomSku) {
-          setCustomSkuList(orderCustomSku.items);
-          setCustomSkuReason(orderCustomSku.reason);
-      } else {
-          setCustomSkuList([]);
-          setCustomSkuReason('');
-      }
-      setTempSkuId('');
-      setTempSkuQty('');
-      setIsCustomSkuOpen(true);
-  };
-
-  const handleAddCustomItemToBuffer = () => {
-      if (!tempSkuId || !tempSkuQty) return;
-      const qty = parseInt(tempSkuQty);
-      if (qty <= 0) return;
-
-      setCustomSkuList(prev => [...prev, { skuId: tempSkuId, qty }]);
-      setTempSkuId('');
-      setTempSkuQty('');
-  };
-
-  const handleRemoveCustomItemFromBuffer = (index: number) => {
-      setCustomSkuList(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const applyCustomSku = () => {
-    if (customSkuList.length === 0 || !customSkuReason) return;
-
-    setOrderCustomSku({
-      items: customSkuList,
-      reason: customSkuReason
-    });
-
-    setIsCustomSkuOpen(false);
-  };
-
   const updateCartQty = (itemId: string, delta: number) => {
      setCart(prev => {
         return prev.map(i => {
@@ -250,1091 +183,662 @@ const Orders: React.FC = () => {
 
   const remainingSplit = cartTotal - splitTotal;
 
+  const applyCustomAmount = () => {
+    if (!customAmountVal) return;
+    setOrderCustomAmount({
+      amount: parseFloat(customAmountVal),
+      reason: customAmountReason || 'Miscellaneous'
+    });
+    setIsCustomAmountOpen(false);
+    setCustomAmountVal('');
+    setCustomAmountReason('');
+  };
+
   // Link Existing Customer & Check Rewards
   const handleLinkCustomer = (phone: string, name?: string) => {
-     setLinkedCustomer({ name: name || 'Unknown', phone, id: phone });
-     setIsCustomerModalOpen(false);
-     setCustomerSearch('');
-     setNewCustomerName('');
-     setNewCustomerPhone('');
+     const existing = customers.find(c => c.phoneNumber === phone);
+     const customerName = existing ? existing.name : (name || 'New Customer');
+     const customerId = existing ? existing.id : phone;
+
+     setLinkedCustomer({ 
+         name: customerName, 
+         phone: phone, 
+         id: customerId
+     });
      
-     // Loyalty Check
-     const result = checkCustomerReward(phone);
-     setActiveRewardResult(result);
-     setIsRewardApplied(false); // Reset application status when switching customers
+     // Reset Search
+     setNewCustomerPhone('');
+     setNewCustomerName('');
+     setCustomerSearch('');
+     setIsCustomerModalOpen(false);
+     
+     // Check Rewards
+     const reward = checkCustomerReward(customerId);
+     setActiveRewardResult(reward);
+     setIsRewardApplied(false); // Reset application status when linking new customer
   };
 
-  // Create & Link New Customer
-  const handleCreateAndLinkCustomer = () => {
-      if (appSettings.require_customer_phone && !newCustomerPhone) {
-          alert("Phone Number is required.");
-          return;
-      }
-      if (appSettings.require_customer_name && !newCustomerName) {
-          alert("Customer Name is required.");
-          return;
-      }
-      if (newCustomerPhone && newCustomerPhone.length !== 10) {
-          return;
-      }
+  const handleCheckout = async () => {
+      if (cart.length === 0 && !orderCustomAmount && !orderCustomSku) return;
       
-      const phoneToUse = newCustomerPhone || 'NoPhone-' + Date.now();
-      const nameToUse = newCustomerName || 'New Customer';
-
-      setLinkedCustomer({ name: nameToUse, phone: phoneToUse, id: phoneToUse });
-      setActiveRewardResult(null); // New customers have no rewards yet
-      setIsCustomerModalOpen(false);
-      setCustomerSearch('');
-      setNewCustomerName('');
-      setNewCustomerPhone('');
-  };
-
-  // Apply Reward Logic
-  const applyReward = () => {
-      if (!activeRewardResult || activeRewardResult.status === 'EXPIRED') return;
-      
-      const { rule } = activeRewardResult;
-
-      // 1. Check Minimum Order Value (MOV)
-      if (rule.minOrderValue && rule.minOrderValue > 0) {
-          if (cartTotal < rule.minOrderValue) {
-              alert(`This coupon requires a minimum order value of ₹${rule.minOrderValue}. Current total: ₹${cartTotal}`);
-              return;
-          }
+      // Validation: Payment Split
+      if (paymentMode === 'SPLIT' && Math.abs(cartTotal - splitTotal) > 1) {
+          alert("Split amounts must match total order value.");
+          return;
       }
 
-      if (rule.type === 'DISCOUNT_PERCENT') {
-          const discountVal = (cartTotal * (Number(rule.value) / 100));
-          // Apply as negative custom amount (or modify existing custom amount logic)
-          setOrderCustomAmount({
-              amount: -Math.floor(discountVal),
-              reason: `Loyalty Coupon (${rule.value}%)`
-          });
-      } else if (rule.type === 'FREE_ITEM') {
-          // Find menu item where ingredients[0].skuId === rule.value
-          const menuItem = menuItems.find(m => m.ingredients && m.ingredients[0]?.skuId === String(rule.value));
+      // Validation: Customer Requirement
+      if (appSettings.require_customer_phone && !linkedCustomer) {
+          alert("Customer is required for this order. Please link a customer.");
+          setIsCustomerModalOpen(true);
+          return;
+      }
+
+      // Prepare Payload
+      const newOrder = {
+          id: `ord-${Date.now()}`,
+          branchId: posBranchId,
+          customerId: linkedCustomer?.id,
+          customerName: linkedCustomer?.name,
+          platform: posPlatform,
+          totalAmount: cartTotal,
+          status: 'COMPLETED' as const,
+          paymentMethod: paymentMode === 'SPLIT' ? 'SPLIT' : posPaymentMethod,
+          paymentSplit: paymentMode === 'SPLIT' ? [
+              { method: 'CASH', amount: parseFloat(splitInputs.CASH) || 0 },
+              { method: 'UPI', amount: parseFloat(splitInputs.UPI) || 0 },
+              { method: 'CARD', amount: parseFloat(splitInputs.CARD) || 0 }
+          ].filter(s => s.amount > 0) as any : undefined,
+          date: getLocalISOString(),
+          timestamp: Date.now(),
+          items: cart,
+          customAmount: orderCustomAmount?.amount,
+          customAmountReason: orderCustomAmount?.reason,
+          customSkuItems: orderCustomSku?.items,
+          customSkuReason: orderCustomSku?.reason
+      };
+
+      // Save Order
+      await addOrder(newOrder, isRewardApplied && activeRewardResult?.coupon ? activeRewardResult.coupon.id : undefined);
+
+      // Webhook Trigger (WhatsApp Invoice)
+      if (appSettings.enable_whatsapp_webhook && appSettings.whatsapp_webhook_url) {
+          const webhookContext: WebhookContext = {
+              orderId: newOrder.id,
+              orderDate: newOrder.date,
+              cart: cart,
+              cartTotal: cartTotal,
+              menuItems: menuItems,
+              skus: skus,
+              currentUser: currentUser,
+              linkedCustomer: linkedCustomer,
+              customAmount: orderCustomAmount,
+              customSku: orderCustomSku,
+              paymentMethod: newOrder.paymentMethod,
+              branchId: newOrder.branchId,
+              platform: newOrder.platform
+          };
           
-          if (menuItem) {
-              // Respect Variant (Full/Half)
-              addToCart(menuItem, rule.rewardVariant || 'FULL', 0); // Add with price 0
-          } else {
-              alert("Configuration Error: Cannot find a menu item for the reward SKU.");
-              return;
-          }
+          sendWhatsAppInvoice(appSettings.whatsapp_webhook_url, webhookContext);
       }
-      setIsRewardApplied(true);
+
+      // Reset
+      setCart([]);
+      setLinkedCustomer(null);
+      setOrderCustomAmount(null);
+      setOrderCustomSku(null);
+      setSplitInputs({ CASH: '', UPI: '', CARD: '' });
+      setIsRewardApplied(false);
+      setActiveRewardResult(null);
+      
+      setActiveTab('HISTORY');
   };
 
-  const submitOrder = async () => {
-     if(cart.length === 0 && !orderCustomAmount) return;
-     if(!posBranchId) {
-        alert("Please select a branch.");
-        return;
-     }
-
-     // --- App Settings Validation ---
-     if (appSettings.require_customer_phone && !linkedCustomer) {
-         alert("Customer Phone Number is required to place an order. Please add a customer.");
-         setIsCustomerModalOpen(true);
-         return;
-     }
-
-     if (appSettings.require_customer_name && linkedCustomer && (!linkedCustomer.name || linkedCustomer.name === 'Unknown')) {
-         alert("Customer Name is required. Please update the customer details.");
-         setIsCustomerModalOpen(true);
-         return;
-     }
-     // -------------------------------
-
-     if (paymentMode === 'SPLIT' && remainingSplit !== 0) {
-         alert(`Payment split must equal total amount. Difference: ${remainingSplit}`);
-         return;
-     }
-
-     const orderDate = getLocalISOString();
-     const orderId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ord-${Date.now()}`;
-     const finalCustomSkuItems = orderCustomSku?.items.map(i => ({ skuId: i.skuId, quantity: i.qty })) || [];
-
-     let finalPaymentMethod: any = posPaymentMethod;
-     let paymentSplitData = [];
-
-     if (paymentMode === 'SPLIT') {
-         finalPaymentMethod = 'SPLIT';
-         if (parseFloat(splitInputs.CASH) > 0) paymentSplitData.push({ method: 'CASH', amount: parseFloat(splitInputs.CASH) });
-         if (parseFloat(splitInputs.UPI) > 0) paymentSplitData.push({ method: 'UPI', amount: parseFloat(splitInputs.UPI) });
-         if (parseFloat(splitInputs.CARD) > 0) paymentSplitData.push({ method: 'CARD', amount: parseFloat(splitInputs.CARD) });
-     }
-
-     // Pass redeemed coupon ID if applied
-     const couponId = isRewardApplied && activeRewardResult?.coupon ? activeRewardResult.coupon.id : undefined;
-
-     await addOrder({
-        id: orderId,
-        branchId: posBranchId,
-        date: orderDate,
-        timestamp: Date.now(),
-        platform: posPlatform,
-        totalAmount: cartTotal,
-        status: 'COMPLETED',
-        paymentMethod: finalPaymentMethod, 
-        paymentSplit: paymentSplitData,
-        items: cart,
-        customerId: linkedCustomer?.phone,
-        customerName: linkedCustomer?.name,
-        customAmount: orderCustomAmount?.amount,
-        customAmountReason: orderCustomAmount?.reason,
-        customSkuItems: finalCustomSkuItems,
-        customSkuReason: orderCustomSku?.reason
-     }, couponId);
-
-     // --- WEBHOOK TRIGGER (Beta) ---
-     if (appSettings.enable_whatsapp_webhook && appSettings.whatsapp_webhook_url) {
-         await sendWhatsAppInvoice(appSettings.whatsapp_webhook_url, {
-             orderId,
-             orderDate,
-             cart,
-             cartTotal,
-             menuItems,
-             skus,
-             currentUser,
-             linkedCustomer,
-             customAmount: orderCustomAmount,
-             customSku: orderCustomSku,
-             paymentMethod: posPaymentMethod,
-             branchId: posBranchId,
-             platform: posPlatform
-         });
-     }
-     // -----------------------------
-
-     setCart([]);
-     setOrderCustomAmount(null);
-     setOrderCustomSku(null);
-     setLinkedCustomer(null);
-     setActiveRewardResult(null);
-     setIsRewardApplied(false);
-     setPosPaymentMethod('CASH');
-     setPaymentMode('SINGLE');
-     setSplitInputs({ CASH: '', UPI: '', CARD: '' });
-     setIsMobileCartOpen(false);
-     setShowSuccess(true);
-     setTimeout(() => setShowSuccess(false), 2000);
+  // -- RENDER HELPERS --
+  const renderPosItem = (item: MenuItem) => {
+      const hasHalf = item.halfPrice !== undefined;
+      return (
+          <div key={item.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:border-emerald-400 transition-all cursor-pointer group" onClick={() => addToCart(item)}>
+              <div>
+                  <h4 className="font-bold text-slate-700 text-sm leading-tight">{item.name}</h4>
+                  <p className="text-xs text-slate-400 mt-1">{item.description}</p>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-sm">₹{item.price}</span>
+                  {hasHalf && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); addToCart(item, 'HALF'); }}
+                        className="text-[10px] bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-100 hover:bg-orange-100 font-bold"
+                      >
+                          Half ₹{item.halfPrice}
+                      </button>
+                  )}
+                  {!hasHalf && (
+                      <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus size={14} />
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
   };
-
-  const promptDelete = (e: React.MouseEvent, orderId: string) => {
-      e.preventDefault(); 
-      e.stopPropagation(); 
-      setOrderToDelete(orderId);
-  };
-
-  const confirmDelete = async () => {
-      if (orderToDelete) {
-          await deleteOrder(orderToDelete);
-          setOrderToDelete(null);
-      }
-  };
-
-  const visibleMenuItems = useMemo(() => {
-     if (selectedCategory === 'All') return menuItems;
-     return menuItems.filter(m => (m.category || 'Uncategorized') === selectedCategory);
-  }, [menuItems, selectedCategory]);
-
-  // Validation Logic
-  const isPhoneInvalid = useMemo(() => {
-      return newCustomerPhone.length > 0 && newCustomerPhone.length !== 10;
-  }, [newCustomerPhone]);
 
   return (
-    <div className="pb-16 h-[calc(100vh-80px)] flex flex-col relative">
-      <div className="mb-4 flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Receipt className="text-emerald-600" /> Orders & Sales
-          </h2>
-          <p className="text-slate-500 text-sm">Manage sales history and new orders.</p>
-        </div>
-        
-        <div className="flex bg-slate-100 p-1 rounded-lg">
-           <button
-             onClick={() => setActiveTab('HISTORY')}
-             className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'HISTORY' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
-           >
-             History
-           </button>
-           <button
-             onClick={() => setActiveTab('NEW_ORDER')}
-             className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'NEW_ORDER' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500'}`}
-           >
-             <PlusCircle size={16} /> New Order
-           </button>
-        </div>
-      </div>
-
-      {activeTab === 'HISTORY' ? (
-        <div className="flex-1 overflow-y-auto">
-          {/* Filters */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                  <Calendar size={12} /> Date
-                </label>
-                <input 
-                  type="date" 
-                  value={date}
-                  onChange={e => setDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 font-medium"
-                />
-            </div>
-
-            <div className="flex-1">
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                  <Store size={12} /> Branch
-                </label>
-                <select 
-                  value={selectedBranch}
-                  onChange={e => setSelectedBranch(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 bg-white"
+    <div className="h-[calc(100vh-6rem)] flex flex-col">
+        {/* Header Tabs */}
+        <div className="flex justify-between items-center mb-4 px-1">
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                    onClick={() => setActiveTab('HISTORY')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'HISTORY' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                  <option value="ALL">All Branches</option>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-            </div>
-
-            <div className="flex-1">
-                <label className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                  <Filter size={12} /> Platform
-                </label>
-                <select 
-                  value={selectedPlatform}
-                  onChange={e => setSelectedPlatform(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 bg-white"
+                    <Receipt size={16} /> Sales History
+                </button>
+                <button
+                    onClick={() => setActiveTab('NEW_ORDER')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'NEW_ORDER' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-emerald-600'}`}
                 >
-                  <option value="ALL">All Platforms</option>
-                  <option value="POS">POS (In-Store)</option>
-                  <option value="ZOMATO">Zomato</option>
-                  <option value="SWIGGY">Swiggy</option>
-                </select>
+                    <PlusCircle size={16} /> New Order (POS)
+                </button>
             </div>
-          </div>
+        </div>
 
-          {/* Order List */}
-          {filteredOrders.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-                <Receipt size={48} className="mx-auto mb-3 opacity-20" />
-                <p className="font-medium">No orders found for this criteria.</p>
+        {/* --- HISTORY VIEW --- */}
+        {activeTab === 'HISTORY' && (
+            <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-xl shadow-sm border border-slate-200">
+                {/* Filters */}
+                <div className="p-4 border-b border-slate-100 flex flex-wrap gap-4 items-center bg-slate-50">
+                    <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-slate-400" />
+                        <input 
+                            type="date" 
+                            value={date} 
+                            onChange={(e) => setDate(e.target.value)}
+                            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Store size={16} className="text-slate-400" />
+                        <select 
+                            value={selectedBranch}
+                            onChange={(e) => setSelectedBranch(e.target.value)}
+                            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option value="ALL">All Branches</option>
+                            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Filter size={16} className="text-slate-400" />
+                        <select 
+                            value={selectedPlatform}
+                            onChange={(e) => setSelectedPlatform(e.target.value)}
+                            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option value="ALL">All Platforms</option>
+                            <option value="POS">POS</option>
+                            <option value="ZOMATO">Zomato</option>
+                            <option value="SWIGGY">Swiggy</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className="flex-1 overflow-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase font-semibold sticky top-0 z-10">
+                            <tr>
+                                <th className="p-4">Time</th>
+                                <th className="p-4">Order ID</th>
+                                <th className="p-4">Customer</th>
+                                <th className="p-4">Platform</th>
+                                <th className="p-4 text-right">Amount</th>
+                                <th className="p-4 text-center">Status</th>
+                                <th className="p-4 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredOrders.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">No orders found for this selection.</td>
+                                </tr>
+                            ) : (
+                                filteredOrders.map(order => (
+                                    <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-4 text-slate-600 text-sm">
+                                            {new Date(order.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                        </td>
+                                        <td className="p-4 text-xs font-mono text-slate-500">
+                                            {order.id.slice(-6).toUpperCase()}
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="font-medium text-slate-700 text-sm">{order.customerName || 'Walk-in'}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${getPlatformStyle(order.platform)}`}>
+                                                {order.platform}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-right font-mono font-bold text-slate-800">
+                                            ₹{order.totalAmount}
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
+                                                Paid
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            <button 
+                                                onClick={() => { if(confirm('Delete this order?')) deleteOrder(order.id) }}
+                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                {filteredOrders.map(order => (
-                  <div key={order.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow group relative">
-                      <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${getPlatformStyle(order.platform)}`}>
-                                  {order.platform}
-                              </span>
-                              <span className="text-xs text-slate-400 font-mono">
-                                  #{order.timestamp.toString().slice(-6)}
-                              </span>
+        )}
+
+        {/* --- POS VIEW --- */}
+        {activeTab === 'NEW_ORDER' && (
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row gap-4 relative">
+                {/* Left: Menu & Grid */}
+                <div className="flex-1 flex flex-col bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
+                    {/* Category Filter */}
+                    <div className="p-2 bg-white border-b border-slate-200 overflow-x-auto flex gap-2">
+                        {uniqueCategories.map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Items Grid */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {menuItems
+                                .filter(item => selectedCategory === 'All' || (item.category || 'Uncategorized') === selectedCategory)
+                                .map(renderPosItem)
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right: Cart & Checkout (Sidebar) */}
+                <div className={`fixed inset-y-0 right-0 w-full md:w-96 bg-white shadow-2xl transform transition-transform duration-300 z-30 md:static md:translate-x-0 md:rounded-xl md:border md:border-slate-200 md:shadow-sm flex flex-col ${isMobileCartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                    {/* Mobile Header for Cart */}
+                    <div className="md:hidden p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShoppingCart size={18}/> Current Order</h3>
+                        <button onClick={() => setIsMobileCartOpen(false)}><X size={24} className="text-slate-500"/></button>
+                    </div>
+
+                    {/* Customer & Branch Info */}
+                    <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50">
+                        <div className="flex gap-2">
+                            <select 
+                                value={posBranchId} 
+                                onChange={(e) => setPosBranchId(e.target.value)}
+                                className="flex-1 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none"
+                            >
+                                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                            <select 
+                                value={posPlatform} 
+                                onChange={(e) => setPosPlatform(e.target.value as SalesPlatform)}
+                                className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-bold outline-none"
+                            >
+                                <option value="POS">POS</option>
+                                <option value="ZOMATO">Zomato</option>
+                                <option value="SWIGGY">Swiggy</option>
+                            </select>
+                        </div>
+
+                        <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
+                            {linkedCustomer ? (
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-800">{linkedCustomer.name}</p>
+                                    <p className="text-[10px] text-slate-500">{linkedCustomer.phone}</p>
+                                </div>
+                            ) : (
+                                <span className="text-xs text-slate-400 italic">No customer linked</span>
+                            )}
+                            <button 
+                                onClick={() => setIsCustomerModalOpen(true)}
+                                className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded transition-colors"
+                            >
+                                {linkedCustomer ? <User size={16} /> : <PlusCircle size={16} />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Cart Items */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {cart.length === 0 && !orderCustomAmount && !orderCustomSku ? (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                                <ShoppingCart size={48} className="mb-2" />
+                                <p className="text-sm">Cart is empty</p>
                             </div>
-                            <div className="font-bold text-slate-700 text-sm">
-                              {getBranchName(order.branchId)}
+                        ) : (
+                            <div className="space-y-3">
+                                {cart.map(item => (
+                                    <div key={item.id} className="flex justify-between items-start text-sm">
+                                        <div className="flex-1">
+                                            <p className="font-medium text-slate-700">{item.name} {item.variant === 'HALF' && <span className="text-xs text-slate-400">(Half)</span>}</p>
+                                            <p className="text-xs text-slate-400">₹{item.price} x {item.quantity}</p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50">
+                                                <button onClick={() => updateCartQty(item.id, -1)} className="px-2 py-1 hover:bg-slate-200 rounded-l-lg text-slate-500">-</button>
+                                                <span className="px-2 font-bold text-slate-700 text-xs">{item.quantity}</span>
+                                                <button onClick={() => updateCartQty(item.id, 1)} className="px-2 py-1 hover:bg-slate-200 rounded-r-lg text-slate-500">+</button>
+                                            </div>
+                                            <p className="font-bold text-slate-800 w-12 text-right">₹{item.price * item.quantity}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {orderCustomAmount && (
+                                    <div className="flex justify-between items-center text-sm py-2 border-t border-dashed border-slate-200">
+                                        <div>
+                                            <p className="font-medium text-slate-700">Custom Amount</p>
+                                            <p className="text-xs text-slate-400">{orderCustomAmount.reason}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-bold text-slate-800">₹{orderCustomAmount.amount}</p>
+                                            <button onClick={() => setOrderCustomAmount(null)} className="text-red-400 hover:text-red-600"><X size={14}/></button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Total & Checkout */}
+                    <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
+                        {/* Custom Actions */}
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsCustomAmountOpen(true)} className="flex-1 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1">
+                                <IndianRupee size={12}/> Custom Amt
+                            </button>
+                            {/* Only Admins can add Custom SKUs (Raw items) */}
+                            {currentUser?.role === 'ADMIN' && (
+                                <button onClick={() => setIsCustomSkuOpen(true)} className="flex-1 py-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center gap-1">
+                                    <Box size={12}/> Custom Items
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="flex justify-between items-end border-t border-slate-200 pt-3">
+                            <span className="text-slate-500 font-bold">Total</span>
+                            <span className="text-2xl font-bold text-slate-800">₹{cartTotal}</span>
+                        </div>
+
+                        {/* Payment Method */}
+                        <div className="bg-white p-2 rounded-lg border border-slate-200">
+                            <div className="flex gap-1 mb-2">
+                                <button onClick={() => setPaymentMode('SINGLE')} className={`flex-1 py-1.5 text-xs font-bold rounded ${paymentMode === 'SINGLE' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>Single Pay</button>
+                                <button onClick={() => setPaymentMode('SPLIT')} className={`flex-1 py-1.5 text-xs font-bold rounded ${paymentMode === 'SPLIT' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>Split Pay</button>
                             </div>
                             
-                            {/* Payment Method Display */}
-                            <div className="text-xs text-slate-500 mt-0.5">
-                               {order.paymentMethod === 'SPLIT' ? (
-                                  <div className="flex flex-col gap-0.5 mt-1">
-                                     <span className="font-bold text-slate-600">Split Payment:</span>
-                                     {order.paymentSplit?.map((split, i) => (
-                                        <span key={i} className="flex gap-1">
-                                           <span>{split.method}:</span>
-                                           <span>₹{split.amount}</span>
-                                        </span>
-                                     ))}
-                                  </div>
-                               ) : (
-                                  <span>Paid via {order.paymentMethod}</span>
-                               )}
-                            </div>
-
-                            {order.customerName && (
-                                <div className="text-xs text-emerald-600 font-medium mt-1">
-                                    Cust: {order.customerName}
+                            {paymentMode === 'SINGLE' ? (
+                                <div className="flex gap-2">
+                                    {['CASH', 'UPI', 'CARD'].map(m => (
+                                        <button 
+                                            key={m} 
+                                            onClick={() => setPosPaymentMethod(m as any)}
+                                            className={`flex-1 py-2 text-xs font-bold rounded border ${posPaymentMethod === m ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                                        >
+                                            {m}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {['CASH', 'UPI', 'CARD'].map(m => (
+                                        <div key={m} className="flex items-center gap-2">
+                                            <span className="text-xs font-bold w-12 text-slate-500">{m}</span>
+                                            <input 
+                                                type="number" 
+                                                placeholder="0"
+                                                value={splitInputs[m as keyof typeof splitInputs]}
+                                                onChange={(e) => setSplitInputs({...splitInputs, [m]: e.target.value})}
+                                                className="flex-1 border border-slate-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                        </div>
+                                    ))}
+                                    <div className={`text-xs text-right font-bold ${Math.abs(remainingSplit) > 1 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                        Remaining: ₹{remainingSplit}
+                                    </div>
                                 </div>
                             )}
                         </div>
-                        <div className="flex flex-col items-end gap-2 relative z-10">
-                           <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">
-                              <Clock size={12} />
-                              {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                           </div>
-                           
-                           {currentUser?.role === 'ADMIN' && (
-                              <button 
-                                type="button"
-                                onClick={(e) => promptDelete(e, order.id)}
-                                className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer relative z-20"
-                                title="Delete Order (Admin Only)"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                           )}
+
+                        <button 
+                            onClick={handleCheckout}
+                            disabled={cart.length === 0 && !orderCustomAmount}
+                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Complete Order
+                        </button>
+                    </div>
+                </div>
+
+                {/* Mobile Floating Button */}
+                {!isMobileCartOpen && (
+                    <button 
+                        onClick={() => setIsMobileCartOpen(true)}
+                        className="md:hidden fixed bottom-6 right-6 bg-slate-900 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center z-20"
+                    >
+                        <div className="relative">
+                            <ShoppingCart size={24} />
+                            {cart.length > 0 && <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-slate-900">{cart.length}</span>}
                         </div>
-                      </div>
+                    </button>
+                )}
+            </div>
+        )}
 
-                      <div className="p-4 flex-1">
-                        <ul className="space-y-3 text-sm">
-                            {order.items.map((item, idx) => (
-                              <li key={idx} className="flex justify-between items-start">
-                                  <div className="flex-1">
-                                    <span className="text-slate-700 font-medium block">
-                                      {item.name}
-                                      {item.variant === 'HALF' && <span className="text-xs text-slate-400 ml-1">(Half)</span>}
-                                    </span>
-                                    <div className="text-xs text-slate-400 mt-0.5">
-                                       ₹{item.price} ea
-                                    </div>
-                                  </div>
-                                  <div className="text-right">
-                                     <span className="font-mono text-slate-600 block">x {item.quantity}</span>
-                                     <span className="font-bold text-slate-700">₹{item.price * item.quantity}</span>
-                                  </div>
-                              </li>
-                            ))}
-                        </ul>
+        {/* --- CUSTOMER MODAL --- */}
+        {isCustomerModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
+                        <h3 className="font-bold text-slate-800">Link Customer</h3>
+                        <button onClick={() => setIsCustomerModalOpen(false)}><X size={20} className="text-slate-400"/></button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                            <input 
+                                type="text"
+                                autoFocus
+                                value={customerSearch}
+                                onChange={(e) => setCustomerSearch(e.target.value)}
+                                placeholder="Search Name or Phone"
+                                className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                        </div>
 
-                        {(order.customAmount || (order.customSkuItems && order.customSkuItems.length > 0)) && (
-                            <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                                {order.customAmount && (
-                                    <div className="flex justify-between items-start text-xs">
+                        {/* Search Results */}
+                        {customerSearch && (
+                            <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                                {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phoneNumber.includes(customerSearch)).map(c => (
+                                    <button 
+                                        key={c.id} 
+                                        onClick={() => handleLinkCustomer(c.phoneNumber, c.name)}
+                                        className="w-full text-left p-3 hover:bg-slate-50 flex justify-between items-center group"
+                                    >
                                         <div>
-                                            <span className="font-bold text-indigo-600 block">Custom Charge</span>
-                                            <span className="text-slate-400 italic">{order.customAmountReason}</span>
+                                            <p className="text-sm font-bold text-slate-700">{c.name}</p>
+                                            <p className="text-xs text-slate-500">{c.phoneNumber}</p>
                                         </div>
-                                        <span className={`font-bold ${order.customAmount < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
-                                            {order.customAmount < 0 ? '-' : ''}₹{Math.abs(order.customAmount)}
-                                        </span>
-                                    </div>
-                                )}
-                                {order.customSkuItems && order.customSkuItems.length > 0 && (
-                                    <div className="text-xs bg-slate-50 p-2 rounded border border-slate-200">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="font-bold text-slate-600">Inventory Usage</span>
-                                            <span className="text-slate-400 italic text-[10px]">{order.customSkuReason}</span>
-                                        </div>
-                                        <ul className="space-y-1">
-                                            {order.customSkuItems.map((item, idx) => (
-                                                <li key={idx} className="flex justify-between text-slate-500">
-                                                    <span>{getSkuName(item.skuId)}</span>
-                                                    <span className="font-mono">{item.quantity} pcs</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
+                                        <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-500"/>
+                                    </button>
+                                ))}
+                                {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phoneNumber.includes(customerSearch)).length === 0 && (
+                                    <div className="p-3 text-center text-xs text-slate-400">No existing customer found.</div>
                                 )}
                             </div>
                         )}
-                      </div>
 
-                      <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-sm">
-                        <span className="text-slate-500 font-medium flex items-center gap-1">
-                            <UtensilsCrossed size={14} /> Total Items: {order.items.reduce((a,b)=>a+b.quantity,0)}
-                        </span>
-                        <span className="font-bold text-slate-800 text-lg flex items-center gap-0.5">
-                            <IndianRupee size={14} /> {order.totalAmount}
-                        </span>
-                      </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col md:flex-row gap-4 h-full relative">
-           {/* Left: Menu & Controls */}
-           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full h-full relative">
-               <div className="p-4 border-b border-slate-100 bg-slate-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                    <div className="sm:col-span-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Branch</label>
-                        <select 
-                        value={posBranchId}
-                        onChange={e => setPosBranchId(e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-medium bg-white"
-                        >
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="sm:col-span-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Source</label>
-                        <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
+                        <div className="relative flex py-2 items-center">
+                            <div className="flex-grow border-t border-slate-200"></div>
+                            <span className="flex-shrink-0 mx-2 text-xs text-slate-400 font-bold uppercase">Or Create New</span>
+                            <div className="flex-grow border-t border-slate-200"></div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <input 
+                                type="text"
+                                value={newCustomerName}
+                                onChange={(e) => setNewCustomerName(e.target.value)}
+                                placeholder="Customer Name"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                            <input 
+                                type="text"
+                                value={newCustomerPhone}
+                                onChange={handlePhoneInput}
+                                placeholder="Phone Number (10 digits)"
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
                             <button 
-                            onClick={() => setPosPlatform('POS')}
-                            className={`flex-1 py-1 text-xs font-bold rounded ${posPlatform === 'POS' ? 'bg-blue-100 text-blue-700' : 'text-slate-500'}`}
+                                onClick={() => handleLinkCustomer(newCustomerPhone, newCustomerName)}
+                                disabled={!newCustomerPhone || newCustomerPhone.length < 10 || !newCustomerName}
+                                className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                             >
-                            POS
-                            </button>
-                            <button 
-                            onClick={() => setPosPlatform('ZOMATO')}
-                            className={`flex-1 py-1 text-xs font-bold rounded ${posPlatform === 'ZOMATO' ? 'bg-red-100 text-red-700' : 'text-slate-500'}`}
-                            >
-                            Zom
-                            </button>
-                            <button 
-                            onClick={() => setPosPlatform('SWIGGY')}
-                            className={`flex-1 py-1 text-xs font-bold rounded ${posPlatform === 'SWIGGY' ? 'bg-orange-100 text-orange-700' : 'text-slate-500'}`}
-                            >
-                            Swig
+                                Add & Link Customer
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- CUSTOM AMOUNT MODAL --- */}
+        {isCustomAmountOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+                    <h3 className="font-bold text-lg mb-4 text-slate-800">Add Custom Charge</h3>
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">Amount</label>
+                            <input 
+                                type="number"
+                                autoFocus
+                                value={customAmountVal}
+                                onChange={(e) => setCustomAmountVal(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-lg font-bold"
+                                placeholder="0"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">Reason</label>
+                            <input 
+                                type="text"
+                                value={customAmountReason}
+                                onChange={(e) => setCustomAmountReason(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                                placeholder="e.g. Delivery Charge"
+                            />
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                            <button onClick={() => setIsCustomAmountOpen(false)} className="flex-1 py-2 border border-slate-300 rounded-lg text-slate-600 font-bold">Cancel</button>
+                            <button onClick={applyCustomAmount} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold">Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- CUSTOM SKU MODAL (ADMIN ONLY) --- */}
+        {isCustomSkuOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                    <h3 className="font-bold text-lg mb-4 text-slate-800">Add Raw Items (Unlisted)</h3>
                     
-                    {/* Payment Mode Selector */}
-                    <div className="sm:col-span-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Payment Mode</label>
+                    <div className="mb-4 space-y-2">
                         <div className="flex gap-2">
-                           <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 flex-1">
-                              <button
-                                 onClick={() => setPaymentMode('SINGLE')}
-                                 className={`flex-1 py-1 px-2 text-xs font-bold rounded flex items-center justify-center gap-1 ${paymentMode === 'SINGLE' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
-                              >
-                                 Single
-                              </button>
-                              <button
-                                 onClick={() => setPaymentMode('SPLIT')}
-                                 className={`flex-1 py-1 px-2 text-xs font-bold rounded flex items-center justify-center gap-1 ${paymentMode === 'SPLIT' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
-                              >
-                                 <Split size={12} /> Split
-                              </button>
-                           </div>
-
-                           {paymentMode === 'SINGLE' && (
-                              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 flex-[1.5]">
-                                 <button onClick={() => setPosPaymentMethod('CASH')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'CASH' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
-                                    Cash
-                                 </button>
-                                 <button onClick={() => setPosPaymentMethod('UPI')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'UPI' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
-                                    UPI
-                                 </button>
-                                 <button onClick={() => setPosPaymentMethod('CARD')} className={`flex-1 py-1 text-xs font-bold rounded ${posPaymentMethod === 'CARD' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500'}`}>
-                                    Card
-                                 </button>
-                              </div>
-                           )}
+                            <select 
+                                value={tempSkuId}
+                                onChange={(e) => setTempSkuId(e.target.value)}
+                                className="flex-1 border border-slate-300 rounded-lg px-2 py-2 text-sm"
+                            >
+                                <option value="">Select SKU</option>
+                                {skus.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                            <input 
+                                type="number"
+                                value={tempSkuQty}
+                                onChange={(e) => setTempSkuQty(e.target.value)}
+                                className="w-20 border border-slate-300 rounded-lg px-2 py-2 text-sm"
+                                placeholder="Qty"
+                            />
+                            <button 
+                                onClick={() => {
+                                    if(tempSkuId && tempSkuQty) {
+                                        setCustomSkuList([...customSkuList, {skuId: tempSkuId, qty: parseInt(tempSkuQty)}]);
+                                        setTempSkuId('');
+                                        setTempSkuQty('');
+                                    }
+                                }}
+                                className="bg-indigo-100 text-indigo-700 p-2 rounded-lg"
+                            >
+                                <Plus size={20}/>
+                            </button>
                         </div>
+                        <input 
+                            type="text"
+                            value={customSkuReasonVal}
+                            onChange={(e) => setCustomSkuReasonVal(e.target.value)}
+                            placeholder="Reason (e.g. Special Order)"
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                        />
                     </div>
-                  </div>
 
-                  {/* Split Payment Inputs */}
-                  {paymentMode === 'SPLIT' && (
-                     <div className="mb-4 bg-indigo-50 border border-indigo-100 p-3 rounded-lg animate-fade-in">
-                        <div className="flex justify-between items-center mb-2">
-                           <span className="text-xs font-bold text-indigo-800 uppercase">Split Details</span>
-                           <span className={`text-xs font-bold ${remainingSplit === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              Remaining: ₹{remainingSplit}
-                           </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                           <div className="relative">
-                              <div className="absolute left-2 top-2 text-slate-400"><Banknote size={14}/></div>
-                              <input 
-                                 type="number" 
-                                 placeholder="Cash"
-                                 value={splitInputs.CASH}
-                                 onChange={e => setSplitInputs({...splitInputs, CASH: e.target.value})}
-                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
-                              />
-                           </div>
-                           <div className="relative">
-                              <div className="absolute left-2 top-2 text-slate-400"><Smartphone size={14}/></div>
-                              <input 
-                                 type="number" 
-                                 placeholder="UPI"
-                                 value={splitInputs.UPI}
-                                 onChange={e => setSplitInputs({...splitInputs, UPI: e.target.value})}
-                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
-                              />
-                           </div>
-                           <div className="relative">
-                              <div className="absolute left-2 top-2 text-slate-400"><CreditCard size={14}/></div>
-                              <input 
-                                 type="number" 
-                                 placeholder="Card"
-                                 value={splitInputs.CARD}
-                                 onChange={e => setSplitInputs({...splitInputs, CARD: e.target.value})}
-                                 className="w-full pl-7 pr-2 py-1.5 text-sm border border-indigo-200 rounded bg-white focus:outline-none focus:border-indigo-500"
-                              />
-                           </div>
-                        </div>
-                     </div>
-                  )}
-
-                  <div className="mb-4">
-                     <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Menu Category</label>
-                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {uniqueCategories.map(cat => {
-                           const color = getCategoryColor(cat);
-                           const isSelected = selectedCategory === cat;
-                           
-                           return (
-                           <button
-                             key={cat}
-                             onClick={() => setSelectedCategory(cat)}
-                             style={{ 
-                                backgroundColor: isSelected ? color : 'white',
-                                borderColor: isSelected ? color : '#e2e8f0',
-                                color: isSelected ? 'white' : '#64748b'
-                             }}
-                             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border shadow-sm`}
-                           >
-                              {cat}
-                           </button>
-                           )
-                        })}
-                     </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setIsCustomAmountOpen(true)}
-                      className={`flex-1 py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs font-bold transition-colors ${
-                          orderCustomAmount 
-                            ? 'border-indigo-300 bg-indigo-100 text-indigo-700' 
-                            : 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                      }`}
-                    >
-                      <IndianRupee size={14} /> {orderCustomAmount ? 'Edit Custom Amount' : 'Add Custom Amount'}
-                    </button>
-                    <button 
-                      onClick={openCustomSkuModal}
-                      className={`flex-1 py-2 rounded-lg border border-dashed flex items-center justify-center gap-1.5 text-xs font-bold transition-colors ${
-                          orderCustomSku
-                            ? 'border-slate-400 bg-slate-200 text-slate-700' 
-                            : 'border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Box size={14} /> {orderCustomSku ? 'Edit Raw Item(s)' : 'Add Raw Item(s)'}
-                    </button>
-                  </div>
-               </div>
-
-               <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 pb-32 md:pb-4">
-                  {visibleMenuItems.length === 0 ? (
-                     <div className="text-center text-slate-400 py-10 italic">No items found in this category.</div>
-                  ) : (
-                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                        {visibleMenuItems.map(item => (
-                           <div 
-                              key={item.id}
-                              className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col h-auto group"
-                           >
-                              <div className="p-3 flex-1">
-                                 <span className="font-bold text-slate-700 line-clamp-2 text-sm leading-tight group-hover:text-emerald-700 transition-colors">
-                                    {item.name}
-                                 </span>
-                              </div>
-                              
-                              <div className="p-2 bg-slate-50 border-t border-slate-100 flex gap-2">
-                                 <button 
-                                    onClick={() => addToCart(item, 'FULL')}
-                                    className="flex-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 rounded py-1.5 px-1 text-center transition-colors"
-                                 >
-                                    <div className="text-[10px] text-slate-400 font-bold uppercase">Full</div>
-                                    <div className="text-xs font-bold text-emerald-700">₹{item.price}</div>
-                                 </button>
-
-                                 {item.halfPrice && (
-                                    <button 
-                                       onClick={() => addToCart(item, 'HALF')}
-                                       className="flex-1 bg-white hover:bg-orange-50 border border-slate-200 hover:border-orange-200 rounded py-1.5 px-1 text-center transition-colors"
-                                    >
-                                       <div className="text-[10px] text-slate-400 font-bold uppercase">Half</div>
-                                       <div className="text-xs font-bold text-orange-700">₹{item.halfPrice}</div>
-                                    </button>
-                                 )}
-                              </div>
-                           </div>
-                        ))}
-                     </div>
-                  )}
-               </div>
-
-               {!isMobileCartOpen && (
-                 <div 
-                   onClick={() => setIsMobileCartOpen(true)}
-                   className="fixed bottom-0 left-0 right-0 md:hidden bg-slate-900 text-white p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.2)] border-t border-slate-800 flex justify-between items-center cursor-pointer z-40"
-                 >
-                    <div>
-                      <div className="text-sm font-bold flex items-center gap-2">
-                         <span className="bg-white text-slate-900 w-6 h-6 rounded-full flex items-center justify-center text-xs">
-                            {cart.reduce((a,b) => a+b.quantity, 0)}
-                         </span>
-                         Items Added
-                      </div>
-                      <div className="text-xs text-slate-400">
-                         Total: ₹{cartTotal} {(orderCustomAmount || orderCustomSku) && '+ Extras'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 font-bold text-emerald-400">
-                       View Order <ChevronUp size={18} />
-                    </div>
-                 </div>
-               )}
-           </div>
-
-           {/* Right: Cart */}
-           <div 
-             className={`
-                bg-white flex flex-col 
-                md:w-96 md:border-l md:border-slate-200 md:static md:h-full md:flex md:rounded-r-xl
-                ${isMobileCartOpen ? 'fixed inset-0 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300' : 'hidden'}
-             `}
-           >
-               <div className="md:hidden p-4 border-b border-slate-100 flex items-center gap-3 bg-slate-50">
-                  <button onClick={() => setIsMobileCartOpen(false)} className="p-2 -ml-2 text-slate-500">
-                     <ArrowLeft size={24} />
-                  </button>
-                  <h3 className="font-bold text-lg text-slate-800">Current Order</h3>
-               </div>
-
-               <div className="hidden md:flex p-4 border-b border-slate-100 justify-between items-center bg-slate-800 text-white rounded-tr-xl">
-                  <div className="flex items-center gap-2 font-bold">
-                     <ShoppingCart size={18} /> Current Order
-                  </div>
-                  <div className="text-xs bg-white/20 px-2 py-0.5 rounded">
-                     {cart.reduce((a,b) => a+b.quantity, 0)} Items
-                  </div>
-               </div>
-
-               {/* Loyalty Status Banner (Updated for Coupon Architecture) */}
-               {linkedCustomer && activeRewardResult && !isRewardApplied && (
-                   <div className={`p-3 border-b animate-fade-in flex items-center justify-between ${
-                       activeRewardResult.status === 'EXPIRED' 
-                       ? 'bg-red-50 border-red-100' 
-                       : 'bg-indigo-50 border-indigo-100'
-                   }`}>
-                       {activeRewardResult.status === 'EXPIRED' ? (
-                           <div className="flex items-center gap-2 text-red-700 w-full">
-                               <AlertCircle size={16} className="shrink-0" />
-                               <div className="text-xs font-bold">
-                                   Coupon Expired <br/>
-                                   <span className="text-[10px] font-normal text-red-600">
-                                       Valid until {new Date(activeRewardResult.coupon.expiresAt).toLocaleDateString()}
-                                   </span>
-                               </div>
-                           </div>
-                       ) : (
-                           <>
-                               <div className="flex items-center gap-2 text-indigo-700">
-                                   <Ticket size={16} className="shrink-0" />
-                                   <div className="text-xs font-bold">
-                                       Active Coupon Available: <br/>
-                                       <span className="text-[10px] font-normal text-indigo-600">
-                                           {activeRewardResult.rule.description} 
-                                           {activeRewardResult.daysLeft !== undefined && ` (${activeRewardResult.daysLeft} days left)`}
-                                       </span>
-                                   </div>
-                               </div>
-                               <button 
-                                 onClick={applyReward}
-                                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors"
-                               >
-                                   Redeem
-                               </button>
-                           </>
-                       )}
-                   </div>
-               )}
-
-               <div className="p-3 border-b border-slate-100 bg-slate-50">
-                  {linkedCustomer ? (
-                     <div className="flex justify-between items-center bg-white border border-slate-200 p-2 rounded-lg">
-                        <div>
-                           <div className="text-xs font-bold text-emerald-600">Customer Linked</div>
-                           <div className="text-sm font-bold text-slate-700">{linkedCustomer.name}</div>
-                           <div className="text-xs text-slate-400">{linkedCustomer.phone}</div>
-                        </div>
-                        <button onClick={() => { setLinkedCustomer(null); setActiveRewardResult(null); setIsRewardApplied(false); }} className="text-red-400 hover:text-red-600">
-                           <X size={16} />
-                        </button>
-                     </div>
-                  ) : (
-                     <button 
-                        onClick={() => setIsCustomerModalOpen(true)}
-                        className={`w-full py-2 border border-dashed rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                           (appSettings.require_customer_phone) 
-                              ? 'border-red-300 text-red-500 bg-red-50 hover:bg-white' 
-                              : 'border-slate-300 text-slate-500 hover:bg-white hover:border-emerald-300 hover:text-emerald-600'
-                        }`}
-                     >
-                        {(appSettings.require_customer_phone) && <AlertTriangle size={14} />}
-                        <Plus size={14} /> Add Customer (Loyalty)
-                     </button>
-                  )}
-               </div>
-
-               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {cart.length === 0 && !orderCustomAmount && !orderCustomSku ? (
-                     <div className="text-center text-slate-400 py-10 italic text-sm flex flex-col items-center">
-                        <ShoppingCart size={32} className="opacity-20 mb-2"/>
-                        Cart is empty. 
-                        <br/>
-                        Select items from the menu.
-                        <button 
-                           onClick={() => setIsMobileCartOpen(false)} 
-                           className="md:hidden mt-4 text-emerald-600 font-bold underline"
-                        >
-                           Go to Menu
-                        </button>
-                     </div>
-                  ) : (
-                    <>
-                     {cart.map(item => (
-                        <div key={item.id} className="flex justify-between items-center group">
-                           <div className="flex-1">
-                              <div className="text-sm font-medium text-slate-700">
-                                 {item.name} 
-                                 {item.variant === 'HALF' && <span className="text-xs text-slate-400 ml-1">(Half)</span>}
-                                 {item.price === 0 && <span className="text-xs text-amber-600 font-bold ml-1">(Coupon)</span>}
-                              </div>
-                              <div className="text-xs text-slate-400">
-                                 ₹{item.price} x {item.quantity}
-                              </div>
-                           </div>
-                           <div className="flex items-center gap-3">
-                                <button onClick={() => updateCartQty(item.id, -1)} className="text-slate-400 hover:text-red-500">
-                                  <MinusCircle size={20} />
-                                </button>
-                                <span className="font-bold text-slate-700 w-4 text-center">{item.quantity}</span>
-                                <button onClick={() => updateCartQty(item.id, 1)} className="text-slate-400 hover:text-emerald-500">
-                                  <PlusCircle size={20} />
-                                </button>
-                           </div>
-                        </div>
-                     ))}
-                     
-                     {(orderCustomAmount || orderCustomSku) && <div className="border-t border-slate-100 my-2 pt-2"></div>}
-                     
-                     {orderCustomAmount && (
-                         <div className="flex justify-between items-center bg-indigo-50 p-2 rounded-lg border border-indigo-100">
-                             <div>
-                                 <div className="text-sm font-bold text-indigo-700">Custom Charge</div>
-                                 <div className="text-xs text-indigo-500 italic">{orderCustomAmount.reason}</div>
-                             </div>
-                             <div className="flex items-center gap-2">
-                                <span className={`font-bold ${orderCustomAmount.amount < 0 ? 'text-emerald-700' : 'text-indigo-800'}`}>
-                                    {orderCustomAmount.amount < 0 ? '-' : ''}₹{Math.abs(orderCustomAmount.amount)}
-                                </span>
-                                <button onClick={() => setOrderCustomAmount(null)} className="text-indigo-400 hover:text-red-500"><X size={16}/></button>
-                             </div>
-                         </div>
-                     )}
-
-                     {orderCustomSku && (
-                         <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
-                             <div className="flex justify-between items-center mb-1">
-                                 <div>
-                                     <div className="text-sm font-bold text-slate-700">Raw Usage ({orderCustomSku.items.length} items)</div>
-                                     <div className="text-xs text-slate-500 italic">{orderCustomSku.reason}</div>
-                                 </div>
-                                 <button onClick={() => setOrderCustomSku(null)} className="text-slate-400 hover:text-red-500"><X size={16}/></button>
-                             </div>
-                             <div className="space-y-1 mt-1">
-                                {orderCustomSku.items.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between text-xs text-slate-600">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-40 overflow-y-auto mb-4">
+                        {customSkuList.length === 0 ? <p className="text-xs text-slate-400 text-center">No items added.</p> : (
+                            <ul className="space-y-1">
+                                {customSkuList.map((item, idx) => (
+                                    <li key={idx} className="flex justify-between text-sm">
                                         <span>{getSkuName(item.skuId)}</span>
-                                        <span className="font-mono">{item.qty} pcs</span>
-                                    </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold">{item.qty} pcs</span>
+                                            <button onClick={() => setCustomSkuList(customSkuList.filter((_, i) => i !== idx))} className="text-red-500"><X size={12}/></button>
+                                        </div>
+                                    </li>
                                 ))}
-                             </div>
-                         </div>
-                     )}
-                    </>
-                  )}
-               </div>
-
-               <div className="p-4 bg-slate-50 border-t border-slate-200 md:rounded-br-xl pb-8 md:pb-4">
-                  <div className="flex justify-between items-center mb-4 text-lg">
-                     <span className="font-bold text-slate-500">Total</span>
-                     <span className="font-bold text-slate-800">₹{cartTotal}</span>
-                  </div>
-                  <button 
-                     onClick={submitOrder}
-                     disabled={cart.length === 0 && !orderCustomAmount}
-                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
-                  >
-                     {showSuccess ? <CheckCircle2 size={20} /> : <Receipt size={20} />}
-                     {showSuccess ? 'Order Placed!' : `Charge ₹${cartTotal}`}
-                  </button>
-               </div>
-           </div>
-
-           {/* POS MODALS (Inside flex layout to avoid conditional rendering bugs) */}
-           
-           {isCustomerModalOpen && (
-              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                       <h3 className="font-bold text-slate-700">Find or Add Customer</h3>
-                       <button onClick={() => setIsCustomerModalOpen(false)}><X size={20} className="text-slate-400" /></button>
-                    </div>
-                    <div className="p-4">
-                       <div className="relative mb-4">
-                          <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
-                          <input 
-                             type="text" 
-                             placeholder="Search by Name or Phone..." 
-                             autoFocus
-                             value={customerSearch}
-                             onChange={e => setCustomerSearch(e.target.value)}
-                             className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                       </div>
-                       
-                       <div className="max-h-40 overflow-y-auto space-y-2 mb-2">
-                          {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phoneNumber.includes(customerSearch)).slice(0, 5).map(c => (
-                             <button 
-                                key={c.id}
-                                onClick={() => handleLinkCustomer(c.phoneNumber, c.name)}
-                                className="w-full text-left p-3 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 flex justify-between items-center group"
-                             >
-                                <div>
-                                   <div className="font-bold text-slate-700">{c.name}</div>
-                                   <div className="text-xs text-slate-400">{c.phoneNumber}</div>
-                                </div>
-                                <div className="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100">Select</div>
-                             </button>
-                          ))}
-                       </div>
-
-                       {/* Explicit "Add New" Section */}
-                       <div className="border-t border-slate-100 pt-4 mt-2">
-                          <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                             <Plus size={12} /> Add New Customer
-                          </h4>
-                          <div className="space-y-3">
-                             <div className="relative">
-                                <Phone size={16} className={`absolute left-3 top-2.5 ${isPhoneInvalid ? 'text-red-400' : 'text-slate-400'}`} />
-                                <input 
-                                   type="tel"
-                                   placeholder="Phone Number"
-                                   value={newCustomerPhone}
-                                   onChange={handlePhoneInput}
-                                   maxLength={10}
-                                   className={`w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
-                                       isPhoneInvalid
-                                           ? 'border-red-500 focus:border-red-500 focus:ring-red-200 bg-red-50 text-red-900'
-                                           : (appSettings.require_customer_phone ? 'border-indigo-200 focus:ring-indigo-500' : 'border-slate-200 focus:ring-emerald-500')
-                                   }`}
-                                />
-                                {isPhoneInvalid && <span className="text-[10px] text-red-600 font-bold mt-1 block">Phone number must be exactly 10 digits.</span>}
-                                {appSettings.require_customer_phone && !isPhoneInvalid && <span className="absolute right-3 top-2.5 text-[10px] text-red-500 font-bold">*Required</span>}
-                             </div>
-                             
-                             <div className="relative">
-                                <User size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                                <input 
-                                   type="text"
-                                   placeholder="Customer Name"
-                                   value={newCustomerName}
-                                   onChange={e => setNewCustomerName(e.target.value)}
-                                   className={`w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${appSettings.require_customer_name ? 'border-indigo-200 focus:ring-indigo-500' : 'border-slate-200 focus:ring-emerald-500'}`}
-                                />
-                                {appSettings.require_customer_name && <span className="absolute right-3 top-2.5 text-[10px] text-red-500 font-bold">*Required</span>}
-                             </div>
-
-                             <button 
-                                onClick={handleCreateAndLinkCustomer}
-                                disabled={isPhoneInvalid}
-                                className={`w-full py-2 bg-slate-800 text-white rounded-lg text-sm font-bold transition-colors shadow-sm ${isPhoneInvalid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-700'}`}
-                             >
-                                Link Customer
-                             </button>
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-              </div>
-           )}
-
-            {isCustomAmountOpen && (
-              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-indigo-50 rounded-t-xl">
-                        <h3 className="font-bold text-indigo-800">Add Custom Amount</h3>
-                        <button onClick={() => setIsCustomAmountOpen(false)}><X size={20} className="text-slate-400" /></button>
-                    </div>
-                    <div className="p-6 space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Amount (₹)</label>
-                          <input 
-                              type="number"
-                              min="1"
-                              autoFocus
-                              value={customAmountVal}
-                              onChange={e => setCustomAmountVal(e.target.value)}
-                              className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-lg font-bold text-slate-800"
-                              placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reason (Required)</label>
-                          <input 
-                              type="text"
-                              value={customAmountReason}
-                              onChange={e => setCustomAmountReason(e.target.value)}
-                              className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-                              placeholder="e.g. Delivery Charge, Adjustment"
-                          />
-                        </div>
-                        <button 
-                          onClick={applyCustomAmount}
-                          disabled={!customAmountVal || !customAmountReason}
-                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-bold shadow-md transition-colors"
-                        >
-                          Apply to Order
-                        </button>
-                    </div>
-                  </div>
-              </div>
-            )}
-
-            {isCustomSkuOpen && (
-              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
-                        <h3 className="font-bold text-slate-700">Add Raw Item Usage</h3>
-                        <button onClick={() => setIsCustomSkuOpen(false)}><X size={20} className="text-slate-400" /></button>
-                    </div>
-                    
-                    <div className="p-6 flex-1 overflow-y-auto">
-                        <div className="mb-4 space-y-3">
-                             <div className="flex gap-2 items-end">
-                                <div className="flex-1">
-                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Raw Item</label>
-                                   <select 
-                                      value={tempSkuId}
-                                      onChange={e => setTempSkuId(e.target.value)}
-                                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none bg-white"
-                                   >
-                                      <option value="">-- Select SKU --</option>
-                                      {skus.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                   </select>
-                                </div>
-                                <div className="w-20">
-                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Qty</label>
-                                   <input 
-                                      type="number"
-                                      min="1"
-                                      value={tempSkuQty}
-                                      onChange={e => setTempSkuQty(e.target.value)}
-                                      className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm text-center font-bold focus:ring-2 focus:ring-slate-500 outline-none"
-                                   />
-                                </div>
-                                <button 
-                                  onClick={handleAddCustomItemToBuffer}
-                                  disabled={!tempSkuId || !tempSkuQty}
-                                  className="h-[38px] px-3 bg-slate-800 text-white rounded-lg disabled:opacity-50 hover:bg-slate-700 transition-colors"
-                                >
-                                   <PlusSquare size={18} />
-                                </button>
-                             </div>
-                        </div>
-
-                        {customSkuList.length > 0 ? (
-                           <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden mb-4">
-                              <table className="w-full text-sm text-left">
-                                 <thead className="bg-slate-100 text-xs text-slate-500 uppercase">
-                                    <tr>
-                                       <th className="p-2 pl-3">Item</th>
-                                       <th className="p-2 text-center">Qty</th>
-                                       <th className="p-2 w-8"></th>
-                                    </tr>
-                                 </thead>
-                                 <tbody className="divide-y divide-slate-100">
-                                    {customSkuList.map((item, idx) => (
-                                       <tr key={idx}>
-                                          <td className="p-2 pl-3 font-medium text-slate-700">{getSkuName(item.skuId)}</td>
-                                          <td className="p-2 text-center font-mono">{item.qty}</td>
-                                          <td className="p-2 text-center">
-                                             <button onClick={() => handleRemoveCustomItemFromBuffer(idx)} className="text-slate-400 hover:text-red-500">
-                                                <X size={14} />
-                                             </button>
-                                          </td>
-                                       </tr>
-                                    ))}
-                                 </tbody>
-                              </table>
-                           </div>
-                        ) : (
-                           <div className="text-center py-6 text-slate-400 text-xs italic border border-dashed border-slate-200 rounded-lg mb-4">
-                              No items added yet.
-                           </div>
+                            </ul>
                         )}
-
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reason (Required)</label>
-                          <input 
-                              type="text"
-                              value={customSkuReason}
-                              onChange={e => setCustomSkuReason(e.target.value)}
-                              className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-slate-500 outline-none text-sm"
-                              placeholder="e.g. Special Request, Staff Consumption, Spilled"
-                          />
-                        </div>
                     </div>
 
-                    <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl">
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsCustomSkuOpen(false)} className="flex-1 py-2 border border-slate-300 rounded-lg text-slate-600 font-bold">Cancel</button>
                         <button 
-                          onClick={applyCustomSku}
-                          disabled={customSkuList.length === 0 || !customSkuReason}
-                          className="w-full py-3 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-lg font-bold shadow-md transition-colors"
+                            onClick={() => {
+                                if(customSkuList.length > 0 && customSkuReasonVal) {
+                                    setOrderCustomSku({ items: customSkuList, reason: customSkuReasonVal });
+                                    setIsCustomSkuOpen(false);
+                                }
+                            }} 
+                            className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold"
                         >
-                          Attach {customSkuList.length} Items to Order
+                            Save
                         </button>
-                        <p className="text-[10px] text-center text-slate-400 mt-2">
-                           Note: Inventory will be deducted. No price added to total.
-                        </p>
                     </div>
-                  </div>
-              </div>
-            )}
-        </div>
-      )}
-
-      {/* DELETE ORDER MODAL - Moved outside conditional blocks */}
-      {orderToDelete && (
-         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-               <div className="p-6 text-center">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
-                     <Trash2 size={32} />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Order?</h3>
-                  <p className="text-slate-500 text-sm mb-6">
-                     Are you sure you want to delete this order? This action cannot be undone. <br/>
-                     <span className="text-red-600 font-bold text-xs mt-2 block">Warning: Customer loyalty points will be reverted.</span>
-                  </p>
-                  
-                  <div className="flex gap-3">
-                     <button 
-                        onClick={() => setOrderToDelete(null)}
-                        className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-                     >
-                        Cancel
-                     </button>
-                     <button 
-                        onClick={confirmDelete}
-                        className="flex-1 py-3 bg-red-600 rounded-xl font-bold text-white hover:bg-red-700 shadow-md transition-colors"
-                     >
-                        Delete
-                     </button>
-                  </div>
-               </div>
+                </div>
             </div>
-         </div>
-      )}
+        )}
+
     </div>
   );
 };

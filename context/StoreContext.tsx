@@ -394,7 +394,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     require_customer_name: false,
     enable_beta_tasks: false,
     enable_whatsapp_webhook: false,
-    whatsapp_webhook_url: ''
+    whatsapp_webhook_url: '',
+    debug_whatsapp_webhook: false
   });
 
   const [isLoading, setIsLoading] = useState(true);
