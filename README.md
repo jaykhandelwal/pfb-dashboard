@@ -33,7 +33,7 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 
 ## 🔌 Database Integration & Triggers
 
-To enable the "Set and Forget" loyalty system, you must run the following SQL in your Supabase SQL Editor. This sets up the automatic coupon generation logic.
+To enable the "Set and Forget" loyalty system, you must run the following SQL in your Supabase SQL Editor. This sets up the automatic coupon generation logic AND the API endpoint for external apps.
 
 ### 1. Create Core Tables
 
@@ -141,67 +141,106 @@ WHEN (NEW.customer_id IS NOT NULL)
 EXECUTE FUNCTION handle_new_order_loyalty();
 ```
 
+### 3. Create the API Endpoint Function (The Gateway)
+
+Run this SQL to create a secure, sorted endpoint for your Android App.
+
+```sql
+-- Create a function that acts as a REST Endpoint
+CREATE OR REPLACE FUNCTION get_available_coupons(phone_number TEXT)
+RETURNS TABLE (
+  coupon_id TEXT,
+  status TEXT,
+  expires_at TIMESTAMPTZ,
+  reward_type TEXT,
+  reward_value TEXT,
+  description TEXT,
+  created_at TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cc.id,
+    cc.status,
+    cc.expires_at,
+    mr.type,
+    mr.value,
+    mr.description,
+    cc.created_at
+  FROM customer_coupons cc
+  JOIN membership_rules mr ON cc.rule_id = mr.id
+  WHERE cc.customer_id = phone_number
+    AND cc.status = 'ACTIVE'
+    AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+  ORDER BY cc.created_at ASC; -- Sorts Oldest first (FIFO)
+END;
+$$;
+```
+
 ---
 
 ## 📱 Android Integration Guide
 
 This section is for the Android Developer.
 
-### 1. Fetching Coupons (The "JOIN" Query)
-When a user is added to the cart, the Android app must run this **exact query** to get the coupon details (Description, Type, and Value).
+### 1. Fetching Coupons (The Endpoint)
+Instead of writing complex SQL, you can now call a simple RPC function endpoint.
 
-```sql
-SELECT 
-  cc.id AS coupon_id,
-  cc.status,
-  cc.expires_at,
-  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT'
-  mr.value AS reward_value,  -- e.g. '20' (for 20%) or 'sku-1' (for item ID)
-  mr.description             -- e.g. 'Get 20% Off on your 5th Order!'
-FROM customer_coupons cc
-JOIN membership_rules mr ON cc.rule_id = mr.id
-WHERE cc.customer_id = :phone_number_param
-  AND cc.status = 'ACTIVE'
-  AND cc.expires_at > NOW();
+**Endpoint URL:**  
+`POST https://<your-supabase-url>.supabase.co/rest/v1/rpc/get_available_coupons`
+
+**Headers:**
+```
+apikey: <your-anon-key>
+Content-Type: application/json
 ```
 
-### 2. Handling the Response
-The database will return a JSON array like this. The logic is driven by `reward_type`.
+**Body (JSON):**
+```json
+{
+  "phone_number": "9876543210"
+}
+```
 
-**Scenario A: Percentage Discount**
+### 2. The JSON Response
+The API will return an array of active coupons, **sorted from oldest to newest**.
+
 ```json
 [
   {
-    "coupon_id": "uuid-1234...",
+    "coupon_id": "a1b2c3d4...",
+    "status": "ACTIVE",
+    "expires_at": "2024-12-31T23:59:59+00:00",
     "reward_type": "DISCOUNT_PERCENT",
-    "reward_value": "20", 
-    "description": "20% Off Loyalty Reward"
-  }
-]
-```
-*   **Action:** Apply `20%` discount to the cart subtotal.
-
-**Scenario B: Free Item**
-```json
-[
+    "reward_value": "20",
+    "description": "Get 20% Off on your 5th Order!",
+    "created_at": "2024-01-15T10:00:00+00:00"
+  },
   {
-    "coupon_id": "uuid-5678...",
+    "coupon_id": "f9e8d7c6...",
+    "status": "ACTIVE",
+    "expires_at": "2025-01-15T23:59:59+00:00",
     "reward_type": "FREE_ITEM",
-    "reward_value": "sku-steam-veg", 
-    "description": "Free Veg Steam Momos"
+    "reward_value": "sku-steam-veg",
+    "description": "Free Plate on 10th Order!",
+    "created_at": "2024-02-01T14:30:00+00:00"
   }
 ]
 ```
-*   **Action:** Add the item with ID `sku-steam-veg` to the cart with `price = 0`.
 
-### 3. Redeeming Coupons
-When the order is successfully placed, send the `coupon_id` back to the server to mark it as used.
+### 3. Logic Handling
+*   **Oldest First:** The array is already sorted. Display the first item as the "Primary Reward".
+*   **reward_type**: 
+    *   `DISCOUNT_PERCENT`: Calculate percentage off total.
+    *   `FREE_ITEM`: Add specific item (`reward_value` is the SKU ID) for free.
+
+### 4. Redeeming
+When the order is placed, send the `coupon_id` back to mark it as used:
 
 ```sql
--- Run this when order is successful
-UPDATE customer_coupons 
-SET status = 'USED' 
-WHERE id = :coupon_id_param;
+UPDATE customer_coupons SET status = 'USED' WHERE id = 'THE_COUPON_ID';
 ```
 
 ---

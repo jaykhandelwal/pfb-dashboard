@@ -123,6 +123,42 @@ AFTER INSERT ON orders
 FOR EACH ROW
 WHEN (NEW.customer_id IS NOT NULL)
 EXECUTE FUNCTION handle_new_order_loyalty();
+
+-- ==========================================
+-- 3. EXTERNAL API ENDPOINTS (RPC)
+-- ==========================================
+
+-- Function for Android App to fetch coupons simply
+CREATE OR REPLACE FUNCTION get_available_coupons(phone_number TEXT)
+RETURNS TABLE (
+  coupon_id TEXT,
+  status TEXT,
+  expires_at TIMESTAMPTZ,
+  reward_type TEXT,
+  reward_value TEXT,
+  description TEXT,
+  created_at TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cc.id,
+    cc.status,
+    cc.expires_at,
+    mr.type,
+    mr.value,
+    mr.description,
+    cc.created_at
+  FROM customer_coupons cc
+  JOIN membership_rules mr ON cc.rule_id = mr.id
+  WHERE cc.customer_id = phone_number
+    AND cc.status = 'ACTIVE'
+    AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+  ORDER BY cc.created_at ASC; -- Oldest first
+END;
+$$;
 ```
 
 ---
