@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { SalesPlatform, OrderItem, MenuItem, RewardResult } from '../types';
-import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCart, IndianRupee, X, Box, Trash2, ChevronRight, User, AlertCircle, Phone, Tag } from 'lucide-react';
+import { SalesPlatform, OrderItem, MenuItem, RewardResult, Order } from '../types';
+import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCart, IndianRupee, X, Box, Trash2, ChevronRight, User, AlertCircle, Phone, Tag, Clock, Send, Bug, Loader2 } from 'lucide-react';
 import { getLocalISOString } from '../constants';
-import { sendWhatsAppInvoice, WebhookContext } from '../services/webhookService';
+import { sendWhatsAppInvoice, WebhookContext, constructWebhookPayload, WebhookPayload, sendWebhookRequest } from '../services/webhookService';
 
 const Orders: React.FC = () => {
   const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward } = useStore();
@@ -55,13 +56,18 @@ const Orders: React.FC = () => {
 
   // -- CUSTOM SKU STATE (ORDER LEVEL) --
   const [isCustomSkuOpen, setIsCustomSkuOpen] = useState(false);
-  const [orderCustomSku, setOrderCustomSku] = useState<{ items: { skuId: string, qty: number }[], reason: string } | null>(null);
+  const [orderCustomSku, setOrderCustomSku] = useState<{ items: { skuId: string, quantity: number }[], reason: string } | null>(null);
   
   // Temp state for modal builder
-  const [customSkuList, setCustomSkuList] = useState<{skuId: string, qty: number}[]>([]);
+  const [customSkuList, setCustomSkuList] = useState<{skuId: string, quantity: number}[]>([]);
   const [tempSkuId, setTempSkuId] = useState('');
   const [tempSkuQty, setTempSkuQty] = useState('');
   const [customSkuReasonVal, setCustomSkuReasonVal] = useState('');
+
+  // -- DEBUG / WEBHOOK STATE --
+  const [debugPayload, setDebugPayload] = useState<WebhookPayload | null>(null);
+  const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
+  const [isSendingWebhook, setIsSendingWebhook] = useState(false);
 
   // -- HELPERS --
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
@@ -111,12 +117,13 @@ const Orders: React.FC = () => {
 
   // -- HISTORY LOGIC --
   const filteredOrders = useMemo(() => {
+    // Sort by timestamp desc (newest first)
     return orders.filter(o => {
       if (o.date !== date) return false;
       if (selectedBranch !== 'ALL' && o.branchId !== selectedBranch) return false;
       if (selectedPlatform !== 'ALL' && o.platform !== selectedPlatform) return false;
       return true;
-    });
+    }).sort((a,b) => b.timestamp - a.timestamp);
   }, [orders, date, selectedBranch, selectedPlatform]);
 
   // -- POS LOGIC --
@@ -235,7 +242,7 @@ const Orders: React.FC = () => {
       }
 
       // Prepare Payload
-      const newOrder = {
+      const newOrder: Order = {
           id: `ord-${Date.now()}`,
           branchId: posBranchId,
           customerId: linkedCustomer?.id,
@@ -243,7 +250,7 @@ const Orders: React.FC = () => {
           platform: posPlatform,
           totalAmount: cartTotal,
           status: 'COMPLETED' as const,
-          paymentMethod: paymentMode === 'SPLIT' ? 'SPLIT' : posPaymentMethod,
+          paymentMethod: (paymentMode === 'SPLIT' ? 'SPLIT' : posPaymentMethod) as 'SPLIT' | 'CASH' | 'UPI' | 'CARD',
           paymentSplit: paymentMode === 'SPLIT' ? [
               { method: 'CASH', amount: parseFloat(splitInputs.CASH) || 0 },
               { method: 'UPI', amount: parseFloat(splitInputs.UPI) || 0 },
@@ -279,7 +286,13 @@ const Orders: React.FC = () => {
               platform: newOrder.platform
           };
           
-          sendWhatsAppInvoice(appSettings.whatsapp_webhook_url, webhookContext);
+          if (appSettings.debug_whatsapp_webhook) {
+             const payload = constructWebhookPayload(webhookContext);
+             setDebugPayload(payload);
+             setIsDebugModalOpen(true);
+          } else {
+             sendWhatsAppInvoice(appSettings.whatsapp_webhook_url, webhookContext);
+          }
       }
 
       // Reset
@@ -295,28 +308,85 @@ const Orders: React.FC = () => {
   };
 
   // -- RENDER HELPERS --
+  
+  // NEW: Render History Card
+  const renderOrderCard = (order: Order) => (
+    <div key={order.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3 relative group">
+        <div className="flex justify-between items-start">
+            <div>
+                <span className="text-[10px] font-mono font-bold text-slate-400">#{order.id.slice(-6).toUpperCase()}</span>
+                <h4 className="font-bold text-slate-700 text-sm">{order.customerName || 'Walk-in Customer'}</h4>
+            </div>
+            <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase ${getPlatformStyle(order.platform)}`}>
+                {order.platform}
+            </span>
+        </div>
+        
+        <div className="flex-1 border-t border-dashed border-slate-100 pt-2 mt-1">
+            <p className="text-[10px] text-slate-400 mb-1 flex items-center gap-1">
+               <Clock size={10} /> {new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+            </p>
+            <div className="text-xs text-slate-600 space-y-1">
+                {order.items.map((i, idx) => (
+                    <div key={idx} className="flex justify-between">
+                        <span className="truncate max-w-[150px]">{i.quantity}x {i.name} {i.variant === 'HALF' ? '(Half)' : ''}</span>
+                    </div>
+                ))}
+                {order.customAmount ? <div className="text-slate-500 italic">+ Custom Charge (₹{order.customAmount})</div> : ''}
+            </div>
+        </div>
+
+        <div className="flex justify-between items-end border-t border-slate-100 pt-3 mt-auto">
+            <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Total Amount</p>
+                <p className="text-lg font-bold text-slate-800">₹{order.totalAmount}</p>
+            </div>
+            <div className="flex gap-2">
+                 <button 
+                    onClick={() => { if(confirm('Delete this order?')) deleteOrder(order.id) }}
+                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete Order"
+                >
+                    <Trash2 size={16} />
+                </button>
+            </div>
+        </div>
+    </div>
+  );
+
   const renderPosItem = (item: MenuItem) => {
       const hasHalf = item.halfPrice !== undefined;
       return (
-          <div key={item.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:border-emerald-400 transition-all cursor-pointer group" onClick={() => addToCart(item)}>
-              <div>
-                  <h4 className="font-bold text-slate-700 text-sm leading-tight">{item.name}</h4>
-                  <p className="text-xs text-slate-400 mt-1">{item.description}</p>
+          <div key={item.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:border-emerald-400 transition-all h-full">
+              <div className="mb-2">
+                  <h4 className="font-bold text-slate-700 text-sm leading-tight mb-1">{item.name}</h4>
+                  {item.description && <p className="text-[10px] text-slate-400 leading-tight line-clamp-2">{item.description}</p>}
               </div>
-              <div className="mt-3 flex items-center justify-between">
-                  <span className="font-bold text-slate-800 text-sm">₹{item.price}</span>
-                  {hasHalf && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); addToCart(item, 'HALF'); }}
-                        className="text-[10px] bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-100 hover:bg-orange-100 font-bold"
-                      >
-                          Half ₹{item.halfPrice}
-                      </button>
-                  )}
-                  {!hasHalf && (
-                      <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Plus size={14} />
+              
+              <div className="mt-auto pt-2">
+                  {hasHalf ? (
+                      <div className="flex gap-2">
+                          <button 
+                            onClick={() => addToCart(item, 'FULL')}
+                            className="flex-1 bg-slate-800 text-white text-xs py-2 rounded-lg font-bold hover:bg-slate-700 transition-colors shadow-sm active:scale-95"
+                          >
+                              Full ₹{item.price}
+                          </button>
+                          <button 
+                            onClick={() => addToCart(item, 'HALF')}
+                            className="flex-1 bg-white text-orange-600 border border-orange-200 text-xs py-2 rounded-lg font-bold hover:bg-orange-50 transition-colors shadow-sm active:scale-95"
+                          >
+                              Half ₹{item.halfPrice}
+                          </button>
                       </div>
+                  ) : (
+                      <button 
+                        onClick={() => addToCart(item)}
+                        className="w-full bg-slate-100 text-slate-700 border border-slate-200 text-xs py-2 rounded-lg font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-colors flex justify-between px-3 items-center active:scale-95"
+                      >
+                          <span>Add</span>
+                          <span>₹{item.price}</span>
+                      </button>
                   )}
               </div>
           </div>
@@ -345,9 +415,9 @@ const Orders: React.FC = () => {
 
         {/* --- HISTORY VIEW --- */}
         {activeTab === 'HISTORY' && (
-            <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-xl shadow-sm border border-slate-200">
+            <div className="flex-1 overflow-hidden flex flex-col">
                 {/* Filters */}
-                <div className="p-4 border-b border-slate-100 flex flex-wrap gap-4 items-center bg-slate-50">
+                <div className="p-4 mb-4 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
                     <div className="flex items-center gap-2">
                         <Calendar size={16} className="text-slate-400" />
                         <input 
@@ -383,63 +453,18 @@ const Orders: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Table */}
-                <div className="flex-1 overflow-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase font-semibold sticky top-0 z-10">
-                            <tr>
-                                <th className="p-4">Time</th>
-                                <th className="p-4">Order ID</th>
-                                <th className="p-4">Customer</th>
-                                <th className="p-4">Platform</th>
-                                <th className="p-4 text-right">Amount</th>
-                                <th className="p-4 text-center">Status</th>
-                                <th className="p-4 text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {filteredOrders.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">No orders found for this selection.</td>
-                                </tr>
-                            ) : (
-                                filteredOrders.map(order => (
-                                    <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="p-4 text-slate-600 text-sm">
-                                            {new Date(order.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                                        </td>
-                                        <td className="p-4 text-xs font-mono text-slate-500">
-                                            {order.id.slice(-6).toUpperCase()}
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="font-medium text-slate-700 text-sm">{order.customerName || 'Walk-in'}</div>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${getPlatformStyle(order.platform)}`}>
-                                                {order.platform}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-right font-mono font-bold text-slate-800">
-                                            ₹{order.totalAmount}
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
-                                                Paid
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <button 
-                                                onClick={() => { if(confirm('Delete this order?')) deleteOrder(order.id) }}
-                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                {/* Orders Grid (Replaces Table) */}
+                <div className="flex-1 overflow-y-auto pb-20">
+                    {filteredOrders.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                            <Receipt size={48} className="mb-4 text-slate-300" />
+                            <p>No orders found for this selection.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {filteredOrders.map(renderOrderCard)}
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -786,7 +811,7 @@ const Orders: React.FC = () => {
                             <button 
                                 onClick={() => {
                                     if(tempSkuId && tempSkuQty) {
-                                        setCustomSkuList([...customSkuList, {skuId: tempSkuId, qty: parseInt(tempSkuQty)}]);
+                                        setCustomSkuList([...customSkuList, {skuId: tempSkuId, quantity: parseInt(tempSkuQty)}]);
                                         setTempSkuId('');
                                         setTempSkuQty('');
                                     }
@@ -812,7 +837,7 @@ const Orders: React.FC = () => {
                                     <li key={idx} className="flex justify-between text-sm">
                                         <span>{getSkuName(item.skuId)}</span>
                                         <div className="flex items-center gap-2">
-                                            <span className="font-bold">{item.qty} pcs</span>
+                                            <span className="font-bold">{item.quantity} pcs</span>
                                             <button onClick={() => setCustomSkuList(customSkuList.filter((_, i) => i !== idx))} className="text-red-500"><X size={12}/></button>
                                         </div>
                                     </li>
@@ -833,6 +858,81 @@ const Orders: React.FC = () => {
                             className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold"
                         >
                             Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- WEBHOOK DEBUG MODAL --- */}
+        {isDebugModalOpen && debugPayload && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-amber-100 text-amber-600 p-2 rounded-lg">
+                                <Bug size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-800">Webhook Debug</h3>
+                                <p className="text-xs text-slate-500">Review JSON payload before sending.</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setIsDebugModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                            <X size={24} />
+                        </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-auto bg-slate-900 p-4">
+                        <pre className="text-xs font-mono text-emerald-400 whitespace-pre-wrap">
+                            {JSON.stringify(debugPayload, null, 2)}
+                        </pre>
+                    </div>
+
+                    <div className="p-5 border-t border-slate-100 bg-white rounded-b-xl flex justify-end gap-3">
+                        <button 
+                            onClick={() => {
+                                setIsDebugModalOpen(false);
+                                setCart([]);
+                                setLinkedCustomer(null);
+                                setOrderCustomAmount(null);
+                                setOrderCustomSku(null);
+                                setSplitInputs({ CASH: '', UPI: '', CARD: '' });
+                                setIsRewardApplied(false);
+                                setActiveRewardResult(null);
+                                setActiveTab('HISTORY');
+                            }} 
+                            className="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+                        >
+                            Skip / Cancel
+                        </button>
+                        <button 
+                            onClick={async () => {
+                                setIsSendingWebhook(true);
+                                try {
+                                    await sendWebhookRequest(appSettings.whatsapp_webhook_url, debugPayload);
+                                    alert("Webhook Sent Successfully!");
+                                } catch(e) {
+                                    alert("Failed to send webhook. Check console for details.");
+                                    console.error(e);
+                                }
+                                setIsSendingWebhook(false);
+                                setIsDebugModalOpen(false);
+                                // Proceed to clear cart
+                                setCart([]);
+                                setLinkedCustomer(null);
+                                setOrderCustomAmount(null);
+                                setOrderCustomSku(null);
+                                setSplitInputs({ CASH: '', UPI: '', CARD: '' });
+                                setIsRewardApplied(false);
+                                setActiveRewardResult(null);
+                                setActiveTab('HISTORY');
+                            }}
+                            disabled={isSendingWebhook}
+                            className="px-6 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center gap-2 transition-colors disabled:opacity-70"
+                        >
+                            {isSendingWebhook ? <Loader2 className="animate-spin" size={18}/> : <Send size={18}/>}
+                            Send Webhook
                         </button>
                     </div>
                 </div>

@@ -53,7 +53,7 @@ export interface WebhookContext {
   currentUser?: User | null;
   linkedCustomer?: { name: string; phone: string } | null;
   customAmount?: { amount: number; reason: string } | null;
-  customSku?: { items: { skuId: string; qty: number }[]; reason: string } | null;
+  customSku?: { items: { skuId: string; quantity: number }[]; reason: string } | null;
   paymentMethod: string;
   branchId: string;
   platform: string;
@@ -187,7 +187,7 @@ export const constructWebhookPayload = (context: WebhookContext): WebhookPayload
               const sku = skus.find((s) => s.id === i.skuId);
               return {
                 skuId: i.skuId,
-                quantity: i.qty,
+                quantity: i.quantity,
                 category: sku?.category || 'Unknown',
               };
             }),
