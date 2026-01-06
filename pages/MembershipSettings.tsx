@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Award, Plus, Trash2, Save, Gift, Percent, X, Clock, Repeat } from 'lucide-react';
+import { Award, Plus, Trash2, Save, Gift, Percent, Clock, Repeat, IndianRupee, Utensils } from 'lucide-react';
 import { MembershipRewardType, MembershipRule } from '../types';
 
 const MembershipSettings: React.FC = () => {
@@ -13,7 +13,9 @@ const MembershipSettings: React.FC = () => {
   const [rewardType, setRewardType] = useState<MembershipRewardType>('DISCOUNT_PERCENT');
   const [rewardValue, setRewardValue] = useState<string>('20'); // Stores discount % or SKU ID
   const [desc, setDesc] = useState('');
-  const [validityDays, setValidityDays] = useState<string>('15'); // New Field
+  const [validityDays, setValidityDays] = useState<string>('15');
+  const [minOrderValue, setMinOrderValue] = useState<string>('0');
+  const [rewardVariant, setRewardVariant] = useState<'FULL' | 'HALF'>('FULL');
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +27,9 @@ const MembershipSettings: React.FC = () => {
       value: rewardType === 'DISCOUNT_PERCENT' ? Number(rewardValue) : rewardValue,
       description: desc,
       timeFrameDays: 30, // Default logic
-      validityDays: Number(validityDays) // New Field
+      validityDays: Number(validityDays),
+      minOrderValue: Number(minOrderValue),
+      rewardVariant: rewardType === 'FREE_ITEM' ? rewardVariant : 'FULL'
     });
     
     setIsAdding(false);
@@ -33,6 +37,8 @@ const MembershipSettings: React.FC = () => {
     setTriggerCount(5);
     setDesc('');
     setValidityDays('15');
+    setMinOrderValue('0');
+    setRewardVariant('FULL');
   };
 
   const getRewardLabel = (rule: MembershipRule) => {
@@ -40,7 +46,8 @@ const MembershipSettings: React.FC = () => {
        return `${rule.value}% OFF`;
     } else {
        const sku = skus.find(s => s.id === rule.value);
-       return `Free: ${sku ? sku.name : 'Unknown Item'}`;
+       const variantLabel = rule.rewardVariant === 'HALF' ? '(Half)' : '';
+       return `Free: ${sku ? sku.name : 'Unknown Item'} ${variantLabel}`;
     }
   };
 
@@ -143,6 +150,8 @@ const MembershipSettings: React.FC = () => {
                            <option value="FREE_ITEM">Free Item</option>
                         </select>
                      </div>
+                     
+                     {/* Value Field (Dynamic) */}
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
                            {rewardType === 'DISCOUNT_PERCENT' ? 'Discount %' : 'Select Free Item'}
@@ -170,6 +179,29 @@ const MembershipSettings: React.FC = () => {
                            </select>
                         )}
                      </div>
+
+                     {/* Variant Selector (Only for FREE_ITEM) */}
+                     {rewardType === 'FREE_ITEM' ? (
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                              Variant <Utensils size={12} />
+                           </label>
+                           <select
+                              value={rewardVariant}
+                              onChange={e => setRewardVariant(e.target.value as 'FULL' | 'HALF')}
+                              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                           >
+                              <option value="FULL">Full Plate</option>
+                              <option value="HALF">Half Plate</option>
+                           </select>
+                        </div>
+                     ) : (
+                        // Placeholder for alignment
+                        <div className="hidden md:block"></div>
+                     )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
                            Expiry (Days) <Clock size={12} />
@@ -185,7 +217,23 @@ const MembershipSettings: React.FC = () => {
                         />
                         <p className="text-[10px] text-slate-400 mt-1">0 = No Expiry</p>
                      </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                           Min Order Value <IndianRupee size={12} />
+                        </label>
+                        <input 
+                           type="number" 
+                           min="0"
+                           required
+                           value={minOrderValue}
+                           onChange={e => setMinOrderValue(e.target.value)}
+                           className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                           placeholder="e.g. 200"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">0 = No Minimum</p>
+                     </div>
                   </div>
+
                   <div>
                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
                      <input 
@@ -226,11 +274,18 @@ const MembershipSettings: React.FC = () => {
                      </div>
                      <div>
                         <h4 className="font-bold text-slate-800">{rule.description}</h4>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
                            <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                               {rule.type === 'DISCOUNT_PERCENT' ? 'Discount' : 'Freebie'}
                            </span>
                            <span className="text-xs text-slate-400">Value: {getRewardLabel(rule)}</span>
+                           
+                           {rule.minOrderValue !== undefined && rule.minOrderValue > 0 && (
+                              <span className="text-[10px] text-blue-600 font-medium flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                 <IndianRupee size={10} /> Min: {rule.minOrderValue}
+                              </span>
+                           )}
+
                            {rule.validityDays && rule.validityDays > 0 && (
                               <span className="text-[10px] text-orange-600 font-medium flex items-center gap-1 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
                                  <Clock size={10} /> Valid {rule.validityDays} Days

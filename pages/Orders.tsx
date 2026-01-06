@@ -295,6 +295,14 @@ const Orders: React.FC = () => {
       
       const { rule } = activeRewardResult;
 
+      // 1. Check Minimum Order Value (MOV)
+      if (rule.minOrderValue && rule.minOrderValue > 0) {
+          if (cartTotal < rule.minOrderValue) {
+              alert(`This coupon requires a minimum order value of ₹${rule.minOrderValue}. Current total: ₹${cartTotal}`);
+              return;
+          }
+      }
+
       if (rule.type === 'DISCOUNT_PERCENT') {
           const discountVal = (cartTotal * (Number(rule.value) / 100));
           // Apply as negative custom amount (or modify existing custom amount logic)
@@ -307,7 +315,8 @@ const Orders: React.FC = () => {
           const menuItem = menuItems.find(m => m.ingredients && m.ingredients[0]?.skuId === String(rule.value));
           
           if (menuItem) {
-              addToCart(menuItem, 'FULL', 0); // Add with price 0
+              // Respect Variant (Full/Half)
+              addToCart(menuItem, rule.rewardVariant || 'FULL', 0); // Add with price 0
           } else {
               alert("Configuration Error: Cannot find a menu item for the reward SKU.");
               return;

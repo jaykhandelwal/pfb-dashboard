@@ -204,6 +204,10 @@ export interface MembershipRule {
   description: string;
   timeFrameDays?: number; // Optional: "Within 30 days" (Legacy)
   validityDays?: number; // New: Offer expires X days after previous order
+  
+  // New Fields
+  minOrderValue?: number; // Minimum cart amount required
+  rewardVariant?: 'FULL' | 'HALF'; // Only for FREE_ITEM type
 }
 
 export interface CustomerCoupon {

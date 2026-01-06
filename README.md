@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS membership_rules (
     value TEXT, 
     description TEXT,
     validity_days INTEGER DEFAULT 0,
+    min_order_value NUMERIC DEFAULT 0,
+    reward_variant TEXT DEFAULT 'FULL', -- 'FULL' or 'HALF'
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -141,9 +143,9 @@ WHEN (NEW.customer_id IS NOT NULL)
 EXECUTE FUNCTION handle_new_order_loyalty();
 ```
 
-### 3. Create the API Endpoint Function (The Gateway)
+### 3. Create the API Endpoint Function (Optional Helper)
 
-Run this SQL to create a secure, sorted endpoint for your Android App.
+Run this SQL if you want to use **Option 1** (REST API Style) for the Android App.
 
 ```sql
 -- Create a function that acts as a REST Endpoint
@@ -155,6 +157,8 @@ RETURNS TABLE (
   reward_type TEXT,
   reward_value TEXT,
   description TEXT,
+  min_order_value NUMERIC,
+  reward_variant TEXT,
   created_at TIMESTAMPTZ
 ) 
 LANGUAGE plpgsql
@@ -168,6 +172,8 @@ BEGIN
     mr.type,
     mr.value,
     mr.description,
+    mr.min_order_value,
+    mr.reward_variant,
     cc.created_at
   FROM customer_coupons cc
   JOIN membership_rules mr ON cc.rule_id = mr.id
@@ -183,10 +189,10 @@ $$;
 
 ## 📱 Android Integration Guide
 
-This section is for the Android Developer.
+We provide **two ways** for the Android developer to fetch coupons. Choose the one that fits your architecture best.
 
-### 1. Fetching Coupons (The Endpoint)
-Instead of writing complex SQL, you can now call a simple RPC function endpoint.
+### Option 1: REST API (RPC Function) - **Recommended**
+Use this if you prefer a clean HTTP request without writing SQL in the app.
 
 **Endpoint URL:**  
 `POST https://<your-supabase-url>.supabase.co/rest/v1/rpc/get_available_coupons`
@@ -204,8 +210,35 @@ Content-Type: application/json
 }
 ```
 
-### 2. The JSON Response
-The API will return an array of active coupons, **sorted from oldest to newest**.
+---
+
+### Option 2: Direct SQL (Supabase Client)
+Use this if you are already using the Supabase SDK in your Android app and prefer raw queries.
+
+Run this **JOIN query** to get the coupon details:
+
+```sql
+SELECT 
+  cc.id AS coupon_id,
+  cc.status,
+  cc.expires_at,
+  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT'
+  mr.value AS reward_value,  -- e.g. '20' (for 20%) or 'sku-1' (for item ID)
+  mr.description,            -- e.g. 'Get 20% Off on your 5th Order!'
+  mr.min_order_value,        -- e.g. 200 (Minimum cart total required)
+  mr.reward_variant          -- e.g. 'FULL' or 'HALF' (Only relevant for FREE_ITEM)
+FROM customer_coupons cc
+JOIN membership_rules mr ON cc.rule_id = mr.id
+WHERE cc.customer_id = :phone_number_param
+  AND cc.status = 'ACTIVE'
+  AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+ORDER BY cc.created_at ASC;
+```
+
+---
+
+### The JSON Response (Identical for Both Options)
+The app will receive an array of active coupons, sorted oldest to newest.
 
 ```json
 [
@@ -216,7 +249,8 @@ The API will return an array of active coupons, **sorted from oldest to newest**
     "reward_type": "DISCOUNT_PERCENT",
     "reward_value": "20",
     "description": "Get 20% Off on your 5th Order!",
-    "created_at": "2024-01-15T10:00:00+00:00"
+    "min_order_value": 0,
+    "reward_variant": "FULL"
   },
   {
     "coupon_id": "f9e8d7c6...",
@@ -225,18 +259,20 @@ The API will return an array of active coupons, **sorted from oldest to newest**
     "reward_type": "FREE_ITEM",
     "reward_value": "sku-steam-veg",
     "description": "Free Plate on 10th Order!",
-    "created_at": "2024-02-01T14:30:00+00:00"
+    "min_order_value": 200,
+    "reward_variant": "HALF"
   }
 ]
 ```
 
-### 3. Logic Handling
-*   **Oldest First:** The array is already sorted. Display the first item as the "Primary Reward".
-*   **reward_type**: 
+### Logic Handling
+1.  **Oldest First:** Display first item as Primary Reward.
+2.  **reward_type**: 
     *   `DISCOUNT_PERCENT`: Calculate percentage off total.
-    *   `FREE_ITEM`: Add specific item (`reward_value` is the SKU ID) for free.
+    *   `FREE_ITEM`: Add item (`reward_value` is SKU ID) for free. Check `reward_variant` ('FULL'/'HALF') to decide portion size.
+3.  **min_order_value**: Check if cart subtotal >= this value before allowing redemption.
 
-### 4. Redeeming
+### Redeeming
 When the order is placed, send the `coupon_id` back to mark it as used:
 
 ```sql

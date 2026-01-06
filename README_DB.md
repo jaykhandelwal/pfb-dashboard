@@ -23,6 +23,13 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_rules' AND column_name = 'validity_days') THEN
         ALTER TABLE membership_rules ADD COLUMN validity_days INTEGER DEFAULT 365;
     END IF;
+    -- New Columns for Enhanced Coupons
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_rules' AND column_name = 'min_order_value') THEN
+        ALTER TABLE membership_rules ADD COLUMN min_order_value NUMERIC DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_rules' AND column_name = 'reward_variant') THEN
+        ALTER TABLE membership_rules ADD COLUMN reward_variant TEXT DEFAULT 'FULL';
+    END IF;
 END $$;
 
 -- B. Create Coupons Table (if not exists)
@@ -129,6 +136,9 @@ EXECUTE FUNCTION handle_new_order_loyalty();
 -- ==========================================
 
 -- Function for Android App to fetch coupons simply
+-- Drops old version first to update return signature
+DROP FUNCTION IF EXISTS get_available_coupons;
+
 CREATE OR REPLACE FUNCTION get_available_coupons(phone_number TEXT)
 RETURNS TABLE (
   coupon_id TEXT,
@@ -137,6 +147,8 @@ RETURNS TABLE (
   reward_type TEXT,
   reward_value TEXT,
   description TEXT,
+  min_order_value NUMERIC,
+  reward_variant TEXT,
   created_at TIMESTAMPTZ
 ) 
 LANGUAGE plpgsql
@@ -150,6 +162,8 @@ BEGIN
     mr.type,
     mr.value,
     mr.description,
+    mr.min_order_value,
+    mr.reward_variant,
     cc.created_at
   FROM customer_coupons cc
   JOIN membership_rules mr ON cc.rule_id = mr.id
@@ -334,6 +348,8 @@ The Single Source of Truth for revenue.
 - `description` (text).
 - `time_frame_days` (int).
 - `validity_days` (int).
+- `min_order_value` (numeric). **(New)**
+- `reward_variant` (text). **(New)**
 - `created_at` (timestamptz).
 
 ### `customer_coupons` (New)

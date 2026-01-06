@@ -166,7 +166,9 @@ const mapRuleFromDB = (r: any): MembershipRule => ({
   value: r.value,
   description: r.description,
   timeFrameDays: Number(r.time_frame_days || r.timeFrameDays || 30),
-  validityDays: Number(r.validity_days || r.validityDays || 0)
+  validityDays: Number(r.validity_days || r.validityDays || 0),
+  minOrderValue: Number(r.min_order_value || r.minOrderValue || 0),
+  rewardVariant: r.reward_variant || r.rewardVariant || 'FULL'
 });
 
 const mapRuleToDB = (r: MembershipRule) => ({
@@ -176,7 +178,9 @@ const mapRuleToDB = (r: MembershipRule) => ({
   value: r.value,
   description: r.description,
   time_frame_days: r.timeFrameDays,
-  validity_days: r.validityDays
+  validity_days: r.validityDays,
+  min_order_value: r.minOrderValue,
+  reward_variant: r.rewardVariant
 });
 
 const mapCouponFromDB = (c: any): CustomerCoupon => ({
