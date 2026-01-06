@@ -143,35 +143,66 @@ EXECUTE FUNCTION handle_new_order_loyalty();
 
 ---
 
-## 📱 Android Integration: The "Lazy" Way
+## 📱 Android Integration Guide
 
-Thanks to the trigger above, the Android app logic is now extremely simple. You no longer need to calculate cycles or order counts.
+This section is for the Android Developer.
 
-### 1. Fetching Coupons
-When a user is added to the cart, simply query the `customer_coupons` table.
+### 1. Fetching Coupons (The "JOIN" Query)
+When a user is added to the cart, the Android app must run this **exact query** to get the coupon details (Description, Type, and Value).
 
 ```sql
-SELECT * FROM customer_coupons 
-WHERE customer_id = 'PHONE_NUMBER' 
-  AND status = 'ACTIVE' 
-  AND expires_at > NOW();
+SELECT 
+  cc.id AS coupon_id,
+  cc.status,
+  cc.expires_at,
+  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT'
+  mr.value AS reward_value,  -- e.g. '20' (for 20%) or 'sku-1' (for item ID)
+  mr.description             -- e.g. 'Get 20% Off on your 5th Order!'
+FROM customer_coupons cc
+JOIN membership_rules mr ON cc.rule_id = mr.id
+WHERE cc.customer_id = :phone_number_param
+  AND cc.status = 'ACTIVE'
+  AND cc.expires_at > NOW();
 ```
 
-*   If rows are returned, the customer has rewards available.
-*   Display them to the cashier.
+### 2. Handling the Response
+The database will return a JSON array like this. The logic is driven by `reward_type`.
 
-### 2. Redeeming Coupons
-When the cashier applies a coupon to the cart, store the `coupon_id`.
-When the order is successfully placed, update that coupon status.
+**Scenario A: Percentage Discount**
+```json
+[
+  {
+    "coupon_id": "uuid-1234...",
+    "reward_type": "DISCOUNT_PERCENT",
+    "reward_value": "20", 
+    "description": "20% Off Loyalty Reward"
+  }
+]
+```
+*   **Action:** Apply `20%` discount to the cart subtotal.
+
+**Scenario B: Free Item**
+```json
+[
+  {
+    "coupon_id": "uuid-5678...",
+    "reward_type": "FREE_ITEM",
+    "reward_value": "sku-steam-veg", 
+    "description": "Free Veg Steam Momos"
+  }
+]
+```
+*   **Action:** Add the item with ID `sku-steam-veg` to the cart with `price = 0`.
+
+### 3. Redeeming Coupons
+When the order is successfully placed, send the `coupon_id` back to the server to mark it as used.
 
 ```sql
 -- Run this when order is successful
 UPDATE customer_coupons 
 SET status = 'USED' 
-WHERE id = 'THE_COUPON_ID';
+WHERE id = :coupon_id_param;
 ```
-
-*(Note: The `orders` insert will trigger the generation of the NEXT coupon automatically)*
 
 ---
 
