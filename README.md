@@ -209,7 +209,7 @@ Content-Type: application/json
   "phone_number": "9876543210"
 }
 ```
-
+ 
 ---
 
 ### Option 2: Direct SQL (Supabase Client)
