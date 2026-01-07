@@ -8,7 +8,7 @@ import { getLocalISOString } from '../constants';
 import { sendWhatsAppInvoice, WebhookContext, constructWebhookPayload, WebhookPayload, sendWebhookRequest } from '../services/webhookService';
 
 const Orders: React.FC = () => {
-  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward } = useStore();
+  const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward, customerCoupons } = useStore();
   const { currentUser } = useAuth(); 
   const [activeTab, setActiveTab] = useState<'HISTORY' | 'NEW_ORDER'>('HISTORY');
   
@@ -269,6 +269,8 @@ const Orders: React.FC = () => {
           return;
       }
 
+      const redeemedCouponId = isRewardApplied && activeRewardResult?.coupon ? activeRewardResult.coupon.id : undefined;
+
       // Prepare Payload
       const newOrder: Order = {
           id: `ord-${Date.now()}`,
@@ -290,11 +292,12 @@ const Orders: React.FC = () => {
           customAmount: orderCustomAmount?.amount,
           customAmountReason: orderCustomAmount?.reason,
           customSkuItems: orderCustomSku?.items,
-          customSkuReason: orderCustomSku?.reason
+          customSkuReason: orderCustomSku?.reason,
+          // redeemedCouponId removed from Order Type
       };
 
-      // Save Order
-      await addOrder(newOrder, isRewardApplied && activeRewardResult?.coupon ? activeRewardResult.coupon.id : undefined);
+      // Save Order (Pass redeemedCouponId separately to link it in coupons table)
+      await addOrder(newOrder, redeemedCouponId);
 
       // Webhook Trigger (WhatsApp Invoice)
       if (appSettings.enable_whatsapp_webhook && appSettings.whatsapp_webhook_url) {
@@ -338,7 +341,11 @@ const Orders: React.FC = () => {
   // -- RENDER HELPERS --
   
   // NEW: Render History Card
-  const renderOrderCard = (order: Order) => (
+  const renderOrderCard = (order: Order) => {
+    // Check for used coupon via lookup
+    const usedCoupon = customerCoupons.find(c => c.redeemedOrderId === order.id);
+
+    return (
     <div key={order.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3 relative group">
         <div className="flex justify-between items-start">
             <div>
@@ -361,6 +368,11 @@ const Orders: React.FC = () => {
                     </div>
                 ))}
                 {order.customAmount ? <div className="text-slate-500 italic">+ Custom Charge (₹{order.customAmount})</div> : ''}
+                {usedCoupon && (
+                    <div className="flex items-center gap-1 text-[10px] text-pink-600 font-bold mt-1">
+                        <Gift size={10} /> Coupon Applied
+                    </div>
+                )}
             </div>
         </div>
 
@@ -380,7 +392,7 @@ const Orders: React.FC = () => {
             </div>
         </div>
     </div>
-  );
+  )};
 
   const renderPosItem = (item: MenuItem) => {
       const hasHalf = item.halfPrice !== undefined;

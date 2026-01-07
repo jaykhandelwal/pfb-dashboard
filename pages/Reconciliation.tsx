@@ -67,13 +67,14 @@ const Reconciliation: React.FC = () => {
     setIsProcessing(true);
     try {
       const reader = new FileReader();
-      reader.onloadend = async (event) => {
-        // Access result via event.target to ensure proper typing and avoid closure issues
-        const result = event.target?.result;
+      reader.onloadend = async () => {
+        // Access result directly from reader to ensure proper typing
+        const result = reader.result;
         
         if (typeof result === 'string') {
+            const base64String: string = result;
             try {
-              const parsedData = await parseSalesReportImage(result, skus);
+              const parsedData = await parseSalesReportImage(base64String, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {

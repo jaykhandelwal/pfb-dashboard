@@ -163,6 +163,8 @@ export interface Order {
   // Updated: Allow multiple custom SKUs per order
   customSkuItems?: { skuId: string; quantity: number }[];
   customSkuReason?: string;
+  
+  // NOTE: redeemedCouponId REMOVED. Relationship is stored on the coupon itself.
 }
 
 export interface DailyReportItem {
@@ -217,6 +219,9 @@ export interface CustomerCoupon {
   status: 'ACTIVE' | 'USED' | 'EXPIRED';
   expiresAt: string; // ISO Date
   createdAt: string; // ISO Date
+  
+  // New: Link to the order where it was used
+  redeemedOrderId?: string;
 }
 
 export interface RewardResult {

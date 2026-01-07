@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Contact, Search, Crown, Phone, Calendar, IndianRupee, History, X, Clock, ShoppingBag } from 'lucide-react';
+import { Contact, Search, Crown, Phone, Calendar, IndianRupee, History, X, Clock, ShoppingBag, Gift } from 'lucide-react';
 import { Customer } from '../types';
 
 const CustomerManagement: React.FC = () => {
-  const { customers, membershipRules, orders, skus, branches } = useStore();
+  const { customers, membershipRules, orders, skus, branches, customerCoupons } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -191,7 +191,9 @@ const CustomerManagement: React.FC = () => {
                      </div>
                   ) : (
                      <div className="space-y-4">
-                        {customerHistory.map(order => (
+                        {customerHistory.map(order => {
+                           const usedCoupon = customerCoupons.find(c => c.redeemedOrderId === order.id);
+                           return (
                            <div key={order.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
                               <div className="flex justify-between items-start mb-3 pb-3 border-b border-slate-50">
                                  <div>
@@ -223,14 +225,19 @@ const CustomerManagement: React.FC = () => {
                                  ))}
                               </ul>
                               
-                              {(order.customAmount || (order.customSkuItems && order.customSkuItems.length > 0)) && (
+                              {(order.customAmount || (order.customSkuItems && order.customSkuItems.length > 0) || usedCoupon) && (
                                  <div className="mt-3 pt-2 border-t border-slate-50 text-xs text-slate-500">
                                     {order.customAmount && <div className="flex justify-between"><span>Custom Charge</span><span>₹{order.customAmount}</span></div>}
                                     {order.customSkuItems?.length && <div>+ {order.customSkuItems.length} raw items</div>}
+                                    {usedCoupon && (
+                                        <div className="flex justify-between items-center text-pink-600 font-bold mt-1">
+                                            <span className="flex items-center gap-1"><Gift size={12}/> Coupon Used</span>
+                                        </div>
+                                    )}
                                  </div>
                               )}
                            </div>
-                        ))}
+                        )})}
                      </div>
                   )}
                </div>

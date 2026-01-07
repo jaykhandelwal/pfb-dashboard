@@ -80,6 +80,7 @@ const mapOrderFromDB = (o: any): Order => ({
   customAmountReason: o.custom_amount_reason || o.customAmountReason,
   customSkuItems: o.custom_sku_items || o.customSkuItems,
   customSkuReason: o.custom_sku_reason || o.customSkuReason
+  // No redeemedCouponId in Order table
 });
 
 const mapOrderToDB = (o: Order) => ({
@@ -99,6 +100,7 @@ const mapOrderToDB = (o: Order) => ({
   custom_amount_reason: o.customAmountReason,
   custom_sku_items: o.customSkuItems,
   custom_sku_reason: o.customSkuReason
+  // No redeemed_coupon_id sent to DB
 });
 
 const mapSkuFromDB = (s: any): SKU => {
@@ -189,7 +191,8 @@ const mapCouponFromDB = (c: any): CustomerCoupon => ({
   ruleId: c.rule_id || c.ruleId,
   status: c.status,
   expiresAt: c.expires_at || c.expiresAt,
-  createdAt: c.created_at || c.createdAt
+  createdAt: c.created_at || c.createdAt,
+  redeemedOrderId: c.redeemed_order_id || c.redeemedOrderId
 });
 
 const mapAttendanceFromDB = (a: any): AttendanceRecord => ({
@@ -872,10 +875,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             await supabase.from('orders').insert(mapOrderToDB(order));
 
-            // Mark coupon as used in DB
+            // Mark coupon as used in DB and link it to this order (stored on coupon table only)
             if (redeemedCouponId) {
                 await supabase.from('customer_coupons')
-                    .update({ status: 'USED' })
+                    .update({ 
+                      status: 'USED',
+                      redeemed_order_id: order.id // Link the order ID on the coupon
+                    })
                     .eq('id', redeemedCouponId);
             }
         } catch (e) {
@@ -924,11 +930,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Mark as USED locally
     if (redeemedCouponId) {
         updatedCoupons = updatedCoupons.map(c => 
-            c.id === redeemedCouponId ? { ...c, status: 'USED' } : c
+            c.id === redeemedCouponId 
+              ? { ...c, status: 'USED', redeemedOrderId: order.id } 
+              : c
         );
     }
 
-    // If Offline mode, simulate generation
+    // If Offline mode, simulate generation of NEW coupons
     if (!isSupabaseConfigured() && order.customerId && membershipRules.length > 0) {
         // Calculate next target (Current + 1)
         const nextOrderCount = currentCustomerOrderCount + 1;
