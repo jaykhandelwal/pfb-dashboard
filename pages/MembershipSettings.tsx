@@ -1,17 +1,17 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Award, Plus, Trash2, Save, Gift, Percent, Clock, Repeat, IndianRupee, Utensils } from 'lucide-react';
+import { Award, Plus, Trash2, Save, Gift, Percent, Clock, Repeat, IndianRupee, Utensils, AlertTriangle } from 'lucide-react';
 import { MembershipRewardType, MembershipRule } from '../types';
 
 const MembershipSettings: React.FC = () => {
-  const { membershipRules, addMembershipRule, deleteMembershipRule, skus } = useStore();
+  const { membershipRules, addMembershipRule, deleteMembershipRule, menuItems } = useStore();
   const [isAdding, setIsAdding] = useState(false);
   
   // New Rule Form State
   const [triggerCount, setTriggerCount] = useState<number>(5);
   const [rewardType, setRewardType] = useState<MembershipRewardType>('DISCOUNT_PERCENT');
-  const [rewardValue, setRewardValue] = useState<string>('20'); // Stores discount % or SKU ID
+  const [rewardValue, setRewardValue] = useState<string>('20'); // Stores discount % or Menu Item ID
   const [desc, setDesc] = useState('');
   const [validityDays, setValidityDays] = useState<string>('15');
   const [minOrderValue, setMinOrderValue] = useState<string>('0');
@@ -45,9 +45,19 @@ const MembershipSettings: React.FC = () => {
     if (rule.type === 'DISCOUNT_PERCENT') {
        return `${rule.value}% OFF`;
     } else {
-       const sku = skus.find(s => s.id === rule.value);
+       const item = menuItems.find(m => m.id === rule.value);
        const variantLabel = rule.rewardVariant === 'HALF' ? '(Half)' : '';
-       return `Free: ${sku ? sku.name : 'Unknown Item'} ${variantLabel}`;
+       
+       if (item) {
+           return `Free: ${item.name} ${variantLabel}`;
+       } else {
+           // Fallback / Warning for Legacy Data (SKU ID)
+           return (
+               <span className="text-red-500 font-bold flex items-center gap-1">
+                   <AlertTriangle size={12} /> Invalid Item ({rule.value})
+               </span>
+           );
+       }
     }
   };
 
@@ -175,7 +185,7 @@ const MembershipSettings: React.FC = () => {
                               onChange={e => setRewardValue(e.target.value)}
                               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
                            >
-                              {skus.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                              {menuItems.map(m => <option key={m.id} value={m.id}>{m.name} (₹{m.price})</option>)}
                            </select>
                         )}
                      </div>

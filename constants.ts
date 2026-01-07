@@ -1,3 +1,4 @@
+
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
 export const INITIAL_BRANCHES: Branch[] = [
@@ -85,7 +86,7 @@ export const INITIAL_MEMBERSHIP_RULES: MembershipRule[] = [
     id: 'rule-2', 
     triggerOrderCount: 10, 
     type: 'FREE_ITEM', 
-    value: 'sku-1', 
+    value: 'menu-1', 
     description: 'Free Veg Steam Plate on your 10th order!' 
   }
 ];

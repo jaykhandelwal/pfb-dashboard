@@ -53,11 +53,11 @@ CREATE TABLE IF NOT EXISTS membership_rules (
     id TEXT PRIMARY KEY,
     trigger_order_count INTEGER,
     type TEXT, -- 'DISCOUNT_PERCENT' or 'FREE_ITEM'
-    value TEXT, 
+    value TEXT, -- Stores Discount % OR Menu Item ID
     description TEXT,
     validity_days INTEGER DEFAULT 0,
     min_order_value NUMERIC DEFAULT 0,
-    reward_variant TEXT DEFAULT 'FULL', -- 'FULL' or 'HALF'
+    reward_variant TEXT DEFAULT 'FULL', -- 'FULL' or 'HALF' (New Column)
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -222,11 +222,11 @@ SELECT
   cc.id AS coupon_id,
   cc.status,
   cc.expires_at,
-  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT'
-  mr.value AS reward_value,  -- e.g. '20' (for 20%) or 'sku-1' (for item ID)
+  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT' or 'FREE_ITEM'
+  mr.value AS reward_value,  -- e.g. '20' (%) OR 'menu-123' (Menu Item ID)
   mr.description,            -- e.g. 'Get 20% Off on your 5th Order!'
   mr.min_order_value,        -- e.g. 200 (Minimum cart total required)
-  mr.reward_variant          -- e.g. 'FULL' or 'HALF' (Only relevant for FREE_ITEM)
+  mr.reward_variant          -- e.g. 'FULL' or 'HALF' (Critical for FREE_ITEM)
 FROM customer_coupons cc
 JOIN membership_rules mr ON cc.rule_id = mr.id
 WHERE cc.customer_id = :phone_number_param
@@ -257,8 +257,8 @@ The app will receive an array of active coupons, sorted oldest to newest.
     "status": "ACTIVE",
     "expires_at": "2025-01-15T23:59:59+00:00",
     "reward_type": "FREE_ITEM",
-    "reward_value": "sku-steam-veg",
-    "description": "Free Plate on 10th Order!",
+    "reward_value": "menu-veg-steam",
+    "description": "Free Veg Steam Plate on 10th Order!",
     "min_order_value": 200,
     "reward_variant": "HALF"
   }
@@ -269,7 +269,10 @@ The app will receive an array of active coupons, sorted oldest to newest.
 1.  **Oldest First:** Display first item as Primary Reward.
 2.  **reward_type**: 
     *   `DISCOUNT_PERCENT`: Calculate percentage off total.
-    *   `FREE_ITEM`: Add item (`reward_value` is SKU ID) for free. Check `reward_variant` ('FULL'/'HALF') to decide portion size.
+    *   `FREE_ITEM`: `reward_value` is the **Menu Item ID**.
+        *   **Action:** Add the product with this ID to the cart.
+        *   **Price:** Set price to 0.
+        *   **Variant:** Check `reward_variant` ('FULL' or 'HALF') to select the correct portion size.
 3.  **min_order_value**: Check if cart subtotal >= this value before allowing redemption.
 
 ### Redeeming

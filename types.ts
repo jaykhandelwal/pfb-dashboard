@@ -200,7 +200,7 @@ export interface MembershipRule {
   id: string;
   triggerOrderCount: number; // e.g. 5th order, 10th order
   type: MembershipRewardType;
-  value: string | number; // e.g. 20 (percent) or 'sku-1' (item ID)
+  value: string | number; // e.g. 20 (percent) or 'menu-item-id' (Menu Item ID)
   description: string;
   timeFrameDays?: number; // Optional: "Within 30 days" (Legacy)
   validityDays?: number; // New: Offer expires X days after previous order

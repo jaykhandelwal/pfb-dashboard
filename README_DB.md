@@ -349,7 +349,7 @@ The Single Source of Truth for revenue.
 - `time_frame_days` (int).
 - `validity_days` (int).
 - `min_order_value` (numeric). **(New)**
-- `reward_variant` (text). **(New)**
+- `reward_variant` (text). **(New: 'FULL' | 'HALF')**
 - `created_at` (timestamptz).
 
 ### `customer_coupons` (New)

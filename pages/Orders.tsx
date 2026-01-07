@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { SalesPlatform, OrderItem, MenuItem, RewardResult, Order } from '../types';
-import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCart, IndianRupee, X, Box, Trash2, ChevronRight, User, AlertCircle, Phone, Tag, Clock, Send, Bug, Loader2 } from 'lucide-react';
+import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCart, IndianRupee, X, Box, Trash2, ChevronRight, User, AlertCircle, Phone, Tag, Clock, Send, Bug, Loader2, Gift } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 import { sendWhatsAppInvoice, WebhookContext, constructWebhookPayload, WebhookPayload, sendWebhookRequest } from '../services/webhookService';
 
@@ -223,6 +223,34 @@ const Orders: React.FC = () => {
      const reward = checkCustomerReward(customerId);
      setActiveRewardResult(reward);
      setIsRewardApplied(false); // Reset application status when linking new customer
+  };
+
+  const applyReward = () => {
+    if(!activeRewardResult) return;
+    const { rule } = activeRewardResult;
+    
+    if(rule.type === 'FREE_ITEM') {
+        let item = menuItems.find(m => m.id === rule.value);
+        
+        // --- SMART FALLBACK FOR LEGACY DATA ---
+        // If the rule still points to an old SKU ID (not a Menu ID),
+        // try to find a menu item that contains this SKU.
+        if (!item) {
+            console.warn(`Legacy Reward Detected: Rule value '${rule.value}' not found in Menu. Attempting SKU lookup...`);
+            item = menuItems.find(m => m.ingredients.some(i => i.skuId === rule.value));
+        }
+        // --------------------------------------
+
+        if(item) {
+            addToCart(item, rule.rewardVariant || 'FULL', 0);
+            setIsRewardApplied(true);
+        } else {
+            alert("Reward item configuration invalid. Please check Membership Settings.");
+        }
+    } else if (rule.type === 'DISCOUNT_PERCENT') {
+        alert(`Please apply a custom discount of ${rule.value}% manually.`);
+        setIsRewardApplied(true);
+    }
   };
 
   const handleCheckout = async () => {
@@ -545,6 +573,22 @@ const Orders: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Reward Banner */}
+                    {activeRewardResult && !isRewardApplied && (
+                        <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-3 mx-4 mt-4 rounded-lg shadow-md flex justify-between items-center animate-fade-in">
+                            <div>
+                                <p className="text-xs font-bold uppercase text-pink-100 flex items-center gap-1"><Gift size={12}/> Reward Available</p>
+                                <p className="font-bold text-sm truncate w-40">{activeRewardResult.rule.description}</p>
+                            </div>
+                            <button 
+                                onClick={applyReward}
+                                className="bg-white text-pink-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-pink-50 transition-colors shadow-sm"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    )}
+
                     {/* Cart Items */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">
                         {cart.length === 0 && !orderCustomAmount && !orderCustomSku ? (
@@ -555,18 +599,30 @@ const Orders: React.FC = () => {
                         ) : (
                             <div className="space-y-3">
                                 {cart.map(item => (
-                                    <div key={item.id} className="flex justify-between items-start text-sm">
+                                    <div key={item.id} className={`flex justify-between items-start text-sm ${item.price === 0 ? 'bg-pink-50 border border-pink-100 p-2 rounded-lg' : ''}`}>
                                         <div className="flex-1">
-                                            <p className="font-medium text-slate-700">{item.name} {item.variant === 'HALF' && <span className="text-xs text-slate-400">(Half)</span>}</p>
+                                            <p className={`font-medium ${item.price === 0 ? 'text-pink-700' : 'text-slate-700'}`}>
+                                                {item.name} 
+                                                {item.variant === 'HALF' && <span className="text-xs opacity-70 ml-1">(Half)</span>}
+                                                {item.price === 0 && <span className="text-[10px] bg-pink-100 text-pink-600 px-1 rounded ml-2 font-bold uppercase">Free</span>}
+                                            </p>
                                             <p className="text-xs text-slate-400">₹{item.price} x {item.quantity}</p>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50">
-                                                <button onClick={() => updateCartQty(item.id, -1)} className="px-2 py-1 hover:bg-slate-200 rounded-l-lg text-slate-500">-</button>
-                                                <span className="px-2 font-bold text-slate-700 text-xs">{item.quantity}</span>
-                                                <button onClick={() => updateCartQty(item.id, 1)} className="px-2 py-1 hover:bg-slate-200 rounded-r-lg text-slate-500">+</button>
-                                            </div>
+                                            {item.price !== 0 && (
+                                                <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50">
+                                                    <button onClick={() => updateCartQty(item.id, -1)} className="px-2 py-1 hover:bg-slate-200 rounded-l-lg text-slate-500">-</button>
+                                                    <span className="px-2 font-bold text-slate-700 text-xs">{item.quantity}</span>
+                                                    <button onClick={() => updateCartQty(item.id, 1)} className="px-2 py-1 hover:bg-slate-200 rounded-r-lg text-slate-500">+</button>
+                                                </div>
+                                            )}
                                             <p className="font-bold text-slate-800 w-12 text-right">₹{item.price * item.quantity}</p>
+                                            {item.price === 0 && (
+                                                <button onClick={() => {
+                                                    setCart(cart.filter(i => i.id !== item.id));
+                                                    setIsRewardApplied(false);
+                                                }} className="text-red-400 hover:text-red-600"><X size={14}/></button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
