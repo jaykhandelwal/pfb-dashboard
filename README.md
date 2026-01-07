@@ -31,255 +31,86 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 
 ---
 
-## 🔌 Database Integration & Triggers
+## 📱 Android Integration Guide (For Developers)
 
-To enable the "Set and Forget" loyalty system, you must run the following SQL in your Supabase SQL Editor. This sets up the automatic coupon generation logic AND the API endpoint for external apps.
+This section details how the Android App should interact with the Supabase Database.
 
-### 1. Create Core Tables
+### 1. Fetching Available Coupons
+To show rewards to a customer (e.g., "Free Momos Available"), call this RPC function.
 
-```sql
--- Existing tables (ensure these exist)
-CREATE TABLE IF NOT EXISTS customers (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    phone_number TEXT,
-    total_spend NUMERIC DEFAULT 0,
-    order_count INTEGER DEFAULT 0,
-    joined_at TIMESTAMPTZ DEFAULT NOW(),
-    last_order_date TEXT
-);
+**Endpoint:** `POST /rest/v1/rpc/get_available_coupons`
+**Body:** `{ "phone_number": "9876543210" }`
 
-CREATE TABLE IF NOT EXISTS membership_rules (
-    id TEXT PRIMARY KEY,
-    trigger_order_count INTEGER,
-    type TEXT, -- 'DISCOUNT_PERCENT' or 'FREE_ITEM'
-    value TEXT, -- Stores Discount % OR Menu Item ID
-    description TEXT,
-    validity_days INTEGER DEFAULT 0,
-    min_order_value NUMERIC DEFAULT 0,
-    reward_variant TEXT DEFAULT 'FULL', -- 'FULL' or 'HALF' (New Column)
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- NEW: Coupon Table for Android/Web consumption
-CREATE TABLE IF NOT EXISTS customer_coupons (
-    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    customer_id TEXT REFERENCES customers(id),
-    rule_id TEXT REFERENCES membership_rules(id),
-    status TEXT DEFAULT 'ACTIVE', -- 'ACTIVE', 'USED', 'EXPIRED'
-    expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE customer_coupons ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Enable access to all users" ON customer_coupons FOR ALL USING (true) WITH CHECK (true);
-```
-
-### 2. Create the Logic Trigger (The Brain)
-
-This trigger runs *automatically* whenever a new order is inserted into the `orders` table. It handles the math so your apps don't have to.
-
-```sql
--- Function to handle loyalty logic on new order
-CREATE OR REPLACE FUNCTION handle_new_order_loyalty() 
-RETURNS TRIGGER AS $$
-DECLARE
-    curr_count INTEGER;
-    next_count INTEGER;
-    max_cycle INTEGER;
-    cycle_pos INTEGER;
-    rule_record RECORD;
-    expiry_date TIMESTAMPTZ;
-BEGIN
-    -- 1. Update Customer Stats
-    UPDATE customers 
-    SET order_count = order_count + 1, 
-        total_spend = total_spend + NEW.total_amount,
-        last_order_date = NEW.date
-    WHERE id = NEW.customer_id
-    RETURNING order_count INTO curr_count;
-
-    -- If customer didn't exist (edge case), create them
-    IF curr_count IS NULL THEN
-        INSERT INTO customers (id, name, phone_number, order_count, total_spend, last_order_date)
-        VALUES (NEW.customer_id, NEW.customer_name, NEW.customer_id, 1, NEW.total_amount, NEW.date)
-        RETURNING 1 INTO curr_count;
-    END IF;
-
-    -- 2. Calculate Next Target
-    next_count := curr_count + 1;
-
-    -- 3. Determine Cyclical Position
-    SELECT MAX(trigger_order_count) INTO max_cycle FROM membership_rules;
-    
-    IF max_cycle IS NOT NULL AND max_cycle > 0 THEN
-        cycle_pos := next_count % max_cycle;
-        IF cycle_pos = 0 THEN cycle_pos := max_cycle; END IF;
-
-        -- 4. Check for Matching Rule
-        SELECT * INTO rule_record FROM membership_rules WHERE trigger_order_count = cycle_pos LIMIT 1;
-
-        -- 5. If Rule Found, Create Coupon
-        IF rule_record IS NOT NULL THEN
-            -- Calculate expiry (Default 1 year if not set)
-            expiry_date := NOW() + (COALESCE(rule_record.validity_days, 365) || ' days')::INTERVAL;
-
-            INSERT INTO customer_coupons (customer_id, rule_id, status, expires_at)
-            VALUES (NEW.customer_id, rule_record.id, 'ACTIVE', expiry_date);
-        END IF;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Attach Trigger to Orders Table
-DROP TRIGGER IF EXISTS on_order_created_loyalty ON orders;
-CREATE TRIGGER on_order_created_loyalty
-AFTER INSERT ON orders
-FOR EACH ROW
-WHEN (NEW.customer_id IS NOT NULL)
-EXECUTE FUNCTION handle_new_order_loyalty();
-```
-
-### 3. Create the API Endpoint Function (Optional Helper)
-
-Run this SQL if you want to use **Option 1** (REST API Style) for the Android App.
-
-```sql
--- Create a function that acts as a REST Endpoint
-CREATE OR REPLACE FUNCTION get_available_coupons(phone_number TEXT)
-RETURNS TABLE (
-  coupon_id TEXT,
-  status TEXT,
-  expires_at TIMESTAMPTZ,
-  reward_type TEXT,
-  reward_value TEXT,
-  description TEXT,
-  min_order_value NUMERIC,
-  reward_variant TEXT,
-  created_at TIMESTAMPTZ
-) 
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    cc.id,
-    cc.status,
-    cc.expires_at,
-    mr.type,
-    mr.value,
-    mr.description,
-    mr.min_order_value,
-    mr.reward_variant,
-    cc.created_at
-  FROM customer_coupons cc
-  JOIN membership_rules mr ON cc.rule_id = mr.id
-  WHERE cc.customer_id = phone_number
-    AND cc.status = 'ACTIVE'
-    AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
-  ORDER BY cc.created_at ASC; -- Sorts Oldest first (FIFO)
-END;
-$$;
-```
-
----
-
-## 📱 Android Integration Guide
-
-We provide **two ways** for the Android developer to fetch coupons. Choose the one that fits your architecture best.
-
-### Option 1: REST API (RPC Function) - **Recommended**
-Use this if you prefer a clean HTTP request without writing SQL in the app.
-
-**Endpoint URL:**  
-`POST https://<your-supabase-url>.supabase.co/rest/v1/rpc/get_available_coupons`
-
-**Headers:**
-```
-apikey: <your-anon-key>
-Content-Type: application/json
-```
-
-**Body (JSON):**
-```json
-{
-  "phone_number": "9876543210"
-}
-```
- 
----
-
-### Option 2: Direct SQL (Supabase Client)
-Use this if you are already using the Supabase SDK in your Android app and prefer raw queries.
-
-Run this **JOIN query** to get the coupon details:
-
-```sql
-SELECT 
-  cc.id AS coupon_id,
-  cc.status,
-  cc.expires_at,
-  mr.type AS reward_type,    -- e.g. 'DISCOUNT_PERCENT' or 'FREE_ITEM'
-  mr.value AS reward_value,  -- e.g. '20' (%) OR 'menu-123' (Menu Item ID)
-  mr.description,            -- e.g. 'Get 20% Off on your 5th Order!'
-  mr.min_order_value,        -- e.g. 200 (Minimum cart total required)
-  mr.reward_variant          -- e.g. 'FULL' or 'HALF' (Critical for FREE_ITEM)
-FROM customer_coupons cc
-JOIN membership_rules mr ON cc.rule_id = mr.id
-WHERE cc.customer_id = :phone_number_param
-  AND cc.status = 'ACTIVE'
-  AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
-ORDER BY cc.created_at ASC;
-```
-
----
-
-### The JSON Response (Identical for Both Options)
-The app will receive an array of active coupons, sorted oldest to newest.
-
+**Response Example:**
 ```json
 [
   {
-    "coupon_id": "a1b2c3d4...",
+    "coupon_id": "aa-bb-cc",
     "status": "ACTIVE",
-    "expires_at": "2024-12-31T23:59:59+00:00",
-    "reward_type": "DISCOUNT_PERCENT",
-    "reward_value": "20",
-    "description": "Get 20% Off on your 5th Order!",
-    "min_order_value": 0,
-    "reward_variant": "FULL"
-  },
-  {
-    "coupon_id": "f9e8d7c6...",
-    "status": "ACTIVE",
-    "expires_at": "2025-01-15T23:59:59+00:00",
     "reward_type": "FREE_ITEM",
-    "reward_value": "menu-veg-steam",
-    "description": "Free Veg Steam Plate on 10th Order!",
-    "min_order_value": 200,
-    "reward_variant": "HALF"
+    "reward_value": "menu-veg-steam", // This is the Menu Item ID to add to cart for free
+    "reward_variant": "FULL",         // 'FULL' or 'HALF' plate
+    "min_order_value": 200,           // Cart must be > 200 to use
+    "description": "Free Veg Steam on your 10th Order!"
   }
 ]
 ```
 
-### Logic Handling
-1.  **Oldest First:** Display first item as Primary Reward.
-2.  **reward_type**: 
-    *   `DISCOUNT_PERCENT`: Calculate percentage off total.
-    *   `FREE_ITEM`: `reward_value` is the **Menu Item ID**.
-        *   **Action:** Add the product with this ID to the cart.
-        *   **Price:** Set price to 0.
-        *   **Variant:** Check `reward_variant` ('FULL' or 'HALF') to select the correct portion size.
-3.  **min_order_value**: Check if cart subtotal >= this value before allowing redemption.
+### 2. Placing an Order (Saving Data)
+When a user completes checkout, the Android app must perform **two** actions if a coupon was used.
 
-### Redeeming
-When the order is placed, send the `coupon_id` back to mark it as used:
+#### Step A: Insert the Order
+Insert a new row into the `orders` table.
 
-```sql
-UPDATE customer_coupons SET status = 'USED' WHERE id = 'THE_COUPON_ID';
+**Table:** `orders`
+**Operation:** `INSERT`
+
+**JSON Payload Format:**
+```json
+{
+  "id": "android-timestamp-uuid",       // Generate a unique ID
+  "branch_id": "branch-1",              // ID of the store
+  "customer_id": "9876543210",          // Customer Phone Number
+  "customer_name": "Rahul",
+  "platform": "ANDROID_APP",            // Or 'POS'
+  "total_amount": 450,                  // Final amount paid
+  "status": "COMPLETED",
+  "payment_method": "UPI",              // 'CASH', 'UPI', 'CARD'
+  "date": "2024-05-20",                 // YYYY-MM-DD (Local)
+  "timestamp": 1716182000000,           // Epoch ms
+  "items": [                            // Array of items sold
+    {
+      "menuItemId": "menu-1",
+      "name": "Veg Steam Momos",
+      "price": 100,
+      "quantity": 2,
+      "variant": "FULL"
+    },
+    {
+      "menuItemId": "menu-2",
+      "name": "Chicken Momos",
+      "price": 0,                       // Price 0 because it was the reward
+      "quantity": 1,
+      "variant": "FULL"
+    }
+  ]
+}
+```
+*Note: Inserting this order will AUTOMATICALLY update the customer's spend history and progress them towards their NEXT reward via database triggers.*
+
+#### Step B: Mark Coupon as Used (If applicable)
+If the user redeemed a coupon (e.g., they got the Chicken Momos for free), you must update the coupon status so they can't use it again.
+
+**Table:** `customer_coupons`
+**Operation:** `UPDATE`
+**Condition:** `id = "THE_COUPON_ID_FROM_STEP_1"`
+
+**Update Payload:**
+```json
+{
+  "status": "USED",
+  "redeemed_order_id": "android-timestamp-uuid"  // Link to the order ID created in Step A
+}
 ```
 
 ---

@@ -72,7 +72,7 @@ const Reconciliation: React.FC = () => {
         const result = reader.result;
         
         if (typeof result === 'string') {
-            const base64String: string = result;
+            const base64String = result as string;
             try {
               const parsedData = await parseSalesReportImage(base64String, skus);
               
@@ -81,7 +81,8 @@ const Reconciliation: React.FC = () => {
                 const newInputs = { ...prev };
                 Object.entries(parsedData).forEach(([skuId, qty]) => {
                     const quantity = Number(qty);
-                    const current = parseInt(newInputs[skuId] || '0');
+                    const currentVal = newInputs[skuId] || '0';
+                    const current = parseInt(currentVal);
                     if (!isNaN(quantity)) {
                         newInputs[skuId] = (current + quantity).toString();
                     }

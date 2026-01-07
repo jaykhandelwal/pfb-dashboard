@@ -463,7 +463,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     supabase.from('menu_categories').select('*').order('order', { ascending: true }),
                     supabase.from('customers').select('*'),
                     supabase.from('membership_rules').select('*'),
-                    supabase.from('customer_coupons').select('*'),
+                    supabase.from('customer_coupons').select('*').order('created_at', { ascending: true }),
                     supabase.from('attendance').select('*'),
                     supabase.from('task_templates').select('*'),
                     supabase.from('todos').select('*'),
@@ -1020,13 +1020,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // UPDATED: Check for AVAILABLE COUPON instead of calculating rule
   const checkCustomerReward = (customerId: string): RewardResult | null => {
-      // Find active coupon for this customer
-      const coupon = customerCoupons.find(c => 
-          c.customerId === customerId && 
-          c.status === 'ACTIVE'
-      );
+      // Find active coupons for this customer, sort by created date (oldest first)
+      const activeCoupons = customerCoupons
+        .filter(c => c.customerId === customerId && c.status === 'ACTIVE')
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-      if (!coupon) return null;
+      if (activeCoupons.length === 0) return null;
+
+      // Pick the oldest coupon (FIFO)
+      const coupon = activeCoupons[0];
 
       // Check Expiry
       const now = new Date();

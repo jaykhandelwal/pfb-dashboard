@@ -17,13 +17,12 @@ This script is "idempotent" — it is safe to run even if you have already creat
 -- 1. SCHEMA PREPARATION (Safe Columns & Tables)
 -- ==========================================
 
--- A. Ensure 'validity_days' exists in 'membership_rules'
+-- A. Ensure columns exist in 'membership_rules'
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_rules' AND column_name = 'validity_days') THEN
         ALTER TABLE membership_rules ADD COLUMN validity_days INTEGER DEFAULT 365;
     END IF;
-    -- New Columns for Enhanced Coupons
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_rules' AND column_name = 'min_order_value') THEN
         ALTER TABLE membership_rules ADD COLUMN min_order_value NUMERIC DEFAULT 0;
     END IF;
@@ -43,7 +42,15 @@ CREATE TABLE IF NOT EXISTS customer_coupons (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- C. Enable Security (RLS) for Coupons
+-- C. FORCE ADD COLUMN if table already existed but column didn't
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customer_coupons' AND column_name = 'redeemed_order_id') THEN
+        ALTER TABLE customer_coupons ADD COLUMN redeemed_order_id TEXT;
+    END IF;
+END $$;
+
+-- D. Enable Security (RLS) for Coupons
 ALTER TABLE customer_coupons ENABLE ROW LEVEL SECURITY;
 
 DO $$
@@ -214,192 +221,3 @@ erDiagram
     APP_SETTINGS { string key PK, jsonb value }
     CUSTOMER_COUPONS { uuid id PK, string status, timestamptz expires_at, text redeemed_order_id }
 ```
-
----
-
-## 📦 1. Inventory & Operations
-
-### `skus`
-Raw materials managed in the fridge.
-- `id` (text, PK): Unique ID (e.g., `sku-1`).
-- `name` (text): Display name.
-- `category` (text): 'Steam', 'Kurkure', etc.
-- `dietary` (text): 'Veg', 'Non-Veg'.
-- `pieces_per_packet` (int): Conversion factor.
-- `order` (int): Sort order.
-- `created_at` (timestamptz).
-
-### `branches`
-Physical store locations.
-- `id` (text, PK).
-- `name` (text).
-- `created_at` (timestamptz).
-
-### `transactions`
-The core ledger for physical inventory movement (Check-in/out, Waste).
-- `id` (text, PK).
-- `batch_id` (text): Group ID for bulk actions.
-- `date` (text): YYYY-MM-DD.
-- `timestamp` (bigint).
-- `branch_id` (text): FK to `branches`.
-- `sku_id` (text): FK to `skus`.
-- `type` (text): 'CHECK_OUT', 'CHECK_IN', 'WASTE', 'RESTOCK', 'ADJUSTMENT'.
-- `quantity_pieces` (int).
-- `image_urls` (ARRAY text): For wastage evidence.
-- `user_id` (text): Snapshot of user ID.
-- `user_name` (text): Snapshot of user Name.
-- `created_at` (timestamptz).
-
-### `deleted_transactions`
-Audit log for deleted records.
-- Same structure as `transactions`.
-- `deleted_at` (timestamptz).
-- `deleted_by` (text).
-
----
-
-## 💰 2. Sales & Menu
-
-### `orders`
-The Single Source of Truth for revenue.
-- `id` (text, PK).
-- `branch_id` (text).
-- `customer_id` (text): FK to `customers`.
-- `customer_name` (text).
-- `platform` (text): 'POS', 'ZOMATO', 'SWIGGY'.
-- `total_amount` (numeric).
-- `status` (text).
-- `payment_method` (text): 'CASH', 'UPI', 'CARD', 'SPLIT'.
-- `payment_split` (jsonb): Array of `{ method: string, amount: number }` for split payments.
-- `date` (text).
-- `timestamp` (bigint).
-- `items` (jsonb): **Crucial.** Contains the snapshot of ingredients consumed.
-- `custom_amount` (numeric): Extra charges.
-- `custom_amount_reason` (text).
-- `custom_sku_items` (jsonb): Array of raw SKUs used manually.
-- `custom_sku_reason` (text).
-- `created_at` (timestamptz).
-
-### `sales_records`
-*Used primarily for Manual Entries in the Reconciliation Page.*
-- `id` (text, PK).
-- `date` (text).
-- `branch_id` (text).
-- `platform` (text).
-- `sku_id` (text).
-- `quantity_sold` (int).
-- `timestamp` (bigint).
-- `customer_id` (text).
-- `order_amount` (numeric).
-- `order_id` (text): Optional link to parent order.
-- `created_at` (timestamptz).
-
-### `menu_items`
-- `id` (text, PK).
-- `name` (text).
-- `price` (numeric).
-- `half_price` (numeric).
-- `description` (text).
-- `category` (text).
-- `ingredients` (jsonb): Full plate recipe `[{skuId, quantity}]`.
-- `half_ingredients` (jsonb): Half plate recipe.
-- `created_at` (timestamptz).
-
-### `menu_categories`
-- `id` (text, PK).
-- `name` (text).
-- `order` (int).
-- `color` (text).
-- `created_at` (timestamptz).
-
----
-
-## 👥 3. Users & CRM
-
-### `users`
-- `id` (text, PK).
-- `name` (text).
-- `code` (text): Login access code.
-- `role` (text): 'ADMIN', 'MANAGER', 'STAFF'.
-- `permissions` (text[]): List of access rights.
-- `default_branch_id` (text): For attendance convenience.
-
-### `attendance`
-- `id` (text, PK).
-- `user_id` (text).
-- `user_name` (text).
-- `branch_id` (text).
-- `date` (text).
-- `timestamp` (bigint).
-- `image_url` (text): Selfie proof.
-- `created_at` (timestamptz).
-
-### `customers`
-- `id` (text, PK): Phone Number.
-- `name` (text).
-- `phone_number` (text).
-- `total_spend` (numeric).
-- `order_count` (int).
-- `joined_at` (timestamptz).
-- `last_order_date` (text).
-
-### `membership_rules`
-- `id` (text, PK).
-- `trigger_order_count` (int).
-- `type` (text): 'DISCOUNT_PERCENT' | 'FREE_ITEM'.
-- `value` (text).
-- `description` (text).
-- `time_frame_days` (int).
-- `validity_days` (int).
-- `min_order_value` (numeric). **(New)**
-- `reward_variant` (text). **(New: 'FULL' | 'HALF')**
-- `created_at` (timestamptz).
-
-### `customer_coupons` (New)
-Stores active rewards generated by the trigger.
-- `id` (uuid, PK).
-- `customer_id` (text): FK to customers.
-- `rule_id` (text): FK to membership_rules.
-- `status` (text): 'ACTIVE', 'USED', 'EXPIRED'.
-- `expires_at` (timestamptz).
-- `redeemed_order_id` (text). **(New)**
-- `created_at` (timestamptz).
-
----
-
-## ✅ 4. Tasks (Enhanced)
-
-### `task_templates` (New)
-Defines auto-repeating tasks.
-- `id` (text, PK).
-- `title` (text).
-- `assigned_to` (text).
-- `assigned_by` (text).
-- `frequency` (text): 'DAILY', 'WEEKLY', 'ONCE'.
-- `week_days` (jsonb): Array of integers [0-6] for weekly recurrence.
-- `is_active` (boolean).
-- `last_generated_date` (text): Tracks execution to prevent dupes.
-- `created_at` (timestamptz).
-
-### `todos` (Updated)
-- `id` (text, PK).
-- `text` (text).
-- `assigned_to` (text): FK to `users.id`.
-- `assigned_by` (text).
-- `is_completed` (boolean).
-- `due_date` (text): YYYY-MM-DD. **(New)**
-- `template_id` (text): Link to parent template. **(New)**
-- `priority` (text): 'NORMAL' | 'HIGH'. **(New)**
-- `created_at_ts` (bigint).
-- `completed_at_ts` (bigint).
-- `created_at` (timestamptz).
-
----
-
-## ⚙️ 5. System Configuration
-
-### `app_settings`
-Global flags for app behavior.
-- `key` (text, PK): e.g., 'require_customer_phone'.
-- `value` (jsonb): e.g., true, false, or config object.
-- `created_at` (timestamptz).
