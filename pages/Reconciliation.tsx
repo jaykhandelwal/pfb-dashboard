@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType } from '../types';
@@ -67,14 +68,12 @@ const Reconciliation: React.FC = () => {
     setIsProcessing(true);
     try {
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        // Access result directly from reader to ensure proper typing
-        const result = reader.result;
+      reader.onload = async (event) => {
+        const result = event.target?.result;
         
         if (typeof result === 'string') {
-            const base64String = result as string;
             try {
-              const parsedData = await parseSalesReportImage(base64String, skus);
+              const parsedData = await parseSalesReportImage(result, skus);
               
               // Merge parsed data into inputs
               setInputs(prev => {
@@ -99,6 +98,7 @@ const Reconciliation: React.FC = () => {
              setIsProcessing(false);
         }
       };
+      reader.onerror = () => setIsProcessing(false);
       reader.readAsDataURL(file);
     } catch (err) {
       setIsProcessing(false);

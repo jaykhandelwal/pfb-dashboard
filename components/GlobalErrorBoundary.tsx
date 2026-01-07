@@ -1,3 +1,4 @@
+
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
@@ -11,7 +12,7 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class GlobalErrorBoundary extends Component<Props, State> {
+class GlobalErrorBoundary extends React.Component<Props, State> {
   state: State = {
     hasError: false,
     error: null,
