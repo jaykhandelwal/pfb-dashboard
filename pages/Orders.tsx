@@ -345,11 +345,24 @@ const Orders: React.FC = () => {
     // Check for used coupon via lookup
     const usedCoupon = customerCoupons.find(c => c.redeemedOrderId === order.id);
 
+    // Determine Payment Label color
+    const getPaymentColor = (method: string) => {
+        if (method === 'CASH') return 'text-emerald-600 bg-emerald-50 border-emerald-100';
+        if (method === 'UPI') return 'text-blue-600 bg-blue-50 border-blue-100';
+        return 'text-slate-600 bg-slate-50 border-slate-100';
+    };
+
     return (
     <div key={order.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3 relative group">
         <div className="flex justify-between items-start">
             <div>
-                <span className="text-[10px] font-mono font-bold text-slate-400">#{order.id.slice(-6).toUpperCase()}</span>
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-400">#{order.id.slice(-6).toUpperCase()}</span>
+                    <span className="text-[10px] text-slate-400">•</span>
+                    <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                        <Store size={10} /> {getBranchName(order.branchId)}
+                    </span>
+                </div>
                 <h4 className="font-bold text-slate-700 text-sm">{order.customerName || 'Walk-in Customer'}</h4>
             </div>
             <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase ${getPlatformStyle(order.platform)}`}>
@@ -378,7 +391,12 @@ const Orders: React.FC = () => {
 
         <div className="flex justify-between items-end border-t border-slate-100 pt-3 mt-auto">
             <div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">Total Amount</p>
+                <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Total</p>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${getPaymentColor(order.paymentMethod)}`}>
+                        {order.paymentMethod}
+                    </span>
+                </div>
                 <p className="text-lg font-bold text-slate-800">₹{order.totalAmount}</p>
             </div>
             <div className="flex gap-2">
