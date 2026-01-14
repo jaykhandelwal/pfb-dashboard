@@ -12,12 +12,16 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class GlobalErrorBoundary extends React.Component<Props, State> {
-  state: State = {
-    hasError: false,
-    error: null,
-    errorInfo: null
-  };
+// Fixed inheritance and state initialization to resolve "setState does not exist" and "props does not exist" errors
+class GlobalErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null
+    };
+  }
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error, errorInfo: null };
@@ -25,6 +29,7 @@ class GlobalErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+    // Properly call setState from within lifecycle method
     this.setState({ errorInfo });
   }
 
@@ -85,6 +90,7 @@ class GlobalErrorBoundary extends React.Component<Props, State> {
       );
     }
 
+    // Access props.children safely from React.Component
     return this.props.children;
   }
 }
