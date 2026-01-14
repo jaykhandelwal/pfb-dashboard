@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Transaction, SKU, Branch, SalesRecord, Order, DailyReportItem, 
@@ -110,7 +111,7 @@ const mapOrderToDB = (o: Order) => ({
   custom_amount: o.customAmount,
   custom_amount_reason: o.customAmountReason,
   custom_sku_items: o.customSkuItems,
-  custom_sku_reason: o.custom_sku_reason
+  custom_sku_reason: o.customSkuReason
 });
 
 const mapSkuFromDB = (s: any): SKU => {
@@ -274,7 +275,6 @@ const mapTemplateToDB = (t: TaskTemplate) => ({
   month_days: t.monthDays,
   start_date: t.startDate,
   is_active: t.isActive,
-  // Fix: use camelCase lastGeneratedDate property from TaskTemplate interface
   last_generated_date: t.lastGeneratedDate
 });
 
@@ -1157,7 +1157,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteTaskTemplate = async (id: string) => {
     const updated = taskTemplates.filter(t => t.id !== id);
-    // Fix: correct state setter name from setTemplates to setTaskTemplates
     setTaskTemplates(updated);
     save('taskTemplates', updated);
 

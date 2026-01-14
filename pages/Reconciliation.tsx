@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType, SKU } from '../types';
@@ -100,8 +101,12 @@ const Reconciliation: React.FC = () => {
                             if (Array.isArray(item.consumed)) {
                                 const match = item.consumed.find(c => c.skuId === sku.id);
                                 if (match) totalConsumedFromOrders += match.quantity;
-                            } else if (item.consumed.skuId === sku.id) {
-                                totalConsumedFromOrders += item.consumed.quantity;
+                            } else {
+                                // Explicit narrowing for TypeScript: it's not an array, it's an object
+                                const consumedObj = item.consumed as { skuId: string; quantity: number };
+                                if (consumedObj.skuId === sku.id) {
+                                    totalConsumedFromOrders += consumedObj.quantity;
+                                }
                             }
                         } else {
                             // No direct consumption data, fallback to Recipe Lookup
