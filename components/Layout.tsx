@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
-  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare
+  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';

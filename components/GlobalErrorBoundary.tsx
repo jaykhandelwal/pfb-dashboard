@@ -1,4 +1,3 @@
-
 import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
@@ -12,33 +11,28 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-// Explicitly extend React.Component with Props and State to fix missing state/props/setState errors
 class GlobalErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null
-    };
-  }
+  public state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null
+  };
 
-  static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error, errorInfo: null };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
-    // Use this.setState which is inherited from React.Component
     this.setState({ errorInfo });
   }
 
-  handleReload = () => {
+  private handleReload = () => {
     // Force a hard reload from the server, ignoring cache
     window.location.reload();
   };
 
-  handleReset = () => {
+  private handleReset = () => {
     if (window.confirm("This will clear local app data (cache) to fix the crash. Your database data is safe. Continue?")) {
         localStorage.clear();
         sessionStorage.clear();
@@ -46,8 +40,7 @@ class GlobalErrorBoundary extends React.Component<Props, State> {
     }
   };
 
-  render() {
-    // Access this.state which is inherited from React.Component
+  public render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
@@ -91,7 +84,6 @@ class GlobalErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Access props.children safely from React.Component
     return this.props.children;
   }
 }

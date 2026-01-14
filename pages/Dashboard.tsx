@@ -4,13 +4,14 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { DailyReportItem, TransactionType, Todo } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, Banknote, QrCode, Wallet, Table, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, AreaChart, Area, LineChart } from 'recharts';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon } from 'lucide-react';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
+import ReactApexChart from 'react-apexcharts';
+import { ApexOptions } from 'apexcharts';
 
 // Updated palette for charts to match warm theme
-const COLORS = ['#95a77c', '#6b7280', '#eab308', '#ef4444', '#8b5cf6', '#d97706'];
+const COLORS = ['#95a77c', '#eab308', '#ef4444', '#8b5cf6', '#3b82f6', '#d97706'];
 
 type TimeRange = 'TODAY' | 'YESTERDAY' | '7D' | '30D';
 
@@ -18,10 +19,10 @@ interface InventoryTileProps {
   skuName: string;
   quantity: number;
   piecesPerPacket: number;
-  isLow?: boolean;
+  status?: 'NORMAL' | 'LOW' | 'CRITICAL';
 }
 
-const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, isLow = false }) => {
+const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, status = 'NORMAL' }) => {
   // Guard against division by zero or NaN
   const packetSize = piecesPerPacket > 0 ? piecesPerPacket : 1;
   const safeQty = isNaN(quantity) ? 0 : quantity;
@@ -29,33 +30,45 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
   const packets = Math.floor(safeQty / packetSize);
   const loose = safeQty % packetSize;
 
+  let bgClass = 'bg-white border-[#403424]/10';
+  let textClass = 'text-[#403424]';
+  let mutedTextClass = 'text-[#403424]/50';
+
+  if (status === 'CRITICAL') {
+      bgClass = 'bg-red-50 border-red-200';
+      textClass = 'text-red-700';
+      mutedTextClass = 'text-red-400';
+  } else if (status === 'LOW') {
+      bgClass = 'bg-amber-50 border-amber-200';
+      textClass = 'text-amber-700';
+      mutedTextClass = 'text-amber-400';
+  }
+
   return (
     <div 
-      className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${
-        isLow ? 'bg-red-50 border-red-200' : 'bg-white border-[#403424]/10'
-      }`}
+      className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${bgClass}`}
     >
        <div className="mb-0.5">
-          <h3 className={`font-bold text-xs leading-tight truncate ${isLow ? 'text-red-900' : 'text-[#403424]/80'}`}>
+          <h3 className={`font-bold text-xs leading-tight truncate ${textClass}`}>
             {skuName}
           </h3>
        </div>
        
        <div className="flex items-end gap-2">
           <div className="flex items-baseline gap-1">
-              <span className={`text-lg font-bold leading-none ${isLow ? 'text-red-600' : 'text-[#403424]'}`}>
+              <span className={`text-lg font-bold leading-none ${textClass}`}>
                 {packets}
               </span>
-              <span className={`text-[10px] font-medium ${isLow ? 'text-red-400' : 'text-[#403424]/50'}`}>
+              <span className={`text-[10px] font-medium ${mutedTextClass}`}>
                 pkts
               </span>
           </div>
           {loose !== 0 && (
             <div className="flex items-baseline gap-1">
-                <span className={`text-sm font-semibold leading-none ${isLow ? 'text-red-500' : 'text-[#403424]/70'}`}>
+                <span className={`text-sm font-semibold leading-none ${textClass} opacity-80`}>
                   {loose}
                 </span>
-                <span className={`text-[10px] font-medium ${isLow ? 'text-red-300' : 'text-[#403424]/50'}`}>
+                <span className={`text-[10px] font-medium ${mutedTextClass}`}>
                   pcs
                 </span>
             </div>
@@ -66,19 +79,36 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 };
 
 const Dashboard: React.FC = () => {
-  const { transactions, salesRecords, skus, branches, orders, todos, addTodo, toggleTodo, deleteTodo, appSettings } = useStore();
+  const { transactions, skus, branches, orders, todos, addTodo, toggleTodo, appSettings } = useStore();
   const { hasPermission, currentUser, users } = useAuth();
   
   // Dashboard State
-  const [timeRange, setTimeRange] = useState<TimeRange>('TODAY');
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+      // Smart Logic: If before 3 PM (15:00), default to Yesterday since opening is ~4 PM
+      const hour = new Date().getHours();
+      return hour < 15 ? 'YESTERDAY' : 'TODAY';
+  });
+  
   const [dashboardBranch, setDashboardBranch] = useState<string>('ALL');
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
+  const [isCheckoutExpanded, setIsCheckoutExpanded] = useState(false);
+  const [isStockExpanded, setIsStockExpanded] = useState(false); // Default collapsed
 
   // Todo State
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [newTaskText, setNewTaskText] = useState('');
   const [assignedUserId, setAssignedUserId] = useState('');
+
+  // Info message regarding auto-selection
+  const autoTimeMessage = useMemo(() => {
+      const hour = new Date().getHours();
+      // If it's before 3PM and user hasn't explicitly changed away from Yesterday (or is looking at Yesterday)
+      if (hour < 15 && timeRange === 'YESTERDAY') {
+          return "Store opens at 3 PM. Displaying yesterday's data.";
+      }
+      return "";
+  }, [timeRange]);
 
   // --- 0. Todo Logic (Categorized) ---
   const myTasks = useMemo(() => {
@@ -88,13 +118,9 @@ const Dashboard: React.FC = () => {
     const now = Date.now();
     const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
     
-    // Filter tasks:
-    // 1. Assigned to current user
-    // 2. Either NOT completed OR (Completed within last 48 hours)
     const relevantTasks = todos.filter(t => {
        if (t.assignedTo !== currentUser.id) return false;
-       if (!t.isCompleted) return true; // Keep all active
-       // Keep completed if within 48 hours
+       if (!t.isCompleted) return true; 
        return (t.completedAt && (now - t.completedAt < FORTY_EIGHT_HOURS));
     });
 
@@ -113,15 +139,9 @@ const Dashboard: React.FC = () => {
         .filter(t => t.isCompleted)
         .sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0));
 
-    // Combine for the "Today" view (Active Today + All Recent Completed)
-    // Active tasks appear first
     const today = [...activeToday, ...recentlyCompleted];
 
-    return {
-       overdue,
-       today,
-       upcoming
-    };
+    return { overdue, today, upcoming };
   }, [todos, currentUser]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -146,32 +166,22 @@ const Dashboard: React.FC = () => {
   // --- 1. Last Checkout Logic ---
   const lastCheckouts = useMemo(() => {
     const result: Record<string, { date: string, timestamp: number, items: Record<string, number> }> = {};
-    
     branches.forEach(branch => {
-      // Get all checkouts for this branch
       const checkoutTxs = transactions.filter(t => t.branchId === branch.id && t.type === TransactionType.CHECK_OUT);
-      
       if (checkoutTxs.length === 0) return;
-
-      // Find the latest timestamp securely
       const latestTx = checkoutTxs.reduce((prev, current) => (prev.timestamp > current.timestamp) ? prev : current);
       const latestTimestamp = latestTx.timestamp;
-
-      // Get all items in that batch (approximate by timestamp window of 2 seconds)
       const batchItems = checkoutTxs.filter(t => Math.abs(t.timestamp - latestTimestamp) < 2000);
-
       const itemsMap: Record<string, number> = {};
       batchItems.forEach(t => {
         itemsMap[t.skuId] = (itemsMap[t.skuId] || 0) + t.quantityPieces;
       });
-
       result[branch.id] = {
         date: new Date(latestTimestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
         timestamp: latestTimestamp,
         items: itemsMap
       };
     });
-
     return result;
   }, [transactions, branches]);
 
@@ -179,19 +189,30 @@ const Dashboard: React.FC = () => {
   const stockLevels = useMemo(() => {
     const levels: Record<string, number> = {};
     skus.forEach(s => levels[s.id] = 0);
-    
     transactions.forEach(t => {
       if (t.type === TransactionType.RESTOCK || t.type === TransactionType.CHECK_IN || (t.type === TransactionType.ADJUSTMENT && t.quantityPieces > 0)) {
         levels[t.skuId] = (levels[t.skuId] || 0) + t.quantityPieces;
       } else if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.ADJUSTMENT && t.quantityPieces < 0)) {
         levels[t.skuId] = (levels[t.skuId] || 0) - Math.abs(t.quantityPieces);
       } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
-        // Also deduct waste if it came directly from Fridge
         levels[t.skuId] = (levels[t.skuId] || 0) - t.quantityPieces;
       }
     });
     return levels;
   }, [transactions, skus]);
+
+  // --- Stock Health Indicators ---
+  const stockHealth = useMemo(() => {
+      let red = 0;
+      let yellow = 0;
+      skus.forEach(sku => {
+          const balance = stockLevels[sku.id] || 0;
+          const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
+          if (balance < (pktSize * 3)) red++;
+          else if (balance < (pktSize * 10)) yellow++;
+      });
+      return { red, yellow };
+  }, [stockLevels, skus]);
 
   // --- Date Helpers ---
   const { dateRangeFilter, daysDivisor } = useMemo(() => {
@@ -218,7 +239,6 @@ const Dashboard: React.FC = () => {
           days = 30;
       }
 
-      // Filter function
       const filterFn = (d: string) => {
           if (!d) return false;
           if (timeRange === 'TODAY') return d === todayStr;
@@ -244,13 +264,7 @@ const Dashboard: React.FC = () => {
       const avgDailyVolume = totalOrderCount / daysDivisor;
       const avgOrderValue = totalOrderCount > 0 ? totalRevenue / totalOrderCount : 0;
 
-      return {
-          totalRevenue,
-          totalOrderCount,
-          avgDailySales,
-          avgDailyVolume,
-          avgOrderValue
-      };
+      return { totalRevenue, totalOrderCount, avgDailySales, avgDailyVolume, avgOrderValue };
   }, [orders, dateRangeFilter, dashboardBranch, daysDivisor]);
 
   // --- 4. Revenue Breakdown (Cash vs Online) ---
@@ -268,12 +282,11 @@ const Dashboard: React.FC = () => {
           if (o.paymentMethod === 'SPLIT') {
               o.paymentSplit?.forEach(split => {
                   if (split.method === 'CASH') cash += split.amount;
-                  else online += split.amount; // UPI or CARD
+                  else online += split.amount; 
               });
           } else if (o.paymentMethod === 'CASH') {
               cash += o.totalAmount;
           } else {
-              // UPI, CARD, or others
               online += o.totalAmount;
           }
       });
@@ -282,62 +295,38 @@ const Dashboard: React.FC = () => {
   }, [orders, dateRangeFilter, dashboardBranch]);
 
   // --- 5. Inventory Analytics Calculation (Based on Range) ---
-  const { reportData, trendData, reconciliationData } = useMemo(() => {
-    if (!hasPermission('VIEW_ANALYTICS')) return { reportData: [], trendData: [], reconciliationData: [] };
+  const { reportData, reconciliationData } = useMemo(() => {
+    if (!hasPermission('VIEW_ANALYTICS')) return { reportData: [], reconciliationData: [] };
 
     const report: Record<string, DailyReportItem> = {};
-    const trendMap: Record<string, { date: string, incoming: number, outgoing: number, waste: number, diff: number }> = {};
     const reconMap: Record<string, { date: string, physicalUsage: number, recordedSales: number }> = {};
     
-    // Initialize Report Data
     skus.forEach(sku => {
       report[sku.id] = {
         skuName: sku.name,
         category: sku.category,
         dietary: sku.dietary,
-        taken: 0,
-        returned: 0,
-        waste: 0,
-        sold: 0,
+        taken: 0, returned: 0, waste: 0, sold: 0,
       };
     });
 
-    // Process Transactions
     transactions.forEach(t => {
        if (!dateRangeFilter(t.date)) return;
        if (dashboardBranch !== 'ALL' && t.branchId !== dashboardBranch) return;
 
-       // Report Data (SKU based)
        if (report[t.skuId]) {
-         if (t.type === TransactionType.CHECK_OUT) {
-           report[t.skuId].taken += t.quantityPieces;
-         } else if (t.type === TransactionType.CHECK_IN) {
-           report[t.skuId].returned += t.quantityPieces;
-         } else if (t.type === TransactionType.WASTE) {
-           report[t.skuId].waste += t.quantityPieces;
-         }
+         if (t.type === TransactionType.CHECK_OUT) report[t.skuId].taken += t.quantityPieces;
+         else if (t.type === TransactionType.CHECK_IN) report[t.skuId].returned += t.quantityPieces;
+         else if (t.type === TransactionType.WASTE) report[t.skuId].waste += t.quantityPieces;
        }
 
-       // Trend Data
        const dateKey = t.date;
-       if (!trendMap[dateKey]) trendMap[dateKey] = { date: dateKey, incoming: 0, outgoing: 0, waste: 0, diff: 0 };
        if (!reconMap[dateKey]) reconMap[dateKey] = { date: dateKey, physicalUsage: 0, recordedSales: 0 };
 
-       if (t.type === TransactionType.CHECK_OUT) {
-         trendMap[dateKey].outgoing += t.quantityPieces;
-         reconMap[dateKey].physicalUsage += t.quantityPieces;
-       } else if (t.type === TransactionType.RESTOCK || t.type === TransactionType.CHECK_IN) {
-         trendMap[dateKey].incoming += t.quantityPieces;
-         if(t.type === TransactionType.CHECK_IN) {
-            reconMap[dateKey].physicalUsage -= t.quantityPieces;
-         }
-       } else if (t.type === TransactionType.WASTE) {
-         trendMap[dateKey].waste += t.quantityPieces;
-         reconMap[dateKey].physicalUsage -= t.quantityPieces;
-       }
+       if (t.type === TransactionType.CHECK_OUT) reconMap[dateKey].physicalUsage += t.quantityPieces;
+       else if (t.type === TransactionType.CHECK_IN || (t.type === TransactionType.WASTE)) reconMap[dateKey].physicalUsage -= t.quantityPieces;
     });
 
-    // Process Sales Records for Reconciliation Graph
     orders.forEach(o => {
         if (!dateRangeFilter(o.date)) return;
         if (dashboardBranch !== 'ALL' && o.branchId !== dashboardBranch) return;
@@ -348,7 +337,6 @@ const Dashboard: React.FC = () => {
         let rawPiecesSold = 0;
         if (o.items && Array.isArray(o.items)) {
             o.items.forEach(item => {
-                // SAFETY: Ensure consumed is an array before reducing
                 if(item.consumed && Array.isArray(item.consumed)) {
                     rawPiecesSold += item.consumed.reduce((sum, c) => sum + c.quantity, 0);
                 }
@@ -357,153 +345,139 @@ const Dashboard: React.FC = () => {
         if(o.customSkuItems && Array.isArray(o.customSkuItems)) {
             rawPiecesSold += o.customSkuItems.reduce((sum, c) => sum + c.quantity, 0);
         }
-
         reconMap[dateKey].recordedSales += rawPiecesSold;
     });
 
-    // Finalize Report Metrics
     Object.keys(report).forEach(skuId => {
       const item = report[skuId];
       item.sold = Math.max(0, item.taken - item.returned - item.waste);
     });
 
-    // Finalize Trend Metrics
-    const trendArray = Object.values(trendMap).map(d => ({
-      ...d,
-      diff: d.incoming - d.outgoing - d.waste,
-      displayDate: new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    })).sort((a,b) => a.date.localeCompare(b.date));
-
-    // Finalize Recon Metrics
     const reconArray = Object.values(reconMap).map(d => ({
         ...d,
         displayDate: new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     })).sort((a,b) => a.date.localeCompare(b.date));
 
-    return { reportData: Object.values(report), trendData: trendArray, reconciliationData: reconArray };
+    return { reportData: Object.values(report), reconciliationData: reconArray };
   }, [transactions, orders, skus, dateRangeFilter, dashboardBranch, hasPermission]);
 
-  // --- 6. Advanced Sales Analytics (New Graphs) ---
-  const { revenueTrend, branchKeys, topMenuData } = useMemo(() => {
-      if (!hasPermission('VIEW_ANALYTICS')) return { revenueTrend: [], branchKeys: [], topMenuData: [] };
+  // --- 6. 30-Day Revenue Trend (ApexCharts Specific) ---
+  const last30DaysData = useMemo(() => {
+      if (!hasPermission('VIEW_ANALYTICS')) return { series: [], categories: [] };
 
-      const dailyMap: Record<string, any> = {};
-      const menuMap: Record<string, number> = {};
-      const bKeys = new Set<string>();
+      // Initialize dates for last 30 days
+      const dates: string[] = [];
+      const dataMap: Record<string, { total: number, branches: Record<string, number> }> = {};
+      const today = new Date();
+      
+      for(let i=29; i>=0; i--) {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          const iso = getLocalISOString(d);
+          dates.push(iso);
+          dataMap[iso] = { total: 0, branches: {} };
+          branches.forEach(b => dataMap[iso].branches[b.id] = 0);
+      }
 
-      // Sort orders for timeline
-      const sortedOrders = [...orders].sort((a,b) => a.timestamp - b.timestamp);
-
-      sortedOrders.forEach(o => {
-          if (!dateRangeFilter(o.date)) return;
-          
-          const dateKey = o.date;
-          if (!dailyMap[dateKey]) {
-              dailyMap[dateKey] = { 
-                  date: dateKey, 
-                  displayDate: new Date(dateKey).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                  total: 0 
-              };
-          }
-
-          // Total Revenue & Top Items (Filtered by selected branch if applicable)
-          if (dashboardBranch === 'ALL' || o.branchId === dashboardBranch) {
-              dailyMap[dateKey].total += o.totalAmount;
-              
-              // Process Menu Items
-              if (o.items && Array.isArray(o.items)) {
-                  o.items.forEach(item => {
-                      menuMap[item.name] = (menuMap[item.name] || 0) + item.quantity;
-                  });
+      // Populate data
+      orders.forEach(o => {
+          if(dataMap[o.date]) {
+              dataMap[o.date].total += o.totalAmount;
+              if (dataMap[o.date].branches[o.branchId] !== undefined) {
+                  dataMap[o.date].branches[o.branchId] += o.totalAmount;
               }
-          }
-
-          // Branch Specific Data (For comparison graph - mainly relevant when ALL is selected)
-          if (dashboardBranch === 'ALL') {
-              dailyMap[dateKey][o.branchId] = (dailyMap[dateKey][o.branchId] || 0) + o.totalAmount;
-              bKeys.add(o.branchId);
-          } else if (o.branchId === dashboardBranch) {
-              dailyMap[dateKey][o.branchId] = (dailyMap[dateKey][o.branchId] || 0) + o.totalAmount;
-              bKeys.add(o.branchId);
           }
       });
 
-      const trendArray = Object.values(dailyMap).sort((a,b) => a.date.localeCompare(b.date));
-      
+      // Transform to Apex Series
+      const totalSeries = {
+          name: 'All Branches',
+          data: dates.map(d => dataMap[d].total)
+      };
+
+      const branchSeries = branches.map(b => ({
+          name: b.name,
+          data: dates.map(d => dataMap[d].branches[b.id])
+      }));
+
+      return {
+          series: [totalSeries, ...branchSeries],
+          categories: dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+      };
+  }, [orders, branches, hasPermission]);
+
+  // --- 7. Top Menu & Category Data ---
+  const { topMenuData, categoryData } = useMemo(() => {
+      if (!hasPermission('VIEW_ANALYTICS')) return { topMenuData: [], categoryData: [] };
+      const menuMap: Record<string, number> = {};
+      const catMap: Record<string, number> = {};
+
+      orders.forEach(o => {
+          if (!dateRangeFilter(o.date)) return;
+          if (dashboardBranch !== 'ALL' && o.branchId !== dashboardBranch) return;
+
+          if (o.items && Array.isArray(o.items)) {
+              o.items.forEach(item => {
+                  menuMap[item.name] = (menuMap[item.name] || 0) + item.quantity;
+              });
+          }
+      });
+
+      reportData.forEach(item => {
+          catMap[item.category] = (catMap[item.category] || 0) + item.sold;
+      });
+
       const menuArray = Object.entries(menuMap)
           .map(([name, value]) => ({ name, value }))
           .sort((a,b) => b.value - a.value)
-          .slice(0, 8); // Top 8 items
+          .slice(0, 8);
 
-      return { revenueTrend: trendArray, branchKeys: Array.from(bKeys), topMenuData: menuArray };
-  }, [orders, dateRangeFilter, dashboardBranch, hasPermission]);
+      const catArray = Object.entries(catMap)
+          .map(([name, value]) => ({ name, value }));
 
-  // --- 7. Last 7 Days Performance Table Data ---
+      return { topMenuData: menuArray, categoryData: catArray };
+  }, [orders, reportData, dateRangeFilter, dashboardBranch]);
+
+  // --- 8. Last 7 Days Performance Table Data ---
   const last7DaysPerformance = useMemo(() => {
       if (!hasPermission('VIEW_ANALYTICS')) return [];
-
       const today = new Date();
-      // Generate last 7 days dates
       const dates = [];
       for (let i = 0; i < 7; i++) {
           const d = new Date();
           d.setDate(today.getDate() - i);
           dates.push(getLocalISOString(d));
       }
-
-      const stats = dates.map(dateStr => {
+      return dates.map(dateStr => {
           const dayOrders = orders.filter(o => 
               o.date === dateStr && 
               (dashboardBranch === 'ALL' || o.branchId === dashboardBranch)
           );
-
-          let totalRevenue = 0;
-          let cash = 0;
-          let online = 0;
-
+          let totalRevenue = 0, cash = 0, online = 0;
           dayOrders.forEach(o => {
               totalRevenue += o.totalAmount;
-              if (o.paymentMethod === 'CASH') {
-                  cash += o.totalAmount;
-              } else if (o.paymentMethod === 'SPLIT') {
+              if (o.paymentMethod === 'CASH') cash += o.totalAmount;
+              else if (o.paymentMethod === 'SPLIT') {
                   o.paymentSplit?.forEach(s => {
                       if (s.method === 'CASH') cash += s.amount;
                       else online += s.amount;
                   });
-              } else {
-                  online += o.totalAmount;
-              }
+              } else online += o.totalAmount;
           });
-
           return {
-              date: dateStr,
               displayDate: new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
               orders: dayOrders.length,
-              cash,
-              online,
-              total: totalRevenue
+              cash, online, total: totalRevenue
           };
       });
-
-      return stats;
   }, [orders, dashboardBranch, hasPermission]);
 
-  // --- Derived Metrics (Simple Counts) ---
-  const totalTaken = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.taken, 0);
-  const totalReturned = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.returned, 0);
-  const totalWaste = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.waste, 0);
-  const totalSold = reportData.reduce((acc: number, curr: DailyReportItem) => acc + curr.sold, 0);
+  // --- Derived Metrics ---
+  const totalTaken = reportData.reduce((acc, curr) => acc + curr.taken, 0);
+  const totalReturned = reportData.reduce((acc, curr) => acc + curr.returned, 0);
+  const totalWaste = reportData.reduce((acc, curr) => acc + curr.waste, 0);
+  const totalSold = reportData.reduce((acc, curr) => acc + curr.sold, 0);
 
-  // Category Consumption Data
-  const categoryData = useMemo(() => {
-    const data: Record<string, number> = {};
-    reportData.forEach(item => {
-      data[item.category] = (data[item.category] || 0) + item.sold;
-    });
-    return Object.entries(data).map(([name, value]) => ({ name, value }));
-  }, [reportData]);
-  
-  // AI Handler
   const handleAskAI = async () => {
     setLoadingAi(true);
     const dateStr = timeRange === 'TODAY' ? getLocalISOString() : `Last ${timeRange}`;
@@ -512,19 +486,59 @@ const Dashboard: React.FC = () => {
     setLoadingAi(false);
   };
 
-  const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || id;
+  useEffect(() => { setAiInsight(null); }, [timeRange, dashboardBranch]);
 
-  useEffect(() => {
-    setAiInsight(null);
-  }, [timeRange, dashboardBranch]);
+  // --- Chart Options ---
+  const revenueChartOptions: ApexOptions = {
+    chart: { type: 'area', toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
+    dataLabels: { enabled: false },
+    stroke: { curve: 'smooth', width: 2 },
+    colors: ['#10b981', ...COLORS], // Green for All, then Branch Colors
+    xaxis: { categories: last30DaysData.categories, labels: { style: { fontSize: '10px' } }, tooltip: { enabled: false } },
+    yaxis: { labels: { formatter: (val) => `₹${val.toLocaleString()}` } },
+    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.7, opacityTo: 0.2, stops: [0, 90, 100] } },
+    tooltip: { y: { formatter: (val) => `₹${val}` } },
+    legend: { position: 'top', horizontalAlign: 'right' },
+    grid: { borderColor: '#f1f5f9' }
+  };
+
+  const bestSellerOptions: ApexOptions = {
+    chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
+    plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '60%' } },
+    dataLabels: { enabled: true, textAnchor: 'start', style: { colors: ['#fff'] }, formatter: function (val, opt) { return opt.w.globals.labels[opt.dataPointIndex] + ":  " + val } },
+    xaxis: { categories: topMenuData.map(d => d.name), labels: { show: false } },
+    yaxis: { labels: { show: false } },
+    colors: ['#f59e0b'],
+    grid: { show: false },
+    tooltip: { y: { formatter: (val) => `${val} sold` } }
+  };
+
+  const categoryOptions: ApexOptions = {
+    chart: { type: 'donut', fontFamily: 'Inter, sans-serif' },
+    labels: categoryData.map(d => d.name),
+    colors: COLORS,
+    legend: { position: 'bottom' },
+    dataLabels: { enabled: false },
+    plotOptions: { pie: { donut: { size: '65%' } } }
+  };
+
+  const reconOptions: ApexOptions = {
+    chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'Inter, sans-serif' },
+    plotOptions: { bar: { horizontal: false, columnWidth: '55%', borderRadius: 4 } },
+    dataLabels: { enabled: false },
+    stroke: { show: true, width: 2, colors: ['transparent'] },
+    xaxis: { categories: reconciliationData.map(d => d.displayDate), labels: { style: { fontSize: '10px' } } },
+    colors: ['#3B82F6', '#95a77c'],
+    fill: { opacity: 1 },
+    legend: { position: 'top' },
+    tooltip: { y: { formatter: (val) => `${val} pcs` } }
+  };
 
   return (
     <div className="space-y-8 pb-10">
-
-      {/* 0. Tasks Summary (Visible only if Beta Enabled) */}
+      {/* 0. Tasks Summary (Beta) */}
       {appSettings.enable_beta_tasks && (myTasks.overdue.length > 0 || myTasks.today.length > 0) && (
         <div className="bg-white rounded-xl p-0 border border-slate-200 shadow-sm relative overflow-hidden animate-fade-in flex flex-col md:flex-row">
-           {/* Overdue Section */}
            {myTasks.overdue.length > 0 && (
               <div className="flex-1 bg-red-50 p-4 border-b md:border-b-0 md:border-r border-red-100">
                  <div className="flex items-center gap-2 mb-3 text-red-800 font-bold">
@@ -533,74 +547,32 @@ const Dashboard: React.FC = () => {
                  <div className="space-y-2">
                     {myTasks.overdue.map(task => (
                        <div key={task.id} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-red-100 shadow-sm">
-                          <button 
-                             onClick={() => toggleTodo(task.id, true)}
-                             className="w-5 h-5 rounded border border-red-300 hover:bg-red-50 flex items-center justify-center transition-colors"
-                          >
+                          <button onClick={() => toggleTodo(task.id, true)} className="w-5 h-5 rounded border border-red-300 hover:bg-red-50 flex items-center justify-center transition-colors">
                              <Check size={14} className="text-red-500 opacity-0 hover:opacity-100" />
                           </button>
-                          <div>
-                             <p className="text-sm font-medium text-slate-800">{task.text}</p>
-                             <p className="text-[10px] text-red-500">Due: {task.dueDate}</p>
-                          </div>
+                          <div><p className="text-sm font-medium text-slate-800">{task.text}</p><p className="text-[10px] text-red-500">Due: {task.dueDate}</p></div>
                        </div>
                     ))}
                  </div>
               </div>
            )}
-
-           {/* Today Section */}
            <div className="flex-1 bg-white p-4">
                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2 text-slate-800 font-bold">
-                       <CheckSquare size={18} className="text-emerald-600" /> Today's Tasks
-                    </div>
-                    {/* Admin Assign Button */}
+                    <div className="flex items-center gap-2 text-slate-800 font-bold"><CheckSquare size={18} className="text-emerald-600" /> Today's Tasks</div>
                     {(currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER') && (
-                       <button 
-                          onClick={() => setIsTaskModalOpen(true)}
-                          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors flex items-center gap-1"
-                       >
-                          <Plus size={12} /> Assign
-                       </button>
+                       <button onClick={() => setIsTaskModalOpen(true)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors flex items-center gap-1"><Plus size={12} /> Assign</button>
                     )}
                  </div>
-                 
-                 {myTasks.today.length === 0 ? (
-                    <div className="text-slate-400 text-sm italic py-2">
-                       All caught up for today!
-                    </div>
-                 ) : (
+                 {myTasks.today.length === 0 ? <div className="text-slate-400 text-sm italic py-2">All caught up for today!</div> : (
                     <div className="space-y-2">
                        {myTasks.today.map(task => (
-                          <div 
-                            key={task.id} 
-                            className={`flex items-center gap-3 p-2 rounded-lg border transition-colors group ${
-                                task.isCompleted 
-                                ? 'bg-emerald-50 border-emerald-100' 
-                                : 'bg-slate-50 border-slate-100 hover:border-emerald-200'
-                            }`}
-                          >
-                             <button 
-                                onClick={() => toggleTodo(task.id, !task.isCompleted)}
-                                className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                                    task.isCompleted 
-                                    ? 'bg-emerald-500 border-emerald-500 text-white' 
-                                    : 'bg-white border-slate-300 hover:border-emerald-500'
-                                }`}
-                             >
+                          <div key={task.id} className={`flex items-center gap-3 p-2 rounded-lg border transition-colors group ${task.isCompleted ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 hover:border-emerald-200'}`}>
+                             <button onClick={() => toggleTodo(task.id, !task.isCompleted)} className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300 hover:border-emerald-500'}`}>
                                 <Check size={14} className={`${task.isCompleted ? 'opacity-100' : 'text-emerald-600 opacity-0 group-hover:opacity-100'}`} />
                              </button>
                              <div className="flex-1">
-                                <p className={`text-sm font-medium ${task.isCompleted ? 'text-emerald-800 line-through decoration-emerald-500/50' : 'text-slate-700'}`}>
-                                    {task.text}
-                                </p>
-                                <div className="flex justify-between items-center">
-                                    <p className={`text-[10px] ${task.isCompleted ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                        {task.isCompleted ? 'Completed' : `By: ${task.assignedBy}`}
-                                    </p>
-                                    {task.isCompleted && <span className="text-[10px] text-emerald-500 font-medium">Undo</span>}
-                                </div>
+                                <p className={`text-sm font-medium ${task.isCompleted ? 'text-emerald-800 line-through decoration-emerald-500/50' : 'text-slate-700'}`}>{task.text}</p>
+                                <div className="flex justify-between items-center"><p className={`text-[10px] ${task.isCompleted ? 'text-emerald-600' : 'text-slate-400'}`}>{task.isCompleted ? 'Completed' : `By: ${task.assignedBy}`}</p>{task.isCompleted && <span className="text-[10px] text-emerald-500 font-medium">Undo</span>}</div>
                              </div>
                           </div>
                        ))}
@@ -610,317 +582,146 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 1. Last Checkout Section */}
-      <div className="space-y-6">
-        <div className="text-center mb-4">
-           <h2 className="text-xl font-bold text-[#403424] uppercase tracking-wide">Last Checkout</h2>
-        </div>
-        
-        {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
-
-        {branches.map(branch => {
-           const checkoutData = lastCheckouts[branch.id];
-           if (!checkoutData) return null;
-
-           return (
-             <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10">
-                <div className="flex flex-col items-center mb-3">
-                   <h3 className="font-bold text-[#95a77c] flex items-center gap-2">
-                      <Store size={16} /> {branch.name}
-                   </h3>
-                   <span className="text-xs text-[#403424]/50 font-medium">{checkoutData.date}</span>
+      {/* 1. Live Inventory */}
+      <div className="space-y-4">
+        <button onClick={() => setIsStockExpanded(!isStockExpanded)} className="w-full flex items-center justify-between text-left group">
+            <div className="flex items-center gap-4">
+                <h2 className="text-lg font-bold text-[#403424] uppercase tracking-wide">Current Fridge Stock</h2>
+                <div className="flex items-center gap-2">
+                    {stockHealth.red > 0 && <div className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">{stockHealth.red}</div>}
+                    {stockHealth.yellow > 0 && <div className="w-5 h-5 rounded-full bg-amber-400 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">{stockHealth.yellow}</div>}
                 </div>
-                
-                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                   {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
-                      <InventoryTile 
-                        key={sku.id}
-                        skuName={sku.name}
-                        quantity={checkoutData.items[sku.id]}
-                        piecesPerPacket={sku.piecesPerPacket}
-                      />
-                   ))}
-                </div>
-             </div>
-           )
-        })}
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-xs normal-case bg-slate-100 px-2 py-0.5 rounded-full text-slate-500 font-medium group-hover:bg-slate-200 transition-colors">{isStockExpanded ? 'Hide' : 'Show'}</span>
+                {isStockExpanded ? <ChevronUp className="text-slate-400"/> : <ChevronDown className="text-slate-400"/>}
+            </div>
+        </button>
+        {isStockExpanded && (
+            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 animate-fade-in">
+                {skus.map(sku => {
+                    const balance = stockLevels[sku.id] || 0;
+                    const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
+                    let status: 'NORMAL' | 'LOW' | 'CRITICAL' = 'NORMAL';
+                    if (balance < (pktSize * 3)) status = 'CRITICAL';
+                    else if (balance < (pktSize * 10)) status = 'LOW';
+                    return <InventoryTile key={sku.id} skuName={sku.name} quantity={balance} piecesPerPacket={pktSize} status={status} />
+                })}
+            </div>
+        )}
       </div>
 
       <hr className="border-[#403424]/10" />
-      
-      {/* 2. Live Inventory Section */}
-      <div>
-        <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mb-3">Current Fridge Stock</h3>
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-             {skus.map(sku => {
-                const balance = stockLevels[sku.id] || 0;
-                // Add robust packet size check
-                const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
-                const isLow = balance < (pktSize * 10);
-                
+
+      {/* 2. Last Checkout */}
+      <div className="space-y-4">
+        <button onClick={() => setIsCheckoutExpanded(!isCheckoutExpanded)} className="w-full flex items-center justify-between text-left group">
+            <h2 className="text-lg font-bold text-[#403424] uppercase tracking-wide flex items-center gap-2">
+                Last Checkout
+                <span className="text-xs normal-case bg-slate-100 px-2 py-0.5 rounded-full text-slate-500 font-medium group-hover:bg-slate-200 transition-colors">{isCheckoutExpanded ? 'Hide Details' : 'Show Details'}</span>
+            </h2>
+            {isCheckoutExpanded ? <ChevronUp className="text-slate-400"/> : <ChevronDown className="text-slate-400"/>}
+        </button>
+        {isCheckoutExpanded && (
+            <div className="animate-fade-in space-y-4">
+                {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
+                {branches.map(branch => {
+                const checkoutData = lastCheckouts[branch.id];
+                if (!checkoutData) return null;
                 return (
-                  <InventoryTile 
-                    key={sku.id}
-                    skuName={sku.name}
-                    quantity={balance}
-                    piecesPerPacket={pktSize}
-                    isLow={isLow}
-                  />
-                )
-             })}
-        </div>
+                    <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10">
+                        <div className="flex flex-col items-center mb-3">
+                        <h3 className="font-bold text-[#95a77c] flex items-center gap-2"><Store size={16} /> {branch.name}</h3>
+                        <span className="text-xs text-[#403424]/50 font-medium">{checkoutData.date}</span>
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
+                            <InventoryTile key={sku.id} skuName={sku.name} quantity={checkoutData.items[sku.id]} piecesPerPacket={sku.piecesPerPacket} />
+                        ))}
+                        </div>
+                    </div>
+                )})}
+            </div>
+        )}
       </div>
 
       <hr className="border-[#403424]/10" />
 
-      {/* 3. Analytics Section (Restricted) */}
+      {/* 3. Analytics Section */}
       {hasPermission('VIEW_ANALYTICS') && (
         <div className="space-y-6">
-          {/* Header & Controls */}
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-             <div className="flex items-center gap-2 text-[#403424] font-bold text-lg">
-                <TrendingUp className="text-[#95a77c]" /> Business Intelligence
+             <div className="flex flex-col">
+                <div className="flex items-center gap-2 text-[#403424] font-bold text-lg uppercase tracking-wide"><TrendingUp className="text-[#95a77c]" /> Business Intelligence</div>
+                {autoTimeMessage && <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium mt-1 ml-1 animate-fade-in"><Moon size={10} /> {autoTimeMessage}</div>}
              </div>
-             
              <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
-                 {/* Branch Selector */}
-                 <div className="relative">
-                    <Store className="absolute left-3 top-2.5 text-[#403424]/40" size={14} />
-                    <select 
-                       value={dashboardBranch}
-                       onChange={(e) => setDashboardBranch(e.target.value)}
-                       className="w-full sm:w-48 pl-9 pr-8 py-2 bg-white border border-[#403424]/10 rounded-lg text-sm font-bold text-[#403424] appearance-none focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
-                    >
-                       <option value="ALL">All Branches</option>
-                       {branches.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                       ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-3 text-[#403424]/40 pointer-events-none" size={14} />
+                 <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm overflow-x-auto max-w-full">
+                    <button onClick={() => setDashboardBranch('ALL')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === 'ALL' ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>All Branches</button>
+                    {branches.map(b => (
+                        <button key={b.id} onClick={() => setDashboardBranch(b.id)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === b.id ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>{b.name}</button>
+                    ))}
                  </div>
-
-                 {/* Time Range Selector */}
                  <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm overflow-x-auto">
                     {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
-                       <button
-                         key={range}
-                         onClick={() => setTimeRange(range)}
-                         className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${
-                           timeRange === range 
-                             ? 'bg-[#eff2e7] text-[#403424]' 
-                             : 'text-[#403424]/50 hover:bg-[#f9faf7]'
-                         }`}
-                       >
-                         {range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}
-                       </button>
+                       <button key={range} onClick={() => setTimeRange(range)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${timeRange === range ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>{range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}</button>
                     ))}
                  </div>
              </div>
           </div>
 
-          {/* Revenue Breakdown Section */}
+          {/* Revenue Breakdown */}
           <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Revenue Breakdown</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <StatCard 
-               title="Total Revenue"
-               value={`₹${revenueBreakdown.total.toLocaleString()}`}
-               icon={<Wallet size={20} className="text-slate-600" />}
-               color="bg-slate-50/50 border-slate-100"
-             />
-             <StatCard 
-               title="Cash Sales"
-               value={`₹${revenueBreakdown.cash.toLocaleString()}`}
-               icon={<Banknote size={20} className="text-emerald-600" />}
-               color="bg-emerald-50/50 border-emerald-100"
-             />
-             <StatCard 
-               title="Online Sales"
-               value={`₹${revenueBreakdown.online.toLocaleString()}`}
-               icon={<QrCode size={20} className="text-blue-600" />}
-               trend="UPI & Card"
-               color="bg-blue-50/50 border-blue-100"
-             />
+             <StatCard title="Total Revenue" value={`₹${revenueBreakdown.total.toLocaleString()}`} icon={<Wallet size={20} className="text-slate-600" />} color="bg-slate-50/50 border-slate-100" />
+             <StatCard title="Cash Sales" value={`₹${revenueBreakdown.cash.toLocaleString()}`} icon={<Banknote size={20} className="text-emerald-600" />} color="bg-emerald-50/50 border-emerald-100" />
+             <StatCard title="Online Sales" value={`₹${revenueBreakdown.online.toLocaleString()}`} icon={<QrCode size={20} className="text-blue-600" />} trend="UPI & Card" color="bg-blue-50/50 border-blue-100" />
           </div>
 
-          {/* Sales Performance Stats */}
+          {/* Performance Averages */}
           <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Performance Averages</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <StatCard 
-               title="Avg Daily Sales"
-               value={`₹${Math.round(salesStats.avgDailySales).toLocaleString()}`}
-               icon={<IndianRupee size={20} className="text-emerald-600" />}
-               color="bg-white"
-             />
-             <StatCard 
-               title="Avg Daily Orders"
-               value={Math.round(salesStats.avgDailyVolume)}
-               icon={<Receipt size={20} className="text-blue-600" />}
-               color="bg-white"
-             />
-             <StatCard 
-               title="Avg Order Value"
-               value={`₹${Math.round(salesStats.avgOrderValue)}`}
-               icon={<BarChart3 size={20} className="text-violet-600" />}
-               color="bg-white"
-             />
+             <StatCard title="Avg Daily Sales" value={`₹${Math.round(salesStats.avgDailySales).toLocaleString()}`} icon={<IndianRupee size={20} className="text-emerald-600" />} color="bg-white" />
+             <StatCard title="Avg Daily Orders" value={Math.round(salesStats.avgDailyVolume)} icon={<Receipt size={20} className="text-blue-600" />} color="bg-white" />
+             <StatCard title="Avg Order Value" value={`₹${Math.round(salesStats.avgOrderValue)}`} icon={<BarChart3 size={20} className="text-violet-600" />} color="bg-white" />
           </div>
 
-          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Revenue Trends</h3>
-          
-          {/* Revenue & Branch Trends (New Charts) */}
-          <div className="grid grid-cols-1 gap-6">
-             {/* Total Revenue Area Chart */}
-             <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-                <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
-                   <Activity size={16} className="text-emerald-600"/> Daily Revenue (₹)
-                </h3>
-                <div className="h-64">
-                   <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={revenueTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                         <defs>
-                            <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                               <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                               <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                            </linearGradient>
-                         </defs>
-                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
-                         <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
-                         <YAxis stroke="#94a3b8" fontSize={10} />
-                         <Tooltip 
-                           contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
-                           labelStyle={{ fontWeight: 'bold', color: '#403424' }}
-                         />
-                         <Area type="monotone" dataKey="total" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
-                      </AreaChart>
-                   </ResponsiveContainer>
-                </div>
+          {/* Revenue Trends (30 Day Spline Area) */}
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Revenue Trends (Last 30 Days)</h3>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+             <div className="h-72">
+                <ReactApexChart options={revenueChartOptions} series={last30DaysData.series} type="area" height="100%" />
              </div>
-
-             {/* Branch Comparison Line Chart (Only when ALL selected) */}
-             {dashboardBranch === 'ALL' && branchKeys.length > 1 && (
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-                  <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
-                     <Store size={16} className="text-blue-600"/> Branch Performance Comparison
-                  </h3>
-                  <div className="h-64">
-                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={revenueTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
-                           <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
-                           <YAxis stroke="#94a3b8" fontSize={10} />
-                           <Tooltip 
-                             contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
-                           />
-                           <Legend iconSize={10} fontSize={10} verticalAlign="top" height={36}/>
-                           {branchKeys.map((key, index) => (
-                              <Line 
-                                key={key}
-                                type="monotone" 
-                                dataKey={key} 
-                                name={getBranchName(key)}
-                                stroke={COLORS[index % COLORS.length]} 
-                                strokeWidth={2}
-                                dot={false}
-                              />
-                           ))}
-                        </LineChart>
-                     </ResponsiveContainer>
-                  </div>
-               </div>
-             )}
           </div>
 
+          {/* Operational Stats */}
           <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Operational Stats</h3>
-
-          {/* Operational Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard 
-              title="Total Check-Outs" 
-              value={totalTaken} 
-              icon={<Package size={20} className="text-[#95a77c]" />} 
-              color="bg-white"
-            />
-            <StatCard 
-              title="Returns" 
-              value={totalReturned} 
-              icon={<RotateCcw size={20} className="text-amber-500" />} 
-              color="bg-white"
-            />
-             <StatCard 
-              title="Total Wastage" 
-              value={totalWaste} 
-              icon={<Trash2 size={20} className="text-red-500" />} 
-              color="bg-white"
-            />
-            <StatCard 
-              title="Net Consumed" 
-              value={totalSold} 
-              icon={<ShoppingBag size={20} className="text-[#95a77c]" />} 
-              color="bg-white"
-            />
+            <StatCard title="Total Check-Outs" value={totalTaken} icon={<Package size={20} className="text-[#95a77c]" />} color="bg-white" />
+            <StatCard title="Returns" value={totalReturned} icon={<RotateCcw size={20} className="text-amber-500" />} color="bg-white" />
+             <StatCard title="Total Wastage" value={totalWaste} icon={<Trash2 size={20} className="text-red-500" />} color="bg-white" />
+            <StatCard title="Net Consumed" value={totalSold} icon={<ShoppingBag size={20} className="text-[#95a77c]" />} color="bg-white" />
           </div>
 
-          {/* Charts Row 1 */}
+          {/* Best Sellers & Category */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Top Selling Menu Items (New Chart) */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-              <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
-                 <Sparkles size={16} className="text-amber-500" /> Best Sellers (Menu Items)
-              </h3>
+              <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2"><Sparkles size={16} className="text-amber-500" /> Best Sellers (Menu Items)</h3>
               <div className="h-64">
                 {topMenuData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topMenuData} layout="vertical" margin={{ left: 10, right: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e5e5" />
-                      <XAxis type="number" stroke="#94a3b8" fontSize={10} />
-                      <YAxis dataKey="name" type="category" width={110} style={{ fontSize: '10px', fill: '#403424' }} stroke="#e5e5e5" tickFormatter={(value) => value.length > 15 ? value.substring(0, 15) + '...' : value} />
-                      <Tooltip 
-                         cursor={{fill: '#f3f4f6'}}
-                         contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      />
-                      <Bar dataKey="value" name="Sold Qty" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={16} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                   <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">
-                     No sales data available.
-                   </div>
-                )}
+                  <ReactApexChart options={bestSellerOptions} series={[{ name: 'Sales', data: topMenuData.map(d => d.value) }]} type="bar" height="100%" />
+                ) : <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">No sales data available.</div>}
               </div>
             </div>
-
-            {/* Category Distribution */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
               <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Inventory Category Share</h3>
-              <div className="h-64 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      labelLine={false}
-                      label={({ name, percent }) => percent > 0.1 ? `${name}` : ''}
-                      fontSize={10}
-                    >
-                      {categoryData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" height={36} iconSize={8} fontSize={10}/>
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="h-64">
+                <ReactApexChart options={categoryOptions} series={categoryData.map(d => d.value)} type="donut" height="100%" />
               </div>
             </div>
           </div>
 
-          {/* Last 7 Days Performance Table */}
+          {/* Last 7 Days Table */}
           <div className="bg-white rounded-xl shadow-sm border border-[#403424]/10 overflow-hidden">
              <div className="p-4 border-b border-[#403424]/10 flex items-center gap-2 bg-[#f9faf7]">
                 <CalendarDays size={16} className="text-[#95a77c]" />
@@ -929,29 +730,15 @@ const Dashboard: React.FC = () => {
              <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                    <thead className="text-xs text-[#403424]/50 bg-white border-b border-[#403424]/10 uppercase font-semibold">
-                      <tr>
-                         <th className="p-3">Date</th>
-                         <th className="p-3 text-center">Orders</th>
-                         <th className="p-3 text-right">Cash</th>
-                         <th className="p-3 text-right">Online</th>
-                         <th className="p-3 text-right font-bold text-[#403424]">Total Revenue</th>
-                      </tr>
+                      <tr><th className="p-3">Date</th><th className="p-3 text-center">Orders</th><th className="p-3 text-right">Cash</th><th className="p-3 text-right">Online</th><th className="p-3 text-right font-bold text-[#403424]">Total Revenue</th></tr>
                    </thead>
                    <tbody className="divide-y divide-[#403424]/5">
                       {last7DaysPerformance.map((row, idx) => (
                          <tr key={idx} className="hover:bg-[#f9faf7] transition-colors">
-                            <td className="p-3 font-medium text-[#403424]">{row.displayDate}</td>
-                            <td className="p-3 text-center text-[#403424]/70">{row.orders}</td>
-                            <td className="p-3 text-right text-emerald-600">₹{row.cash.toLocaleString()}</td>
-                            <td className="p-3 text-right text-blue-600">₹{row.online.toLocaleString()}</td>
-                            <td className="p-3 text-right font-bold text-[#403424]">₹{row.total.toLocaleString()}</td>
+                            <td className="p-3 font-medium text-[#403424]">{row.displayDate}</td><td className="p-3 text-center text-[#403424]/70">{row.orders}</td><td className="p-3 text-right text-emerald-600">₹{row.cash.toLocaleString()}</td><td className="p-3 text-right text-blue-600">₹{row.online.toLocaleString()}</td><td className="p-3 text-right font-bold text-[#403424]">₹{row.total.toLocaleString()}</td>
                          </tr>
                       ))}
-                      {last7DaysPerformance.length === 0 && (
-                         <tr>
-                            <td colSpan={5} className="p-6 text-center text-[#403424]/40 italic">No sales data for the last 7 days.</td>
-                         </tr>
-                      )}
+                      {last7DaysPerformance.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-[#403424]/40 italic">No sales data for the last 7 days.</td></tr>}
                    </tbody>
                 </table>
              </div>
@@ -959,34 +746,21 @@ const Dashboard: React.FC = () => {
 
           {/* Reconciliation Chart */}
           <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-            <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2">
-               <Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation
-            </h3>
+            <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2"><Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation</h3>
             <div className="h-64">
                {reconciliationData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reconciliationData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
-                    <XAxis dataKey="displayDate" stroke="#94a3b8" fontSize={10} />
-                    <YAxis stroke="#94a3b8" fontSize={10} />
-                    <Tooltip 
-                      contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', color: '#403424' }}
-                      labelStyle={{ fontWeight: 'bold', color: '#403424' }}
-                    />
-                    <Legend iconSize={10} fontSize={10} verticalAlign="top" height={36}/>
-                    <Bar dataKey="physicalUsage" name="Physical Usage (Raw Pcs)" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="recordedSales" name="Recorded Sales (Approx Raw)" fill="#95a77c" radius={[4, 4, 0, 0]} barSize={20} />
-                  </BarChart>
-                </ResponsiveContainer>
-               ) : (
-                 <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">
-                   No data for reconciliation.
-                 </div>
-               )}
+                <ReactApexChart 
+                    options={reconOptions} 
+                    series={[
+                        { name: 'Physical Usage (Raw Pcs)', data: reconciliationData.map(d => d.physicalUsage) },
+                        { name: 'Recorded Sales (Approx Raw)', data: reconciliationData.map(d => d.recordedSales) }
+                    ]} 
+                    type="bar" 
+                    height="100%" 
+                />
+               ) : <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">No data for reconciliation.</div>}
             </div>
-            <p className="text-xs text-[#403424]/40 mt-2 text-center italic">
-               Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.
-            </p>
+            <p className="text-xs text-[#403424]/40 mt-2 text-center italic">Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.</p>
           </div>
         </div>
       )}
@@ -995,28 +769,15 @@ const Dashboard: React.FC = () => {
       {hasPermission('VIEW_ANALYTICS') && (
         <div className="bg-[#403424] rounded-xl p-6 text-white shadow-lg mt-8">
             <div className="flex items-start gap-4">
-              <div className="p-3 bg-white/10 rounded-full">
-                <Sparkles className="text-[#95a77c]" size={24} />
-              </div>
+              <div className="p-3 bg-white/10 rounded-full"><Sparkles className="text-[#95a77c]" size={24} /></div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold mb-2">Gemini Analyst</h3>
                 {!aiInsight ? (
-                   <p className="text-white/60 mb-4 text-sm">
-                     Get intelligent insights about consumption patterns, waste, and category popularity for the selected period.
-                   </p>
+                   <p className="text-white/60 mb-4 text-sm">Get intelligent insights about consumption patterns, waste, and category popularity.</p>
                 ) : (
-                  <div className="prose prose-invert max-w-none text-sm bg-white/5 p-4 rounded-lg mb-4">
-                    <pre className="whitespace-pre-wrap font-sans text-white/80">{aiInsight}</pre>
-                  </div>
+                  <div className="prose prose-invert max-w-none text-sm bg-white/5 p-4 rounded-lg mb-4"><pre className="whitespace-pre-wrap font-sans text-white/80">{aiInsight}</pre></div>
                 )}
-                
-                <button 
-                  onClick={handleAskAI}
-                  disabled={loadingAi}
-                  className="bg-[#95a77c] hover:bg-[#85966d] disabled:bg-[#95a77c]/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
-                >
-                  {loadingAi ? 'Analyzing...' : 'Generate Insights'}
-                </button>
+                <button onClick={handleAskAI} disabled={loadingAi} className="bg-[#95a77c] hover:bg-[#85966d] disabled:bg-[#95a77c]/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2">{loadingAi ? 'Analyzing...' : 'Generate Insights'}</button>
               </div>
             </div>
           </div>
@@ -1033,45 +794,23 @@ const Dashboard: React.FC = () => {
                <form onSubmit={handleCreateTask} className="p-4 space-y-4">
                   <div>
                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Description</label>
-                     <input 
-                        type="text"
-                        required
-                        autoFocus
-                        placeholder="e.g. Clean the deep fryer"
-                        value={newTaskText}
-                        onChange={(e) => setNewTaskText(e.target.value)}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none"
-                     />
+                     <input type="text" required autoFocus placeholder="e.g. Clean the deep fryer" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none" />
                   </div>
                   <div>
                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Assign To</label>
                      <div className="relative">
                         <UserIcon size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                        <select 
-                           required
-                           value={assignedUserId}
-                           onChange={(e) => setAssignedUserId(e.target.value)}
-                           className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none bg-white"
-                        >
+                        <select required value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none bg-white">
                            <option value="">Select Staff Member</option>
-                           {users.map(u => (
-                              <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                           ))}
+                           {users.map(u => (<option key={u.id} value={u.id}>{u.name} ({u.role})</option>))}
                         </select>
                      </div>
                   </div>
-                  <button 
-                     type="submit"
-                     disabled={!newTaskText || !assignedUserId}
-                     className="w-full py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors disabled:opacity-50"
-                  >
-                     Assign Task
-                  </button>
+                  <button type="submit" disabled={!newTaskText || !assignedUserId} className="w-full py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors disabled:opacity-50">Assign Task</button>
                </form>
             </div>
          </div>
       )}
-
     </div>
   );
 };
