@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Transaction, SKU, Branch, SalesRecord, Order, DailyReportItem, 
@@ -7,7 +8,7 @@ import {
 } from '../types';
 import { 
   INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_MENU_CATEGORIES, 
-  INITIAL_MENU_ITEMS, INITIAL_MEMBERSHIP_RULES, INITIAL_CUSTOMERS 
+  INITIAL_MENU_ITEMS, INITIAL_MEMBERSHIP_RULES, INITIAL_CUSTOMERS, DUMMY_CUSTOMER_PHONE 
 } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
@@ -678,6 +679,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const checkCustomerReward = (customerId: string): RewardResult | null => {
+      // 1. Blacklist dummy phone number from membership rewards
+      if (customerId === DUMMY_CUSTOMER_PHONE) return null;
+
       const activeCoupons = customerCoupons.filter(c => c.customerId === customerId && c.status === 'ACTIVE').sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       if (activeCoupons.length === 0) return null;
       const coupon = activeCoupons[0];

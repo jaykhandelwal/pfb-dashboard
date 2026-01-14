@@ -1,6 +1,8 @@
 
 import { Branch, SKU, SKUCategory, SKUDietary, Permission, User, MembershipRule, Customer, MenuItem, MenuCategory } from './types';
 
+export const DUMMY_CUSTOMER_PHONE = '9999999999';
+
 export const INITIAL_BRANCHES: Branch[] = [
   { id: 'branch-1', name: 'Momo Mafia 01' },
   { id: 'branch-2', name: 'Momo Mafia 02' },
@@ -142,7 +144,7 @@ export const APP_PAGES = [
   { path: '/attendance', label: 'Attendance' },
   { path: '/tasks', label: 'Tasks' },
   { path: '/wastage', label: 'Wastage Report' },
-  { path: '/inventory', label: 'Fridge Inventory' },
+  { path: '/inventory', label: 'Deep Freezer' },
   { path: '/reconciliation', label: 'Sales Reconciliation' },
   { path: '/logs', label: 'Logs' },
 ];

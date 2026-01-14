@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Contact, Search, Crown, Phone, Calendar, IndianRupee, History, X, Clock, ShoppingBag, Gift } from 'lucide-react';
+import { Contact, Search, Crown, Phone, Calendar, IndianRupee, History, X, Clock, ShoppingBag, Gift, Ban } from 'lucide-react';
 import { Customer } from '../types';
+import { DUMMY_CUSTOMER_PHONE } from '../constants';
 
 const CustomerManagement: React.FC = () => {
   const { customers, membershipRules, orders, skus, branches, customerCoupons } = useStore();
@@ -16,14 +17,17 @@ const CustomerManagement: React.FC = () => {
   );
 
   // Helper to determine customer tier/status based on order count
-  const getCustomerTier = (count: number) => {
+  const getCustomerTier = (count: number, phone: string) => {
+     if (phone === DUMMY_CUSTOMER_PHONE) return { label: 'System Account', color: 'bg-slate-200 text-slate-800 border-slate-300' };
      if (count > 20) return { label: 'VIP', color: 'bg-purple-100 text-purple-700 border-purple-200' };
      if (count > 10) return { label: 'Regular', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
      return { label: 'New', color: 'bg-slate-100 text-slate-600 border-slate-200' };
   };
 
   // Helper to find next reward
-  const getNextReward = (currentOrderCount: number) => {
+  const getNextReward = (currentOrderCount: number, phone: string) => {
+    if (phone === DUMMY_CUSTOMER_PHONE) return "Ineligible for rewards";
+
     // Find rules with trigger count > current count
     const upcoming = membershipRules
       .filter(r => r.triggerOrderCount > currentOrderCount)
@@ -95,13 +99,14 @@ const CustomerManagement: React.FC = () => {
                      </tr>
                   ) : (
                      filteredCustomers.map(customer => {
-                        const tier = getCustomerTier(customer.orderCount);
+                        const isDummy = customer.phoneNumber === DUMMY_CUSTOMER_PHONE;
+                        const tier = getCustomerTier(customer.orderCount, customer.phoneNumber);
                         return (
                            <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
                               <td className="p-4">
                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500">
-                                       {customer.name.charAt(0).toUpperCase()}
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${isDummy ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                       {isDummy ? <Ban size={16}/> : customer.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
                                        <div className="font-bold text-slate-800">{customer.name}</div>
@@ -113,7 +118,7 @@ const CustomerManagement: React.FC = () => {
                               </td>
                               <td className="p-4">
                                  <div className="flex flex-col text-sm">
-                                    <span className="flex items-center gap-1.5 text-slate-700 font-medium">
+                                    <span className={`flex items-center gap-1.5 font-medium ${isDummy ? 'text-slate-400' : 'text-slate-700'}`}>
                                        <Phone size={14} className="text-slate-400" /> {customer.phoneNumber}
                                     </span>
                                     <span className="flex items-center gap-1.5 text-slate-500 text-xs mt-0.5">
@@ -133,9 +138,9 @@ const CustomerManagement: React.FC = () => {
                                  </div>
                               </td>
                               <td className="p-4">
-                                 <div className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 inline-flex items-center gap-1">
-                                    <Crown size={12} />
-                                    {getNextReward(customer.orderCount)}
+                                 <div className={`text-xs font-medium px-2 py-1 rounded border inline-flex items-center gap-1 ${isDummy ? 'text-slate-400 bg-slate-50 border-slate-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`}>
+                                    {isDummy ? <Ban size={12} /> : <Crown size={12} />}
+                                    {getNextReward(customer.orderCount, customer.phoneNumber)}
                                  </div>
                               </td>
                               <td className="p-4 text-center">
@@ -163,8 +168,8 @@ const CustomerManagement: React.FC = () => {
                {/* Modal Header */}
                <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50 rounded-t-xl">
                   <div className="flex items-start gap-4">
-                     <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-lg">
-                        {selectedCustomer.name.charAt(0).toUpperCase()}
+                     <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${selectedCustomer.phoneNumber === DUMMY_CUSTOMER_PHONE ? 'bg-slate-800 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+                        {selectedCustomer.phoneNumber === DUMMY_CUSTOMER_PHONE ? <Ban size={24}/> : selectedCustomer.name.charAt(0).toUpperCase()}
                      </div>
                      <div>
                         <h3 className="text-xl font-bold text-slate-800">{selectedCustomer.name}</h3>
