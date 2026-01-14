@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SalesPlatform, TransactionType, SKU, MenuItem, OrderItem } from '../types';
@@ -46,7 +45,7 @@ const Reconciliation: React.FC = () => {
     const results: Record<string, {
         sku: SKU,
         physicalNetUsed: number,    // Checkout - Return
-        billedSold: number,         // From Orders
+        billedSold: number,         // From Orders (Snapshot or Recipe)
         reportedWaste: number,      // From branch-level Waste transactions
         menuItemsInvolved: Record<string, { name: string, qty: number, variant: string }>
     }> = {};
@@ -71,7 +70,6 @@ const Reconciliation: React.FC = () => {
         } else if (t.type === TransactionType.CHECK_IN) {
             results[t.skuId].physicalNetUsed -= t.quantityPieces;
         } else if (t.type === TransactionType.WASTE) {
-            // This is "Accounted For" waste reported by staff
             results[t.skuId].reportedWaste += t.quantityPieces;
         }
     });
@@ -80,38 +78,54 @@ const Reconciliation: React.FC = () => {
     const filteredOrders = orders.filter(o => o.branchId === branchId && o.date >= startDate && o.date <= endDate);
     filteredOrders.forEach(order => {
         order.items.forEach(item => {
-            const menu = menuItems.find(m => m.id === item.menuItemId);
-            if (!menu) return;
-
-            // Determine ingredients used (Full vs Half)
-            const ingredients = (item.variant === 'HALF' && menu.halfIngredients && menu.halfIngredients.length > 0)
-                ? menu.halfIngredients
-                : (item.variant === 'HALF' ? menu.ingredients.map(i => ({ ...i, quantity: i.quantity * 0.5 })) : menu.ingredients);
-
-            ingredients.forEach(ing => {
-                if (results[ing.skuId]) {
-                    const piecesSold = ing.quantity * item.quantity;
-                    results[ing.skuId].billedSold += piecesSold;
-                    
-                    // Track which menu item caused this consumption for the drill-down UI
-                    const menuKey = `${item.menuItemId}-${item.variant || 'FULL'}`;
-                    if (!results[ing.skuId].menuItemsInvolved[menuKey]) {
-                        results[ing.skuId].menuItemsInvolved[menuKey] = { name: item.name, qty: 0, variant: item.variant || 'FULL' };
+            // Priority: Check for 'consumed' field (Snapshot from Android app or Web POS)
+            if (item.consumed) {
+                const consumedArray = Array.isArray(item.consumed) ? item.consumed : [item.consumed];
+                consumedArray.forEach(c => {
+                    if (results[c.skuId]) {
+                        // Note: Assuming Android snapshot 'quantity' is already total for that line item
+                        results[c.skuId].billedSold += Number(c.quantity || 0);
+                        
+                        // Map involved menu item
+                        const menuKey = `${item.menuItemId}-${item.variant || 'FULL'}`;
+                        if (!results[c.skuId].menuItemsInvolved[menuKey]) {
+                            results[c.skuId].menuItemsInvolved[menuKey] = { name: item.name, qty: 0, variant: item.variant || 'FULL' };
+                        }
+                        results[c.skuId].menuItemsInvolved[menuKey].qty += item.quantity;
                     }
-                    results[ing.skuId].menuItemsInvolved[menuKey].qty += item.quantity;
-                }
-            });
+                });
+            } else {
+                // Fallback: Recipe Lookup
+                const menu = menuItems.find(m => m.id === item.menuItemId);
+                if (!menu) return;
+
+                const ingredients = (item.variant === 'HALF' && menu.halfIngredients && menu.halfIngredients.length > 0)
+                    ? menu.halfIngredients
+                    : (item.variant === 'HALF' ? menu.ingredients.map(i => ({ ...i, quantity: i.quantity * 0.5 })) : menu.ingredients);
+
+                ingredients.forEach(ing => {
+                    if (results[ing.skuId]) {
+                        const piecesSold = ing.quantity * item.quantity;
+                        results[ing.skuId].billedSold += piecesSold;
+                        
+                        const menuKey = `${item.menuItemId}-${item.variant || 'FULL'}`;
+                        if (!results[ing.skuId].menuItemsInvolved[menuKey]) {
+                            results[ing.skuId].menuItemsInvolved[menuKey] = { name: item.name, qty: 0, variant: item.variant || 'FULL' };
+                        }
+                        results[ing.skuId].menuItemsInvolved[menuKey].qty += item.quantity;
+                    }
+                });
+            }
         });
 
-        // Add custom raw SKU items added to orders
+        // Custom raw items
         order.customSkuItems?.forEach(cs => {
             if (results[cs.skuId]) {
-                results[cs.skuId].billedSold += cs.quantity;
+                results[cs.skuId].billedSold += Number(cs.quantity || 0);
             }
         });
     });
 
-    // Convert to sorted array (only items with activity)
     return Object.values(results)
         .filter(group => group.physicalNetUsed !== 0 || group.billedSold !== 0 || group.reportedWaste !== 0)
         .sort((a, b) => b.physicalNetUsed - a.physicalNetUsed);
@@ -211,7 +225,7 @@ const Reconciliation: React.FC = () => {
              <h4 className={`text-2xl font-mono font-bold ${totals.accuracy < 98 ? 'text-rose-400' : 'text-emerald-400'}`}>
                 {totals.accuracy.toFixed(1)}%
              </h4>
-             <p className="text-[9px] text-slate-500 mt-1">Target: > 98% Accuracy</p>
+             <p className="text-[9px] text-slate-500 mt-1">Target: &gt; 98% Accuracy</p>
           </div>
       </div>
 
@@ -297,13 +311,14 @@ const Reconciliation: React.FC = () => {
                             {auditGroups.map(group => {
                                 const accounted = group.billedSold + group.reportedWaste;
                                 const diff = accounted - group.physicalNetUsed;
-                                const isLoss = diff < -0.1; // Float threshold
+                                const isLoss = diff < -0.1; 
                                 const isMatch = Math.abs(diff) < 0.5;
 
-                                // Determine plate size for "Missing Plates" label
-                                // Fallback to 10 if not found
-                                const standardRecipe = group.sku.category === 'Steam' ? 10 : (group.sku.category === 'Kurkure' ? 6 : 10);
-                                const missingPlates = isLoss ? Math.floor(Math.abs(diff) / standardRecipe) : 0;
+                                // Determine standard plate size from menu item for "Missing Plates" calculation
+                                const matchingMenuItem = menuItems.find(m => m.ingredients.some(i => i.skuId === group.sku.id));
+                                const piecesPerPlate = matchingMenuItem?.ingredients.find(i => i.skuId === group.sku.id)?.quantity || 10;
+                                
+                                const missingPlates = isLoss ? Math.floor(Math.abs(diff) / piecesPerPlate) : 0;
 
                                 return (
                                     <React.Fragment key={group.sku.id}>
@@ -344,7 +359,6 @@ const Reconciliation: React.FC = () => {
                                                 )}
                                             </td>
                                         </tr>
-                                        {/* Sub-rows for involved menu items */}
                                         {Object.values(group.menuItemsInvolved).map((menu, mIdx) => (
                                             <tr key={mIdx} className="hover:bg-slate-50 group border-none">
                                                 <td className="py-2 pl-12 pr-4" colSpan={4}>
@@ -366,7 +380,7 @@ const Reconciliation: React.FC = () => {
                                 <tr>
                                     <td colSpan={4} className="p-12 text-center text-slate-400 italic bg-white">
                                         <History size={40} className="mx-auto mb-2 opacity-10" />
-                                        No transactions or sales records found for this period.
+                                        No records found. Check if checkout/return operations were logged for this branch.
                                     </td>
                                 </tr>
                             )}
@@ -384,13 +398,13 @@ const Reconciliation: React.FC = () => {
             <div>
                <h3 className="font-bold text-white text-lg">Reconciliation Logic Explained</h3>
                <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-                  The dashboard groups data by <strong>Raw SKU</strong> to handle items that share ingredients (e.g., Steamed vs Fried momos).
+                  The dashboard handles **Shared SKUs** by grouping data by Raw Material.
                   <br /><br />
-                  <span className="text-white font-bold">Accounted For:</span> (Pieces calculated from POS Sales) + (Pieces reported as Waste by staff). 
+                  <span className="text-white font-bold">Android POS Snapshots:</span> If an order contains specific piece counts (the `consumed` field), those are prioritized over recipe calculations to ensure 100% data integrity.
+                  <br /><br />
+                  <span className="text-white font-bold">Accounted For:</span> (Sales pieces from Android/Web) + (Reported waste). 
                   <br />
-                  <span className="text-white font-bold">Physical Usage:</span> (Total Pieces Check-Out) - (Total Pieces Returned to Fridge).
-                  <br /><br />
-                  If <code className="text-indigo-400">Accounted</code> is lower than <code className="text-indigo-400">Physical</code>, stock has been lost without a record.
+                  <span className="text-white font-bold">Physical Usage:</span> (Check-Out) - (Return).
                </p>
             </div>
          </div>
