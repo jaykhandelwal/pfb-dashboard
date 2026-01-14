@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface Props {
@@ -12,8 +12,8 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-// Fixed inheritance and state initialization to resolve "setState does not exist" and "props does not exist" errors
-class GlobalErrorBoundary extends Component<Props, State> {
+// Explicitly extend React.Component with Props and State to fix missing state/props/setState errors
+class GlobalErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = {
@@ -29,7 +29,7 @@ class GlobalErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
-    // Properly call setState from within lifecycle method
+    // Use this.setState which is inherited from React.Component
     this.setState({ errorInfo });
   }
 
@@ -47,6 +47,7 @@ class GlobalErrorBoundary extends Component<Props, State> {
   };
 
   render() {
+    // Access this.state which is inherited from React.Component
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">

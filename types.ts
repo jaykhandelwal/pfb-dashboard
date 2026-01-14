@@ -1,4 +1,3 @@
-
 export enum TransactionType {
   CHECK_OUT = 'CHECK_OUT', // Freezer -> Branch
   CHECK_IN = 'CHECK_IN',    // Branch -> Freezer (Returns)
@@ -131,10 +130,14 @@ export interface OrderItem {
   variant?: 'FULL' | 'HALF'; // New: Variant tracking
   
   // SNAPSHOT: The ingredients consumed by this specific item at the time of order
+  // UPDATED: Supports single object (common in your Android app) or array (common in web app platters)
   consumed?: { 
     skuId: string; 
     quantity: number 
-  }[];
+  }[] | { 
+    skuId: string; 
+    quantity: number 
+  };
 }
 
 export interface PaymentSplit {
@@ -163,8 +166,6 @@ export interface Order {
   // Updated: Allow multiple custom SKUs per order
   customSkuItems?: { skuId: string; quantity: number }[];
   customSkuReason?: string;
-  
-  // NOTE: redeemedCouponId REMOVED. Relationship is stored on the coupon itself.
 }
 
 export interface DailyReportItem {

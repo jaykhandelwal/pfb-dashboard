@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Transaction, SKU, Branch, SalesRecord, Order, DailyReportItem, 
@@ -50,18 +49,31 @@ const mapTransactionToDB = (t: Partial<Transaction>) => ({
   image_urls: t.imageUrls
 });
 
-const mapOrderItemFromDB = (i: any): OrderItem => ({
-  id: i.id,
-  menuItemId: i.menuItemId || i.menu_item_id, 
-  name: i.name,
-  price: Number(i.price || 0),
-  quantity: Number(i.quantity || 0),
-  variant: i.variant,
-  consumed: Array.isArray(i.consumed) ? i.consumed.map((c: any) => ({
+const mapOrderItemFromDB = (i: any): OrderItem => {
+  // Direct handling for 'consumed' field which might be an object (Android) or array (Web) in the DB
+  let consumedData: OrderItem['consumed'];
+  if (Array.isArray(i.consumed)) {
+    consumedData = i.consumed.map((c: any) => ({
       skuId: c.skuId || c.sku_id,
       quantity: Number(c.quantity || 0)
-  })) : undefined
-});
+    }));
+  } else if (i.consumed && typeof i.consumed === 'object') {
+    consumedData = {
+      skuId: i.consumed.skuId || i.consumed.sku_id,
+      quantity: Number(i.consumed.quantity || 0)
+    };
+  }
+
+  return {
+    id: i.id,
+    menuItemId: i.menuItemId || i.menu_item_id, 
+    name: i.name,
+    price: Number(i.price || 0),
+    quantity: Number(i.quantity || 0),
+    variant: i.variant,
+    consumed: consumedData
+  };
+};
 
 const mapOrderFromDB = (o: any): Order => ({
   id: o.id,
@@ -80,7 +92,6 @@ const mapOrderFromDB = (o: any): Order => ({
   customAmountReason: o.custom_amount_reason || o.customAmountReason,
   customSkuItems: o.custom_sku_items || o.customSkuItems,
   customSkuReason: o.custom_sku_reason || o.customSkuReason
-  // No redeemedCouponId in Order table
 });
 
 const mapOrderToDB = (o: Order) => ({
@@ -99,8 +110,7 @@ const mapOrderToDB = (o: Order) => ({
   custom_amount: o.customAmount,
   custom_amount_reason: o.customAmountReason,
   custom_sku_items: o.customSkuItems,
-  custom_sku_reason: o.customSkuReason
-  // No redeemed_coupon_id sent to DB
+  custom_sku_reason: o.custom_sku_reason
 });
 
 const mapSkuFromDB = (s: any): SKU => {
@@ -264,6 +274,7 @@ const mapTemplateToDB = (t: TaskTemplate) => ({
   month_days: t.monthDays,
   start_date: t.startDate,
   is_active: t.isActive,
+  // Fix: use camelCase lastGeneratedDate property from TaskTemplate interface
   last_generated_date: t.lastGeneratedDate
 });
 
@@ -1146,6 +1157,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteTaskTemplate = async (id: string) => {
     const updated = taskTemplates.filter(t => t.id !== id);
+    // Fix: correct state setter name from setTemplates to setTaskTemplates
     setTaskTemplates(updated);
     save('taskTemplates', updated);
 
