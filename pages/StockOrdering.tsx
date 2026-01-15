@@ -137,22 +137,27 @@ const StockOrdering: React.FC = () => {
       // C. Generate Recommendations (Standard - Fill current gap)
       const recommendations: { sku: any, currentPkts: number, consumptionShare: number, recommendPkts: number }[] = [];
       
-      if (totalConsumption > 0 && available > 0) {
-          relevantSkus.forEach(sku => {
-              const consumed = consumptionMap[sku.id] || 0;
-              const share = consumed / totalConsumption; // % of total volume
-              const recommended = Math.floor(available * share);
+      // Always loop through ALL relevant SKUs, even if consumption is 0, to show them in the list
+      relevantSkus.forEach(sku => {
+          const consumed = consumptionMap[sku.id] || 0;
+          let share = 0;
+          let recommended = 0;
+
+          if (totalConsumption > 0) {
+              share = consumed / totalConsumption; // % of total volume
               
-              if (recommended > 0) {
-                  recommendations.push({
-                      sku,
-                      currentPkts: sMap[sku.id] || 0,
-                      consumptionShare: share,
-                      recommendPkts: recommended
-                  });
+              if (available > 0) {
+                  recommended = Math.floor(available * share);
               }
+          }
+          
+          recommendations.push({
+              sku,
+              currentPkts: sMap[sku.id] || 0,
+              consumptionShare: share,
+              recommendPkts: recommended
           });
-      }
+      });
 
       return { 
           currentStockPackets: Math.ceil(usedPackets), 
@@ -362,7 +367,7 @@ const StockOrdering: React.FC = () => {
                  <div className="p-8 text-center text-slate-400 italic">
                      {availablePackets <= 0 
                         ? "Fridge is full! No space to order more stock." 
-                        : "No sales history found for enabled SKUs to generate recommendations."}
+                        : "No items configured for deep freezer. Go to SKU Management to enable items."}
                  </div>
              ) : (
                  <div className="overflow-x-auto">
@@ -382,9 +387,13 @@ const StockOrdering: React.FC = () => {
                                      <td className="p-4 text-center text-slate-500">{Math.round(rec.currentPkts)} pkts</td>
                                      <td className="p-4 text-center text-slate-500">{(rec.consumptionShare * 100).toFixed(1)}%</td>
                                      <td className="p-4 text-right">
-                                         <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold text-xs border border-emerald-200">
-                                             +{rec.recommendPkts} pkts
-                                         </span>
+                                         {rec.recommendPkts > 0 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold text-xs border border-emerald-200">
+                                                +{rec.recommendPkts} pkts
+                                            </span>
+                                         ) : (
+                                            <span className="text-slate-300 text-xs font-bold px-3">0 pkts</span>
+                                         )}
                                      </td>
                                  </tr>
                              ))}
