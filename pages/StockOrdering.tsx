@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, CheckSquare, Square, Calendar, ArrowRight, ClipboardCopy, CheckCircle2 } from 'lucide-react';
-import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle } from 'lucide-react';
+import { StorageUnit, TransactionType } from '../types';
 import { getLocalISOString } from '../constants';
 
 const StockOrdering: React.FC = () => {
@@ -126,10 +126,19 @@ const StockOrdering: React.FC = () => {
       let totalConsumption = 0;
 
       transactions.forEach(t => {
-          if (t.date >= cutoffStr && (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.WASTE)) {
-              if (sMap[t.skuId] !== undefined) {
-                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + t.quantityPieces;
-                  totalConsumption += t.quantityPieces;
+          if (t.date >= cutoffStr && sMap[t.skuId] !== undefined) {
+              const qty = t.quantityPieces;
+              if (t.type === TransactionType.CHECK_OUT) {
+                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + qty;
+                  totalConsumption += qty;
+              } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
+                  // Fridge Waste is consumption
+                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + qty;
+                  totalConsumption += qty;
+              } else if (t.type === TransactionType.CHECK_IN) {
+                  // Returns reduce net consumption
+                  consumptionMap[t.skuId] = Math.max(0, (consumptionMap[t.skuId] || 0) - qty);
+                  totalConsumption -= qty;
               }
           }
       });
@@ -137,7 +146,7 @@ const StockOrdering: React.FC = () => {
       // C. Generate Recommendations (Standard - Fill current gap)
       const recommendations: { sku: any, currentPkts: number, consumptionShare: number, recommendPkts: number }[] = [];
       
-      // Always loop through ALL relevant SKUs, even if consumption is 0, to show them in the list
+      // Loop through ALL relevant SKUs
       relevantSkus.forEach(sku => {
           const consumed = consumptionMap[sku.id] || 0;
           let share = 0;
@@ -145,6 +154,7 @@ const StockOrdering: React.FC = () => {
 
           if (totalConsumption > 0) {
               share = consumed / totalConsumption; // % of total volume
+              if (share < 0) share = 0; // Safety check
               
               if (available > 0) {
                   recommended = Math.floor(available * share);
@@ -204,10 +214,18 @@ const StockOrdering: React.FC = () => {
       relevantSkus.forEach(s => velocityMap[s.id] = 0);
 
       transactions.forEach(t => {
-          if (t.date >= d7Str && (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.WASTE)) {
-              if (velocityMap[t.skuId] !== undefined) {
-                  velocityMap[t.skuId] += t.quantityPieces;
-                  totalWeeklyVolume += t.quantityPieces;
+          if (t.date >= d7Str && velocityMap[t.skuId] !== undefined) {
+              const qty = t.quantityPieces;
+              if (t.type === TransactionType.CHECK_OUT) {
+                  velocityMap[t.skuId] += qty;
+                  totalWeeklyVolume += qty;
+              } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
+                  velocityMap[t.skuId] += qty;
+                  totalWeeklyVolume += qty;
+              } else if (t.type === TransactionType.CHECK_IN) {
+                  // Returns reduce velocity (Net Consumption)
+                  velocityMap[t.skuId] -= qty;
+                  totalWeeklyVolume -= qty;
               }
           }
       });
@@ -216,7 +234,7 @@ const StockOrdering: React.FC = () => {
       const generated: any[] = [];
 
       relevantSkus.forEach(sku => {
-          const weeklySales = velocityMap[sku.id] || 0;
+          const weeklySales = Math.max(0, velocityMap[sku.id] || 0); // Ensure no negative velocity
           const dailyAvg = weeklySales / 7;
           const share = totalWeeklyVolume > 0 ? weeklySales / totalWeeklyVolume : 0;
 
@@ -225,11 +243,13 @@ const StockOrdering: React.FC = () => {
           const currentPcs = currentPkts * sku.piecesPerPacket;
 
           // B. Projected Burn during Lead Time
+          // If already OOS (currentPkts == 0), burn is technically 0 because we have nothing to burn.
           const projectedBurn = dailyAvg * daysUntilArrival;
 
           // C. Projected Stock on Arrival Date
-          // (Can go negative effectively meaning we are out of stock and have empty space)
-          const projectedStockPcs = currentPcs - projectedBurn;
+          // FIXED: Use Math.max(0) so we don't calculate negative stock.
+          // If we have 0 stock now, we arrive with 0 stock. We don't arrive with -50 stock.
+          const projectedStockPcs = Math.max(0, currentPcs - projectedBurn);
 
           // D. Ideal Stock Level (To fill fridge perfectly balanced by popularity)
           // Total Capacity (Packets) * SKU Packet Size * Share %
@@ -244,13 +264,14 @@ const StockOrdering: React.FC = () => {
 
           if (suggestPkts < 0) suggestPkts = 0;
 
-          if (suggestPkts > 0) {
+          if (suggestPkts > 0 || currentPkts === 0) {
               generated.push({
                   sku,
                   dailyAvg: dailyAvg.toFixed(1),
                   daysUntil: daysUntilArrival,
                   projectedBurn: Math.ceil(projectedBurn),
-                  suggestPkts
+                  suggestPkts,
+                  isOOS: currentPkts === 0
               });
           }
       });
@@ -511,7 +532,7 @@ const StockOrdering: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
-                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity</p>
+                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Net Consumption)</p>
                       </div>
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
@@ -548,7 +569,7 @@ const StockOrdering: React.FC = () => {
                                       <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
                                           <tr>
                                               <th className="p-3">Item</th>
-                                              <th className="p-3 text-center">Daily Burn</th>
+                                              <th className="p-3 text-center">Daily Burn (Net)</th>
                                               <th className="p-3 text-center">Proj. Stock (Arrival)</th>
                                               <th className="p-3 text-right bg-emerald-50 text-emerald-700">Order Qty</th>
                                           </tr>
@@ -556,7 +577,12 @@ const StockOrdering: React.FC = () => {
                                       <tbody className="divide-y divide-slate-100">
                                           {generatedOrder.map((item, idx) => (
                                               <tr key={idx} className="hover:bg-slate-50">
-                                                  <td className="p-3 font-bold text-slate-700">{item.sku.name}</td>
+                                                  <td className="p-3 font-bold text-slate-700">
+                                                      {item.sku.name}
+                                                      {item.isOOS && (
+                                                          <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">OOS</span>
+                                                      )}
+                                                  </td>
                                                   <td className="p-3 text-center text-slate-500">{item.dailyAvg} pcs</td>
                                                   <td className="p-3 text-center">
                                                       {item.projectedBurn > 0 ? (
