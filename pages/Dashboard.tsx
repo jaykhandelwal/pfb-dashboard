@@ -4,7 +4,7 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { DailyReportItem, TransactionType, Todo } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon } from 'lucide-react';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon, Snowflake } from 'lucide-react';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
 import ReactApexChart from 'react-apexcharts';
@@ -92,8 +92,7 @@ const Dashboard: React.FC = () => {
   const [dashboardBranch, setDashboardBranch] = useState<string>('ALL');
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
-  const [isCheckoutExpanded, setIsCheckoutExpanded] = useState(false);
-  const [isStockExpanded, setIsStockExpanded] = useState(false); // Default collapsed
+  const [activeOperationalView, setActiveOperationalView] = useState<'STOCK' | 'CHECKOUT' | null>(null);
 
   // Todo State
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -582,70 +581,95 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 1. Live Inventory */}
-      <div className="space-y-4">
-        <button onClick={() => setIsStockExpanded(!isStockExpanded)} className="w-full flex items-center justify-between text-left group">
-            <div className="flex items-center gap-4">
-                <h2 className="text-lg font-bold text-[#403424] uppercase tracking-wide">Current Fridge Stock</h2>
-                <div className="flex items-center gap-2">
-                    {stockHealth.red > 0 && <div className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">{stockHealth.red}</div>}
-                    {stockHealth.yellow > 0 && <div className="w-5 h-5 rounded-full bg-amber-400 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">{stockHealth.yellow}</div>}
-                </div>
-            </div>
-            <div className="flex items-center gap-2">
-                <span className="text-xs normal-case bg-slate-100 px-2 py-0.5 rounded-full text-slate-500 font-medium group-hover:bg-slate-200 transition-colors">{isStockExpanded ? 'Hide' : 'Show'}</span>
-                {isStockExpanded ? <ChevronUp className="text-slate-400"/> : <ChevronDown className="text-slate-400"/>}
-            </div>
-        </button>
-        {isStockExpanded && (
-            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 animate-fade-in">
-                {skus.map(sku => {
-                    const balance = stockLevels[sku.id] || 0;
-                    const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
-                    let status: 'NORMAL' | 'LOW' | 'CRITICAL' = 'NORMAL';
-                    if (balance < (pktSize * 3)) status = 'CRITICAL';
-                    else if (balance < (pktSize * 10)) status = 'LOW';
-                    return <InventoryTile key={sku.id} skuName={sku.name} quantity={balance} piecesPerPacket={pktSize} status={status} />
-                })}
-            </div>
-        )}
+      {/* 1. Operational Overview (Merged Section) */}
+      <div className="bg-white rounded-xl shadow-sm border border-[#403424]/10 overflow-hidden mb-8">
+         <div className="flex border-b border-[#403424]/10">
+            <button 
+               onClick={() => setActiveOperationalView(activeOperationalView === 'STOCK' ? null : 'STOCK')}
+               className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all relative ${
+                  activeOperationalView === 'STOCK' 
+                     ? 'bg-[#eff2e7] text-[#403424] shadow-[inset_0_-2px_0_0_#95a77c]' 
+                     : 'bg-white text-[#403424]/60 hover:bg-[#f9faf7] hover:text-[#403424]'
+               }`}
+            >
+               <Snowflake size={18} className={activeOperationalView === 'STOCK' ? 'text-[#95a77c]' : ''} />
+               Current Fridge Stock
+               {(stockHealth.red > 0 || stockHealth.yellow > 0) && (
+                  <div className="flex -space-x-1 ml-1">
+                     {stockHealth.red > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center border-2 border-white shadow-sm">{stockHealth.red}</span>
+                     )}
+                     {stockHealth.yellow > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-amber-400 text-white text-[10px] flex items-center justify-center border-2 border-white shadow-sm">{stockHealth.yellow}</span>
+                     )}
+                  </div>
+               )}
+            </button>
+            
+            <div className="w-px bg-[#403424]/10 self-stretch"></div>
+            
+            <button 
+               onClick={() => setActiveOperationalView(activeOperationalView === 'CHECKOUT' ? null : 'CHECKOUT')}
+               className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all relative ${
+                  activeOperationalView === 'CHECKOUT' 
+                     ? 'bg-[#eff2e7] text-[#403424] shadow-[inset_0_-2px_0_0_#95a77c]' 
+                     : 'bg-white text-[#403424]/60 hover:bg-[#f9faf7] hover:text-[#403424]'
+               }`}
+            >
+               <Store size={18} className={activeOperationalView === 'CHECKOUT' ? 'text-[#95a77c]' : ''} />
+               Last Checkout
+            </button>
+         </div>
+
+         {/* Content Area */}
+         <div className={`transition-all duration-300 ease-in-out ${activeOperationalView ? 'opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+            {activeOperationalView === 'STOCK' && (
+               <div className="p-4 bg-[#fcfdfa]">
+                  <div className="flex justify-between items-center mb-4">
+                     <h3 className="text-xs font-bold text-[#403424]/50 uppercase tracking-wide">Live Inventory Status</h3>
+                     <div className="text-[10px] text-[#403424]/40 flex gap-2">
+                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Critical</span>
+                        <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-400"></div> Low</span>
+                     </div>
+                  </div>
+                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                      {skus.map(sku => {
+                          const balance = stockLevels[sku.id] || 0;
+                          const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
+                          let status: 'NORMAL' | 'LOW' | 'CRITICAL' = 'NORMAL';
+                          if (balance < (pktSize * 3)) status = 'CRITICAL';
+                          else if (balance < (pktSize * 10)) status = 'LOW';
+                          return <InventoryTile key={sku.id} skuName={sku.name} quantity={balance} piecesPerPacket={pktSize} status={status} />
+                      })}
+                  </div>
+               </div>
+            )}
+
+            {activeOperationalView === 'CHECKOUT' && (
+               <div className="p-4 bg-[#fcfdfa]">
+                  <div className="space-y-4">
+                      {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
+                      {branches.map(branch => {
+                      const checkoutData = lastCheckouts[branch.id];
+                      if (!checkoutData) return null;
+                      return (
+                          <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10 shadow-sm">
+                              <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-3 gap-2">
+                                  <h3 className="font-bold text-[#95a77c] flex items-center gap-2"><Store size={16} /> {branch.name}</h3>
+                                  <span className="text-xs text-[#403424]/50 font-medium bg-[#eff2e7] px-2 py-1 rounded">{checkoutData.date}</span>
+                              </div>
+                              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                              {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
+                                  <InventoryTile key={sku.id} skuName={sku.name} quantity={checkoutData.items[sku.id]} piecesPerPacket={sku.piecesPerPacket} />
+                              ))}
+                              </div>
+                          </div>
+                      )})}
+                  </div>
+               </div>
+            )}
+         </div>
       </div>
-
-      <hr className="border-[#403424]/10" />
-
-      {/* 2. Last Checkout */}
-      <div className="space-y-4">
-        <button onClick={() => setIsCheckoutExpanded(!isCheckoutExpanded)} className="w-full flex items-center justify-between text-left group">
-            <h2 className="text-lg font-bold text-[#403424] uppercase tracking-wide flex items-center gap-2">
-                Last Checkout
-                <span className="text-xs normal-case bg-slate-100 px-2 py-0.5 rounded-full text-slate-500 font-medium group-hover:bg-slate-200 transition-colors">{isCheckoutExpanded ? 'Hide Details' : 'Show Details'}</span>
-            </h2>
-            {isCheckoutExpanded ? <ChevronUp className="text-slate-400"/> : <ChevronDown className="text-slate-400"/>}
-        </button>
-        {isCheckoutExpanded && (
-            <div className="animate-fade-in space-y-4">
-                {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
-                {branches.map(branch => {
-                const checkoutData = lastCheckouts[branch.id];
-                if (!checkoutData) return null;
-                return (
-                    <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10">
-                        <div className="flex flex-col items-center mb-3">
-                        <h3 className="font-bold text-[#95a77c] flex items-center gap-2"><Store size={16} /> {branch.name}</h3>
-                        <span className="text-xs text-[#403424]/50 font-medium">{checkoutData.date}</span>
-                        </div>
-                        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                        {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
-                            <InventoryTile key={sku.id} skuName={sku.name} quantity={checkoutData.items[sku.id]} piecesPerPacket={sku.piecesPerPacket} />
-                        ))}
-                        </div>
-                    </div>
-                )})}
-            </div>
-        )}
-      </div>
-
-      <hr className="border-[#403424]/10" />
 
       {/* 3. Analytics Section */}
       {hasPermission('VIEW_ANALYTICS') && (
@@ -670,20 +694,65 @@ const Dashboard: React.FC = () => {
              </div>
           </div>
 
-          {/* Revenue Breakdown */}
-          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Revenue Breakdown</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <StatCard title="Total Revenue" value={`₹${revenueBreakdown.total.toLocaleString()}`} icon={<Wallet size={20} className="text-slate-600" />} color="bg-slate-50/50 border-slate-100" />
-             <StatCard title="Cash Sales" value={`₹${revenueBreakdown.cash.toLocaleString()}`} icon={<Banknote size={20} className="text-emerald-600" />} color="bg-emerald-50/50 border-emerald-100" />
-             <StatCard title="Online Sales" value={`₹${revenueBreakdown.online.toLocaleString()}`} icon={<QrCode size={20} className="text-blue-600" />} trend="UPI & Card" color="bg-blue-50/50 border-blue-100" />
-          </div>
+          {/* Consolidated Financial Overview (Compact) */}
+          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Financial Overview</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+             {/* 1. Total Revenue */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Total Revenue</p>
+                   <div className="p-1.5 bg-slate-50 rounded-md text-slate-600"><Wallet size={16} /></div>
+                </div>
+                <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.total.toLocaleString()}</h3>
+             </div>
 
-          {/* Performance Averages */}
-          <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Performance Averages</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <StatCard title="Avg Daily Sales" value={`₹${Math.round(salesStats.avgDailySales).toLocaleString()}`} icon={<IndianRupee size={20} className="text-emerald-600" />} color="bg-white" />
-             <StatCard title="Avg Daily Orders" value={Math.round(salesStats.avgDailyVolume)} icon={<Receipt size={20} className="text-blue-600" />} color="bg-white" />
-             <StatCard title="Avg Order Value" value={`₹${Math.round(salesStats.avgOrderValue)}`} icon={<BarChart3 size={20} className="text-violet-600" />} color="bg-white" />
+             {/* 2. Cash Sales */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Cash Sales</p>
+                   <div className="p-1.5 bg-emerald-50 rounded-md text-emerald-600"><Banknote size={16} /></div>
+                </div>
+                <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.cash.toLocaleString()}</h3>
+             </div>
+
+             {/* 3. Online Sales */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Online Sales</p>
+                   <div className="p-1.5 bg-blue-50 rounded-md text-blue-600"><QrCode size={16} /></div>
+                </div>
+                <div className="flex flex-col">
+                   <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.online.toLocaleString()}</h3>
+                   <span className="text-[9px] text-[#403424]/40 mt-1">UPI & Card</span>
+                </div>
+             </div>
+
+             {/* 4. Avg Daily Sales */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Daily Sales</p>
+                   <div className="p-1.5 bg-emerald-50 rounded-md text-emerald-600"><IndianRupee size={16} /></div>
+                </div>
+                <h3 className="text-lg font-bold text-[#403424] leading-none">₹{Math.round(salesStats.avgDailySales).toLocaleString()}</h3>
+             </div>
+
+             {/* 5. Avg Daily Orders */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Daily Orders</p>
+                   <div className="p-1.5 bg-blue-50 rounded-md text-blue-600"><Receipt size={16} /></div>
+                </div>
+                <h3 className="text-lg font-bold text-[#403424] leading-none">{Math.round(salesStats.avgDailyVolume)}</h3>
+             </div>
+
+             {/* 6. Avg Order Value */}
+             <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                <div className="flex justify-between items-start mb-2">
+                   <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Order Value</p>
+                   <div className="p-1.5 bg-violet-50 rounded-md text-violet-600"><BarChart3 size={16} /></div>
+                </div>
+                <h3 className="text-lg font-bold text-[#403424] leading-none">₹{Math.round(salesStats.avgOrderValue)}</h3>
+             </div>
           </div>
 
           {/* Revenue Trends (30 Day Spline Area) */}

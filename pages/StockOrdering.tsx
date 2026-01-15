@@ -89,9 +89,14 @@ const StockOrdering: React.FC = () => {
   const { currentStockPackets, recommendedOrders, availablePackets, stockMap } = useMemo(() => {
       // A. Calculate Current Stock (Only for Enabled SKUs)
       const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+      
+      // Map SKU IDs to Packet Size for quick lookup
+      const skuSizeMap: Record<string, number> = {};
+      relevantSkus.forEach(s => skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1));
+
       const sMap: Record<string, number> = {}; // SKU ID -> Packet Count
       
-      // Calculate Stock Levels locally
+      // Calculate Stock Levels locally (Pieces)
       const levels: Record<string, number> = {};
       relevantSkus.forEach(s => levels[s.id] = 0);
 
@@ -106,55 +111,53 @@ const StockOrdering: React.FC = () => {
 
       let usedPackets = 0;
       Object.keys(levels).forEach(skuId => {
-          const sku = relevantSkus.find(s => s.id === skuId);
-          if (sku) {
-              const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
-              const pkts = Math.max(0, levels[skuId]) / pktSize; // Fractional packets count towards volume
-              sMap[skuId] = pkts;
-              usedPackets += pkts;
-          }
+          const pktSize = skuSizeMap[skuId] || 1;
+          const pkts = Math.max(0, levels[skuId]) / pktSize; // Fractional packets count towards volume
+          sMap[skuId] = pkts;
+          usedPackets += pkts;
       });
 
       const available = Math.max(0, maxPackets - Math.ceil(usedPackets));
 
-      // B. Calculate 3-Month Consumption (For Standard Recommendation)
+      // B. Calculate 3-Month Net Consumption (In PACKETS)
+      // Logic: Usage should be based on Volume (Packets), not Pieces, to treat Chutney (1/pkt) and Momos (50/pkt) equally in terms of fridge space.
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 90);
       const cutoffStr = cutoffDate.toISOString().slice(0, 10);
 
-      const consumptionMap: Record<string, number> = {};
-      let totalConsumption = 0;
+      const consumptionMap: Record<string, number> = {}; // PACKETS
+      let totalPacketConsumption = 0;
 
       transactions.forEach(t => {
           if (t.date >= cutoffStr && sMap[t.skuId] !== undefined) {
-              const qty = t.quantityPieces;
-              if (t.type === TransactionType.CHECK_OUT) {
-                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + qty;
-                  totalConsumption += qty;
-              } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
-                  // Fridge Waste is consumption
-                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + qty;
-                  totalConsumption += qty;
+              const pktSize = skuSizeMap[t.skuId] || 1;
+              const packets = t.quantityPieces / pktSize;
+
+              if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE')) {
+                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + packets;
+                  totalPacketConsumption += packets;
               } else if (t.type === TransactionType.CHECK_IN) {
-                  // Returns reduce net consumption
-                  consumptionMap[t.skuId] = Math.max(0, (consumptionMap[t.skuId] || 0) - qty);
-                  totalConsumption -= qty;
+                  // Net Consumption: Subtract returns
+                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) - packets;
+                  totalPacketConsumption -= packets;
               }
           }
       });
 
+      // Avoid negative totals (just in case of data anomalies)
+      totalPacketConsumption = Math.max(0, totalPacketConsumption);
+
       // C. Generate Recommendations (Standard - Fill current gap)
       const recommendations: { sku: any, currentPkts: number, consumptionShare: number, recommendPkts: number }[] = [];
       
-      // Loop through ALL relevant SKUs
+      // Loop through ALL relevant SKUs to ensure they appear
       relevantSkus.forEach(sku => {
-          const consumed = consumptionMap[sku.id] || 0;
+          const consumedPkts = Math.max(0, consumptionMap[sku.id] || 0);
           let share = 0;
           let recommended = 0;
 
-          if (totalConsumption > 0) {
-              share = consumed / totalConsumption; // % of total volume
-              if (share < 0) share = 0; // Safety check
+          if (totalPacketConsumption > 0) {
+              share = consumedPkts / totalPacketConsumption; // % of total PACKET volume
               
               if (available > 0) {
                   recommended = Math.floor(available * share);
@@ -200,32 +203,33 @@ const StockOrdering: React.FC = () => {
           return;
       }
 
-      // 2. Calculate Daily Velocity (Last 7 Days)
+      // 2. Calculate Daily Velocity (Last 7 Days) - IN PACKETS
       const d7 = new Date();
       d7.setDate(d7.getDate() - 7);
       const d7Str = d7.toISOString().slice(0,10);
 
-      const velocityMap: Record<string, number> = {}; // SKU ID -> Pcs per day
-      let totalWeeklyVolume = 0;
+      const velocityMap: Record<string, number> = {}; // SKU ID -> Packets per day
+      let totalWeeklyPacketVolume = 0;
 
       const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+      const skuSizeMap: Record<string, number> = {};
+      relevantSkus.forEach(s => skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1));
 
       // Initialize
       relevantSkus.forEach(s => velocityMap[s.id] = 0);
 
       transactions.forEach(t => {
           if (t.date >= d7Str && velocityMap[t.skuId] !== undefined) {
-              const qty = t.quantityPieces;
-              if (t.type === TransactionType.CHECK_OUT) {
-                  velocityMap[t.skuId] += qty;
-                  totalWeeklyVolume += qty;
-              } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
-                  velocityMap[t.skuId] += qty;
-                  totalWeeklyVolume += qty;
+              const pktSize = skuSizeMap[t.skuId] || 1;
+              const packets = t.quantityPieces / pktSize;
+
+              if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE')) {
+                  velocityMap[t.skuId] += packets;
+                  totalWeeklyPacketVolume += packets;
               } else if (t.type === TransactionType.CHECK_IN) {
-                  // Returns reduce velocity (Net Consumption)
-                  velocityMap[t.skuId] -= qty;
-                  totalWeeklyVolume -= qty;
+                  // Net Velocity: Subtract returns
+                  velocityMap[t.skuId] -= packets;
+                  totalWeeklyPacketVolume -= packets;
               }
           }
       });
@@ -234,42 +238,38 @@ const StockOrdering: React.FC = () => {
       const generated: any[] = [];
 
       relevantSkus.forEach(sku => {
-          const weeklySales = Math.max(0, velocityMap[sku.id] || 0); // Ensure no negative velocity
-          const dailyAvg = weeklySales / 7;
-          const share = totalWeeklyVolume > 0 ? weeklySales / totalWeeklyVolume : 0;
+          const weeklyPkts = Math.max(0, velocityMap[sku.id] || 0); // Ensure no negative velocity
+          const dailyAvgPkts = weeklyPkts / 7;
+          const share = totalWeeklyPacketVolume > 0 ? weeklyPkts / totalWeeklyPacketVolume : 0;
 
           // A. Current Stock (Packets)
           const currentPkts = stockMap[sku.id] || 0;
-          const currentPcs = currentPkts * sku.piecesPerPacket;
 
-          // B. Projected Burn during Lead Time
-          // If already OOS (currentPkts == 0), burn is technically 0 because we have nothing to burn.
-          const projectedBurn = dailyAvg * daysUntilArrival;
+          // B. Projected Burn during Lead Time (Packets)
+          const projectedBurnPkts = dailyAvgPkts * daysUntilArrival;
 
           // C. Projected Stock on Arrival Date
-          // FIXED: Use Math.max(0) so we don't calculate negative stock.
+          // Use Math.max(0) so we don't calculate negative stock (OOS logic).
           // If we have 0 stock now, we arrive with 0 stock. We don't arrive with -50 stock.
-          const projectedStockPcs = Math.max(0, currentPcs - projectedBurn);
+          const projectedStockPkts = Math.max(0, currentPkts - projectedBurnPkts);
 
           // D. Ideal Stock Level (To fill fridge perfectly balanced by popularity)
-          // Total Capacity (Packets) * SKU Packet Size * Share %
-          const targetLevelPcs = maxPackets * sku.piecesPerPacket * share;
+          // Total Capacity (Packets) * Share %
+          const targetLevelPkts = maxPackets * share;
 
           // E. Suggestion
           // We need to fill the gap between Projected Stock and Target Level
-          let suggestPcs = targetLevelPcs - projectedStockPcs;
+          let suggestPkts = Math.ceil(targetLevelPkts - projectedStockPkts);
           
-          // Convert to Packets
-          let suggestPkts = Math.ceil(suggestPcs / sku.piecesPerPacket);
-
           if (suggestPkts < 0) suggestPkts = 0;
 
+          // Include if suggest > 0 OR if it's OOS (to show visibility)
           if (suggestPkts > 0 || currentPkts === 0) {
               generated.push({
                   sku,
-                  dailyAvg: dailyAvg.toFixed(1),
+                  dailyAvg: dailyAvgPkts.toFixed(1), // Display in packets now
                   daysUntil: daysUntilArrival,
-                  projectedBurn: Math.ceil(projectedBurn),
+                  projectedBurn: Math.ceil(projectedBurnPkts),
                   suggestPkts,
                   isOOS: currentPkts === 0
               });
@@ -397,7 +397,7 @@ const StockOrdering: React.FC = () => {
                              <tr>
                                  <th className="p-4">Item Name</th>
                                  <th className="p-4 text-center">Current Stock</th>
-                                 <th className="p-4 text-center">Sales Share</th>
+                                 <th className="p-4 text-center">Volume Share</th>
                                  <th className="p-4 text-right">Recommended Order</th>
                              </tr>
                          </thead>
@@ -424,7 +424,7 @@ const StockOrdering: React.FC = () => {
              )}
          </div>
          <p className="text-xs text-slate-400 mt-2 italic px-1">
-            * Only items marked as "Store in Deep Freezer" in SKU Management are included here.
+            * Only items marked as "Store in Deep Freezer" in SKU Management are included here. Share calculated by Packet Volume.
          </p>
       </section>
 
@@ -532,7 +532,7 @@ const StockOrdering: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
-                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Net Consumption)</p>
+                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Net Consumption in Packets)</p>
                       </div>
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
@@ -583,7 +583,7 @@ const StockOrdering: React.FC = () => {
                                                           <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">OOS</span>
                                                       )}
                                                   </td>
-                                                  <td className="p-3 text-center text-slate-500">{item.dailyAvg} pcs</td>
+                                                  <td className="p-3 text-center text-slate-500">{item.dailyAvg} pkts</td>
                                                   <td className="p-3 text-center">
                                                       {item.projectedBurn > 0 ? (
                                                           <span className="text-red-500 font-bold">-{item.projectedBurn} used</span>
