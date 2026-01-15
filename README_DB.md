@@ -160,7 +160,10 @@ CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value JSONB);
 -- 15. SALES RECORDS TABLE (Legacy/Derived)
 CREATE TABLE IF NOT EXISTS sales_records (id TEXT PRIMARY KEY, order_id TEXT, date TEXT, branch_id TEXT, platform TEXT, sku_id TEXT, quantity_sold INTEGER, timestamp BIGINT, customer_id TEXT, order_amount NUMERIC);
 
--- 16. Enable RLS on all tables (Standard Security)
+-- 16. STORAGE UNITS TABLE
+CREATE TABLE IF NOT EXISTS storage_units (id TEXT PRIMARY KEY, name TEXT, capacity_litres NUMERIC, type TEXT, is_active BOOLEAN, created_at TIMESTAMPTZ);
+
+-- 17. Enable RLS on all tables (Standard Security)
 DO $$
 DECLARE
     t text;
@@ -181,6 +184,11 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- 18. Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (date);
+CREATE INDEX IF NOT EXISTS idx_transactions_sku_id ON transactions (sku_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions (type);
 
 ```
 
@@ -219,4 +227,5 @@ erDiagram
     TASK_TEMPLATES { string id PK, string frequency, boolean is_active }
     APP_SETTINGS { string key PK, jsonb value }
     CUSTOMER_COUPONS { uuid id PK, string status, timestamptz expires_at, text redeemed_order_id }
+    STORAGE_UNITS { string id PK, string name, numeric capacity_litres }
 ```

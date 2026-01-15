@@ -28,6 +28,7 @@ export interface SKU {
   dietary: SKUDietary;   // e.g. Veg, Non-Veg
   piecesPerPacket: number; // Inventory unit size
   order: number; // For custom sorting
+  isDeepFreezerItem?: boolean; // New: Specific flag for stock ordering
 }
 
 // New: Recipe/Ingredient definition
@@ -275,7 +276,7 @@ export interface AppSettings {
   whatsapp_webhook_url: string; 
   debug_whatsapp_webhook: boolean; 
   stock_ordering_litres_per_packet: number | string; // New
-  deep_freezer_categories: string[]; // New: Categories permitted in deep freezer
+  deep_freezer_categories: string[]; // Deprecated, kept for types but unused in UI
   [key: string]: any; // Extensible
 }
 

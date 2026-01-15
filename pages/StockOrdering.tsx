@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, CheckSquare, Square } from 'lucide-react';
-import { StorageUnit, TransactionType, SKUCategory } from '../types';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, CheckSquare, Square, Calendar, ArrowRight, ClipboardCopy, CheckCircle2 } from 'lucide-react';
+import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
+import { getLocalISOString } from '../constants';
 
 const StockOrdering: React.FC = () => {
   const { storageUnits, addStorageUnit, updateStorageUnit, deleteStorageUnit, appSettings, updateAppSetting, skus, transactions } = useStore();
@@ -12,23 +13,14 @@ const StockOrdering: React.FC = () => {
       appSettings.stock_ordering_litres_per_packet?.toString() || '2.3'
   ); 
   
-  const [enabledCategories, setEnabledCategories] = useState<string[]>(
-      appSettings.deep_freezer_categories || []
-  );
-
-  const [isCategoryConfigOpen, setIsCategoryConfigOpen] = useState(false);
-
   // Sync state if appSettings updates externally (e.g. initial load)
   useEffect(() => {
       if (appSettings.stock_ordering_litres_per_packet && appSettings.stock_ordering_litres_per_packet.toString() !== litresPerPacket) {
           setLitresPerPacket(appSettings.stock_ordering_litres_per_packet.toString());
       }
-      if (appSettings.deep_freezer_categories) {
-          setEnabledCategories(appSettings.deep_freezer_categories);
-      }
-  }, [appSettings.stock_ordering_litres_per_packet, appSettings.deep_freezer_categories]);
+  }, [appSettings.stock_ordering_litres_per_packet]);
 
-  // Save to AppSettings on change (debounced or onBlur would be better, but simple update here)
+  // Save to AppSettings on change
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newVal = e.target.value;
       setLitresPerPacket(newVal);
@@ -40,18 +32,15 @@ const StockOrdering: React.FC = () => {
       }
   };
 
-  const toggleCategory = (cat: string) => {
-      const newCats = enabledCategories.includes(cat) 
-          ? enabledCategories.filter(c => c !== cat)
-          : [...enabledCategories, cat];
-      
-      setEnabledCategories(newCats);
-      updateAppSetting('deep_freezer_categories', newCats);
-  };
-
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Partial<StorageUnit>>({});
+
+  // Generator State
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+  const [arrivalDate, setArrivalDate] = useState<string>('');
+  const [generatedOrder, setGeneratedOrder] = useState<any[]>([]);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const handleAddNew = () => {
     setEditingUnit({ name: '', capacityLitres: 0, type: 'DEEP_FREEZER' });
@@ -97,12 +86,12 @@ const StockOrdering: React.FC = () => {
   }, [totalCapacityLitres, litresPerPacket]);
 
   // 3. Current Stock & Consumption Logic
-  const { currentStockPackets, recommendedOrders, availablePackets } = useMemo(() => {
-      // A. Calculate Current Stock (Only for Enabled Categories)
-      const relevantSkus = skus.filter(s => enabledCategories.includes(s.category));
-      const stockMap: Record<string, number> = {}; // SKU ID -> Packet Count
+  const { currentStockPackets, recommendedOrders, availablePackets, stockMap } = useMemo(() => {
+      // A. Calculate Current Stock (Only for Enabled SKUs)
+      const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+      const sMap: Record<string, number> = {}; // SKU ID -> Packet Count
       
-      // Calculate Stock Levels locally (similar to Inventory page but scoped)
+      // Calculate Stock Levels locally
       const levels: Record<string, number> = {};
       relevantSkus.forEach(s => levels[s.id] = 0);
 
@@ -121,14 +110,14 @@ const StockOrdering: React.FC = () => {
           if (sku) {
               const pktSize = sku.piecesPerPacket > 0 ? sku.piecesPerPacket : 1;
               const pkts = Math.max(0, levels[skuId]) / pktSize; // Fractional packets count towards volume
-              stockMap[skuId] = pkts;
+              sMap[skuId] = pkts;
               usedPackets += pkts;
           }
       });
 
       const available = Math.max(0, maxPackets - Math.ceil(usedPackets));
 
-      // B. Calculate 3-Month Consumption
+      // B. Calculate 3-Month Consumption (For Standard Recommendation)
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 90);
       const cutoffStr = cutoffDate.toISOString().slice(0, 10);
@@ -138,14 +127,14 @@ const StockOrdering: React.FC = () => {
 
       transactions.forEach(t => {
           if (t.date >= cutoffStr && (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.WASTE)) {
-              if (stockMap[t.skuId] !== undefined) {
+              if (sMap[t.skuId] !== undefined) {
                   consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + t.quantityPieces;
                   totalConsumption += t.quantityPieces;
               }
           }
       });
 
-      // C. Generate Recommendations
+      // C. Generate Recommendations (Standard - Fill current gap)
       const recommendations: { sku: any, currentPkts: number, consumptionShare: number, recommendPkts: number }[] = [];
       
       if (totalConsumption > 0 && available > 0) {
@@ -157,7 +146,7 @@ const StockOrdering: React.FC = () => {
               if (recommended > 0) {
                   recommendations.push({
                       sku,
-                      currentPkts: stockMap[sku.id] || 0,
+                      currentPkts: sMap[sku.id] || 0,
                       consumptionShare: share,
                       recommendPkts: recommended
                   });
@@ -168,19 +157,129 @@ const StockOrdering: React.FC = () => {
       return { 
           currentStockPackets: Math.ceil(usedPackets), 
           availablePackets: available,
-          recommendedOrders: recommendations.sort((a,b) => b.recommendPkts - a.recommendPkts) 
+          recommendedOrders: recommendations.sort((a,b) => b.recommendPkts - a.recommendPkts),
+          stockMap: sMap
       };
 
-  }, [skus, transactions, enabledCategories, maxPackets]);
+  }, [skus, transactions, maxPackets]);
 
+  // --- SMART GENERATOR LOGIC ---
+  const handleGenerateOrder = () => {
+      if (!arrivalDate) {
+          alert("Please select an expected arrival date.");
+          return;
+      }
+
+      // 1. Calculate Days Until Arrival (Lead Time)
+      const today = new Date();
+      // Reset hours to avoid timezone issues affecting day diff
+      today.setHours(0,0,0,0);
+      const arrival = new Date(arrivalDate);
+      arrival.setHours(0,0,0,0);
+      
+      const diffTime = arrival.getTime() - today.getTime();
+      const daysUntilArrival = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (daysUntilArrival < 0) {
+          alert("Arrival date cannot be in the past.");
+          return;
+      }
+
+      // 2. Calculate Daily Velocity (Last 7 Days)
+      const d7 = new Date();
+      d7.setDate(d7.getDate() - 7);
+      const d7Str = d7.toISOString().slice(0,10);
+
+      const velocityMap: Record<string, number> = {}; // SKU ID -> Pcs per day
+      let totalWeeklyVolume = 0;
+
+      const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+
+      // Initialize
+      relevantSkus.forEach(s => velocityMap[s.id] = 0);
+
+      transactions.forEach(t => {
+          if (t.date >= d7Str && (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.WASTE)) {
+              if (velocityMap[t.skuId] !== undefined) {
+                  velocityMap[t.skuId] += t.quantityPieces;
+                  totalWeeklyVolume += t.quantityPieces;
+              }
+          }
+      });
+
+      // 3. Projections & Target
+      const generated: any[] = [];
+
+      relevantSkus.forEach(sku => {
+          const weeklySales = velocityMap[sku.id] || 0;
+          const dailyAvg = weeklySales / 7;
+          const share = totalWeeklyVolume > 0 ? weeklySales / totalWeeklyVolume : 0;
+
+          // A. Current Stock (Packets)
+          const currentPkts = stockMap[sku.id] || 0;
+          const currentPcs = currentPkts * sku.piecesPerPacket;
+
+          // B. Projected Burn during Lead Time
+          const projectedBurn = dailyAvg * daysUntilArrival;
+
+          // C. Projected Stock on Arrival Date
+          // (Can go negative effectively meaning we are out of stock and have empty space)
+          const projectedStockPcs = currentPcs - projectedBurn;
+
+          // D. Ideal Stock Level (To fill fridge perfectly balanced by popularity)
+          // Total Capacity (Packets) * SKU Packet Size * Share %
+          const targetLevelPcs = maxPackets * sku.piecesPerPacket * share;
+
+          // E. Suggestion
+          // We need to fill the gap between Projected Stock and Target Level
+          let suggestPcs = targetLevelPcs - projectedStockPcs;
+          
+          // Convert to Packets
+          let suggestPkts = Math.ceil(suggestPcs / sku.piecesPerPacket);
+
+          if (suggestPkts < 0) suggestPkts = 0;
+
+          if (suggestPkts > 0) {
+              generated.push({
+                  sku,
+                  dailyAvg: dailyAvg.toFixed(1),
+                  daysUntil: daysUntilArrival,
+                  projectedBurn: Math.ceil(projectedBurn),
+                  suggestPkts
+              });
+          }
+      });
+
+      setGeneratedOrder(generated.sort((a,b) => b.suggestPkts - a.suggestPkts));
+  };
+
+  const copyOrderToClipboard = () => {
+      const text = generatedOrder.map(i => `${i.sku.name}: ${i.suggestPkts} pkts`).join('\n');
+      const header = `Order for ${new Date(arrivalDate).toDateString()}\n------------------\n`;
+      navigator.clipboard.writeText(header + text);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+  };
 
   return (
     <div className="pb-24 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-          <Truck className="text-indigo-600" size={28} /> Stock Ordering
-        </h2>
-        <p className="text-slate-500 mt-1">Manage base storage and plan orders.</p>
+      <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+            <Truck className="text-indigo-600" size={28} /> Stock Ordering
+            </h2>
+            <p className="text-slate-500 mt-1">Manage base storage and plan orders.</p>
+        </div>
+        <button 
+            onClick={() => {
+                setArrivalDate(getLocalISOString());
+                setIsGeneratorOpen(true);
+                setGeneratedOrder([]);
+            }}
+            className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+        >
+            <BarChart2 size={18} /> Generate Smart Order
+        </button>
       </div>
 
       {/* Capacity Calculation Dashboard */}
@@ -238,41 +337,10 @@ const StockOrdering: React.FC = () => {
          </div>
       </section>
 
-      {/* Category Configuration */}
-      <section className="mb-8">
-          <button 
-            onClick={() => setIsCategoryConfigOpen(!isCategoryConfigOpen)}
-            className="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 hover:text-slate-700 transition-colors"
-          >
-              <Settings size={16} /> Storage Categories {isCategoryConfigOpen ? '(Hide)' : '(Show)'}
-          </button>
-          
-          {isCategoryConfigOpen && (
-              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
-                  <p className="text-sm text-slate-600 mb-4">Select which categories are stored in the deep freezer. Only enabled categories will be used for capacity calculations.</p>
-                  <div className="flex flex-wrap gap-3">
-                      {Object.values(SKUCategory).map(cat => {
-                          const isEnabled = enabledCategories.includes(cat);
-                          return (
-                              <button
-                                key={cat}
-                                onClick={() => toggleCategory(cat)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-bold transition-all ${isEnabled ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                              >
-                                  {isEnabled ? <CheckSquare size={18} className="text-indigo-600"/> : <Square size={18} />}
-                                  {cat}
-                              </button>
-                          )
-                      })}
-                  </div>
-              </div>
-          )}
-      </section>
-
-      {/* Order Recommendation Engine */}
+      {/* Order Recommendation Engine (Standard) */}
       <section className="mb-8">
          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4">
-            <BarChart2 size={20} className="text-emerald-500" /> Smart Order Recommendation
+            <Settings size={20} className="text-slate-400" /> Standard Recommendation
          </h3>
          
          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -294,7 +362,7 @@ const StockOrdering: React.FC = () => {
                  <div className="p-8 text-center text-slate-400 italic">
                      {availablePackets <= 0 
                         ? "Fridge is full! No space to order more stock." 
-                        : "No sales history found for enabled categories to generate recommendations."}
+                        : "No sales history found for enabled SKUs to generate recommendations."}
                  </div>
              ) : (
                  <div className="overflow-x-auto">
@@ -325,6 +393,9 @@ const StockOrdering: React.FC = () => {
                  </div>
              )}
          </div>
+         <p className="text-xs text-slate-400 mt-2 italic px-1">
+            * Only items marked as "Store in Deep Freezer" in SKU Management are included here.
+         </p>
       </section>
 
       {/* Storage Configuration Section */}
@@ -379,7 +450,7 @@ const StockOrdering: React.FC = () => {
          )}
       </section>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Freezer Modal */}
       {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
@@ -422,6 +493,104 @@ const StockOrdering: React.FC = () => {
                </form>
             </div>
          </div>
+      )}
+
+      {/* Generator Modal */}
+      {isGeneratorOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
+                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
+                      <div>
+                          <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
+                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity</p>
+                      </div>
+                      <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+                  </div>
+                  
+                  <div className="p-6 flex-1 overflow-y-auto">
+                      <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
+                          <div className="flex-1 w-full">
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Expected Stock Arrival Date</label>
+                              <div className="flex items-center border border-slate-300 rounded-xl px-3 py-2 bg-slate-50">
+                                  <Calendar size={16} className="text-slate-400 mr-2"/>
+                                  <input 
+                                      type="date"
+                                      value={arrivalDate}
+                                      onChange={(e) => setArrivalDate(e.target.value)}
+                                      className="bg-transparent w-full text-sm font-bold text-slate-700 outline-none"
+                                  />
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                  Logic: Calculates remaining stock until this date, then suggests order to 100% fill the fridge.
+                              </p>
+                          </div>
+                          <button 
+                              onClick={handleGenerateOrder}
+                              className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-colors w-full md:w-auto flex items-center justify-center gap-2"
+                          >
+                              Generate Suggestion <ArrowRight size={16} />
+                          </button>
+                      </div>
+
+                      {generatedOrder.length > 0 ? (
+                          <div className="space-y-4 animate-fade-in">
+                              <div className="overflow-hidden border border-slate-200 rounded-xl">
+                                  <table className="w-full text-left text-sm">
+                                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
+                                          <tr>
+                                              <th className="p-3">Item</th>
+                                              <th className="p-3 text-center">Daily Burn</th>
+                                              <th className="p-3 text-center">Proj. Stock (Arrival)</th>
+                                              <th className="p-3 text-right bg-emerald-50 text-emerald-700">Order Qty</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                          {generatedOrder.map((item, idx) => (
+                                              <tr key={idx} className="hover:bg-slate-50">
+                                                  <td className="p-3 font-bold text-slate-700">{item.sku.name}</td>
+                                                  <td className="p-3 text-center text-slate-500">{item.dailyAvg} pcs</td>
+                                                  <td className="p-3 text-center">
+                                                      {item.projectedBurn > 0 ? (
+                                                          <span className="text-red-500 font-bold">-{item.projectedBurn} used</span>
+                                                      ) : (
+                                                          <span className="text-slate-400">-</span>
+                                                      )}
+                                                  </td>
+                                                  <td className="p-3 text-right bg-emerald-50/50">
+                                                      <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full font-bold text-xs">
+                                                          {item.suggestPkts} pkts
+                                                      </span>
+                                                  </td>
+                                              </tr>
+                                          ))}
+                                      </tbody>
+                                  </table>
+                              </div>
+                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                                  <div>
+                                      <span className="text-xs font-bold text-slate-500 uppercase">Total Order</span>
+                                      <p className="text-xl font-bold text-slate-800">
+                                          {generatedOrder.reduce((acc, i) => acc + i.suggestPkts, 0)} pkts
+                                      </p>
+                                  </div>
+                                  <button 
+                                      onClick={copyOrderToClipboard}
+                                      className="text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors border border-indigo-100"
+                                  >
+                                      {copySuccess ? <CheckCircle2 size={18}/> : <ClipboardCopy size={18}/>}
+                                      {copySuccess ? 'Copied!' : 'Copy List'}
+                                  </button>
+                              </div>
+                          </div>
+                      ) : (
+                          <div className="text-center py-10 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                              <BarChart2 size={32} className="mx-auto mb-2 opacity-30" />
+                              <p>Select a date and click Generate.</p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

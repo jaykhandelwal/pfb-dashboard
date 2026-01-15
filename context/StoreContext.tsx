@@ -120,7 +120,8 @@ const mapSkuFromDB = (s: any): SKU => {
     category: s.category,
     dietary: s.dietary,
     piecesPerPacket: rawPieces > 0 ? rawPieces : 1,
-    order: Number(s.order || 0)
+    order: Number(s.order || 0),
+    isDeepFreezerItem: s.is_deep_freezer_item ?? false
   };
 };
 
@@ -130,7 +131,8 @@ const mapSkuToDB = (s: SKU) => ({
   category: s.category,
   dietary: s.dietary,
   pieces_per_packet: s.piecesPerPacket,
-  order: s.order
+  order: s.order,
+  is_deep_freezer_item: s.isDeepFreezerItem
 });
 
 const mapSalesRecordFromDB = (r: any): SalesRecord => ({

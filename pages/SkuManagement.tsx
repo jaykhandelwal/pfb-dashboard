@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SKU, SKUCategory, SKUDietary } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Box, ArrowUp, ArrowDown, Copy, Check, FileJson, Download } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Box, ArrowUp, ArrowDown, Copy, Check, FileJson, Download, Snowflake } from 'lucide-react';
 
 const SkuManagement: React.FC = () => {
   const { skus, addSku, updateSku, deleteSku, reorderSku, menuItems, menuCategories } = useStore();
@@ -20,7 +20,8 @@ const SkuManagement: React.FC = () => {
     name: '',
     category: SKUCategory.STEAM,
     dietary: SKUDietary.VEG,
-    piecesPerPacket: 50
+    piecesPerPacket: 50,
+    isDeepFreezerItem: false
   };
 
   const handleAddNew = () => {
@@ -231,6 +232,24 @@ const SkuManagement: React.FC = () => {
               />
             </div>
 
+            <div className="flex items-center gap-3">
+               <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                  <input 
+                     type="checkbox" 
+                     name="deepFreezer" 
+                     id="deepFreezer" 
+                     className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer top-1 left-1 checked:right-1 checked:left-auto"
+                     checked={currentSku.isDeepFreezerItem || false}
+                     onChange={(e) => setCurrentSku({...currentSku, isDeepFreezerItem: e.target.checked})}
+                  />
+                  <label htmlFor="deepFreezer" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${currentSku.isDeepFreezerItem ? 'bg-indigo-600' : 'bg-slate-300'}`}></label>
+               </div>
+               <div>
+                  <label htmlFor="deepFreezer" className="text-sm text-slate-700 font-bold cursor-pointer">Store in Deep Freezer?</label>
+                  <p className="text-xs text-slate-500">Enable if this item is stocked in the main storage.</p>
+               </div>
+            </div>
+
             <div className="md:col-span-2 flex justify-end gap-3 pt-4">
               <button 
                 type="button"
@@ -287,7 +306,12 @@ const SkuManagement: React.FC = () => {
                     </div>
                   </td>
                   <td className="p-4 font-medium text-slate-700">
-                    <div>{sku.name}</div>
+                    <div className="flex items-center gap-2">
+                        {sku.name}
+                        {sku.isDeepFreezerItem && (
+                            <Snowflake size={14} className="text-indigo-400" title="Deep Freezer Item" />
+                        )}
+                    </div>
                     <div className="md:hidden flex flex-wrap items-center gap-2 mt-1">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
                         sku.category === 'Steam' ? 'bg-blue-50 text-blue-700 border-blue-200' :
