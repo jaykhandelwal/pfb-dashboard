@@ -16,7 +16,7 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "apexcharts": "^3.49.0",
-    "react-apexcharts": "^1.4.1"
+    "react-apexcharts": "^1.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
