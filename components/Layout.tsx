@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
-  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles
+  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -53,6 +53,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }
 
   navStructure.push(
+    { path: '/stock-ordering', label: 'Stock Ordering', icon: <Truck size={20} />, permission: 'MANAGE_INVENTORY' },
     { path: '/wastage', label: 'Wastage', icon: <Trash2 size={20} />, permission: 'MANAGE_WASTAGE' },
     { path: '/inventory', label: 'Deep Freezer', icon: <Snowflake size={20} />, permission: 'MANAGE_INVENTORY' },
     { path: '/reconciliation', label: 'Reconciliation', icon: <Scale size={20} />, permission: 'MANAGE_RECONCILIATION' }

@@ -3,8 +3,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Transaction, SKU, Branch, SalesRecord, Order, DailyReportItem, 
   Todo, AppSettings, MenuItem, MenuCategory, Customer, MembershipRule, 
-  RewardResult, AttendanceRecord, AttendanceOverride, TaskTemplate,
-  TransactionType, SalesPlatform, AttendanceOverrideType, ArchivedTransaction, CustomerCoupon, OrderItem
+  RewardResult, AttendanceRecord, AttendanceOverride, TaskTemplate, StorageUnit,
+  TransactionType, SalesPlatform, AttendanceOverrideType, ArchivedTransaction, CustomerCoupon, OrderItem, SKUCategory
 } from '../types';
 import { 
   INITIAL_BRANCHES, INITIAL_SKUS, INITIAL_MENU_CATEGORIES, 
@@ -305,6 +305,22 @@ const mapMenuItemToDB = (m: MenuItem) => ({
   half_ingredients: m.halfIngredients
 });
 
+const mapStorageUnitFromDB = (s: any): StorageUnit => ({
+  id: s.id,
+  name: s.name,
+  capacityLitres: Number(s.capacity_litres || s.capacityLitres || 0),
+  type: s.type,
+  isActive: s.is_active ?? true
+});
+
+const mapStorageUnitToDB = (s: StorageUnit) => ({
+  id: s.id,
+  name: s.name,
+  capacity_litres: s.capacityLitres,
+  type: s.type,
+  is_active: s.isActive
+});
+
 interface StoreContextType {
   transactions: Transaction[];
   salesRecords: SalesRecord[];
@@ -321,6 +337,7 @@ interface StoreContextType {
   attendanceOverrides: AttendanceOverride[];
   deletedTransactions: ArchivedTransaction[];
   taskTemplates: TaskTemplate[];
+  storageUnits: StorageUnit[];
   appSettings: AppSettings;
   isLoading: boolean;
   addBatchTransactions: (txs: Omit<Transaction, 'id' | 'timestamp' | 'batchId'>[]) => Promise<void>;
@@ -355,6 +372,9 @@ interface StoreContextType {
   addTaskTemplate: (template: TaskTemplate) => Promise<void>;
   updateTaskTemplate: (template: TaskTemplate) => Promise<void>;
   deleteTaskTemplate: (id: string) => Promise<void>;
+  addStorageUnit: (unit: Omit<StorageUnit, 'id'>) => Promise<void>;
+  updateStorageUnit: (unit: StorageUnit) => Promise<void>;
+  deleteStorageUnit: (id: string) => Promise<void>;
   updateAppSetting: (key: string, value: any) => Promise<boolean>;
 }
 
@@ -376,13 +396,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [attendanceOverrides, setAttendanceOverrides] = useState<AttendanceOverride[]>([]);
   const [deletedTransactions, setDeletedTransactions] = useState<ArchivedTransaction[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+  const [storageUnits, setStorageUnits] = useState<StorageUnit[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>({
     require_customer_phone: false,
     require_customer_name: false,
     enable_beta_tasks: false,
     enable_whatsapp_webhook: false,
     whatsapp_webhook_url: '',
-    debug_whatsapp_webhook: false
+    debug_whatsapp_webhook: false,
+    stock_ordering_litres_per_packet: 2.3,
+    deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT] // Defaults
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -410,6 +433,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             load('attendanceOverrides', setAttendanceOverrides, []);
             load('deletedTransactions', setDeletedTransactions, []);
             load('taskTemplates', setTaskTemplates, []);
+            load('storageUnits', setStorageUnits, []);
             
             const storedSettings = localStorage.getItem('pakaja_appSettings');
             if (storedSettings) {
@@ -417,7 +441,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
 
             if (isSupabaseConfigured()) {
-                const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData] = await Promise.all([
+                const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData] = await Promise.all([
                     supabase.from('transactions').select('*'),
                     supabase.from('orders').select('*'),
                     supabase.from('skus').select('*').order('order', { ascending: true }),
@@ -431,7 +455,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     supabase.from('task_templates').select('*'),
                     supabase.from('todos').select('*'),
                     supabase.from('sales_records').select('*'),
-                    supabase.from('app_settings').select('*')
+                    supabase.from('app_settings').select('*'),
+                    supabase.from('storage_units').select('*')
                 ]);
 
                 if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
@@ -447,6 +472,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 if (tmplData.data) { const mapped = tmplData.data.map(mapTemplateFromDB); setTaskTemplates(mapped); save('taskTemplates', mapped); }
                 if (todoData.data) { const mapped = todoData.data.map(mapTodoFromDB); setTodos(mapped); save('todos', mapped); }
                 if (salesData.data) { const mapped = salesData.data.map(mapSalesRecordFromDB); setSalesRecords(mapped); save('salesRecords', mapped); }
+                if (storageData.data) { const mapped = storageData.data.map(mapStorageUnitFromDB); setStorageUnits(mapped); save('storageUnits', mapped); }
                 
                 if (settingsData.data) {
                     const settingsMap = settingsData.data.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
@@ -738,8 +764,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (isSupabaseConfigured()) { try { await supabase.from('task_templates').delete().eq('id', id); } catch (e) { console.error(e); } }
   };
 
+  // --- Storage Unit Management ---
+  const addStorageUnit = async (unit: any) => {
+    const newUnit = { ...unit, id: `store-${Date.now()}`, isActive: true };
+    const updated = [...storageUnits, newUnit];
+    setStorageUnits(updated);
+    save('storageUnits', updated);
+    if (isSupabaseConfigured()) { try { await supabase.from('storage_units').insert(mapStorageUnitToDB(newUnit)); } catch (e) { console.error(e); } }
+  };
+
+  const updateStorageUnit = async (unit: StorageUnit) => {
+    const updated = storageUnits.map(u => u.id === unit.id ? unit : u);
+    setStorageUnits(updated);
+    save('storageUnits', updated);
+    if (isSupabaseConfigured()) { try { await supabase.from('storage_units').update(mapStorageUnitToDB(unit)).eq('id', unit.id); } catch (e) { console.error(e); } }
+  };
+
+  const deleteStorageUnit = async (id: string) => {
+    const updated = storageUnits.filter(u => u.id !== id);
+    setStorageUnits(updated);
+    save('storageUnits', updated);
+    if (isSupabaseConfigured()) { try { await supabase.from('storage_units').delete().eq('id', id); } catch (e) { console.error(e); } }
+  };
+
   const updateAppSetting = async (key: string, value: any) => {
-    setAppSettings({ ...appSettings, [key]: value });
+    setAppSettings(prev => ({ ...prev, [key]: value }));
+    save('appSettings', { ...appSettings, [key]: value });
     if (isSupabaseConfigured()) { try { await supabase.from('app_settings').upsert({ key, value }); return true; } catch (e) { return false; } }
     return true;
   };
@@ -749,7 +799,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       transactions, salesRecords, skus, branches, orders, todos, 
       menuItems, menuCategories, customers, membershipRules, customerCoupons,
       attendanceRecords, attendanceOverrides, deletedTransactions, 
-      taskTemplates, appSettings, isLoading,
+      taskTemplates, storageUnits, appSettings, isLoading,
       addBatchTransactions, deleteTransactionBatch, resetData,
       addSalesRecords, deleteSalesRecordsForDate,
       addSku, updateSku, deleteSku, reorderSku,
@@ -761,6 +811,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addAttendance, setAttendanceStatus,
       addTodo, toggleTodo, deleteTodo,
       addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
+      addStorageUnit, updateStorageUnit, deleteStorageUnit,
       updateAppSetting
     }}>
       {children}

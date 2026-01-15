@@ -19,6 +19,7 @@ import MenuCategoryManagement from './pages/MenuCategoryManagement';
 import Attendance from './pages/Attendance';
 import Tasks from './pages/Tasks';
 import AppSettings from './pages/AppSettings';
+import StockOrdering from './pages/StockOrdering';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
@@ -99,6 +100,12 @@ function App() {
               <Route path="/inventory" element={
                 <ProtectedRoute requiredPermission="MANAGE_INVENTORY">
                   <Inventory />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/stock-ordering" element={
+                <ProtectedRoute requiredPermission="MANAGE_INVENTORY">
+                  <StockOrdering />
                 </ProtectedRoute>
               } />
               

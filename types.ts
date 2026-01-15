@@ -1,3 +1,4 @@
+
 export enum TransactionType {
   CHECK_OUT = 'CHECK_OUT', // Freezer -> Branch
   CHECK_IN = 'CHECK_IN',    // Branch -> Freezer (Returns)
@@ -272,7 +273,9 @@ export interface AppSettings {
   enable_beta_tasks: boolean;
   enable_whatsapp_webhook: boolean; 
   whatsapp_webhook_url: string; 
-  debug_whatsapp_webhook: boolean; // New Debug Feature
+  debug_whatsapp_webhook: boolean; 
+  stock_ordering_litres_per_packet: number | string; // New
+  deep_freezer_categories: string[]; // New: Categories permitted in deep freezer
   [key: string]: any; // Extensible
 }
 
@@ -309,6 +312,16 @@ export interface Todo {
   dueDate?: string; // YYYY-MM-DD
   templateId?: string; // Link to parent template
   priority?: 'NORMAL' | 'HIGH';
+}
+
+// --- Stock Ordering & Storage ---
+
+export interface StorageUnit {
+  id: string;
+  name: string;
+  capacityLitres: number;
+  type: 'DEEP_FREEZER'; // Extensible for other types later
+  isActive: boolean;
 }
 
 // Add global window extension for Android Bridge
