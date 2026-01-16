@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
@@ -9,6 +9,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { Permission } from '../types';
+import { UselessDashboard } from './UselessDashboard';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,15 +27,47 @@ type NavItem = {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, logout, hasPermission } = useAuth();
-  const { appSettings, lastUpdated } = useStore();
+  const { appSettings, lastUpdated, isLiveConnected } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
+  // Easter Egg State
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const dashboardClickRef = useRef<number>(0);
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Sync Status State
+  const [syncStatus, setSyncStatus] = useState<string>('');
+
   // Track expanded state of dropdowns - Default collapsed
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
   const toggleSection = (id: string) => {
     setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
   };
+
+  // Live Sync Timer Logic
+  useEffect(() => {
+    const updateSyncStatus = () => {
+        const now = Date.now();
+        const diffSeconds = Math.floor((now - lastUpdated) / 1000);
+
+        if (diffSeconds < 2) {
+            setSyncStatus('Synced just now');
+        } else if (diffSeconds < 60) {
+            setSyncStatus(`Synced ${diffSeconds}s ago`);
+        } else if (diffSeconds < 3600) {
+            setSyncStatus(`Synced ${Math.floor(diffSeconds / 60)}m ago`);
+        } else {
+            setSyncStatus(`Last sync: ${new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+        }
+    };
+
+    // Update immediately and then every second
+    updateSyncStatus();
+    const timer = setInterval(updateSyncStatus, 1000);
+    
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
 
   // If no user (e.g. login page), render simple layout
   if (!currentUser) {
@@ -114,6 +147,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     setIsMobileMenuOpen(false);
   };
 
+  const handleDashboardClick = (e: React.MouseEvent) => {
+    // Only admins get the easter egg
+    if (currentUser?.role !== 'ADMIN') return;
+
+    // Increment click counter
+    dashboardClickRef.current += 1;
+
+    // Clear existing timeout
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+
+    // Set timeout to reset counter if clicks stop
+    clickTimeoutRef.current = setTimeout(() => {
+        dashboardClickRef.current = 0;
+    }, 500); // 500ms window for double click
+
+    if (dashboardClickRef.current >= 2) {
+        setShowEasterEgg(true);
+        dashboardClickRef.current = 0; // Reset
+    }
+  };
+
   // Render a single nav item (recursive for children)
   const renderNavItem = (item: NavItem, depth = 0) => {
     // If it's a Group (Parent)
@@ -148,11 +202,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     // If it's a Link (Leaf)
     const isActive = location.pathname === item.path;
+    const isDashboard = item.path === '/dashboard';
+
     return (
       <Link
         key={item.path}
         to={item.path!}
-        onClick={handleMobileNavClick}
+        onClick={(e) => {
+            handleMobileNavClick();
+            if (isDashboard) handleDashboardClick(e);
+        }}
         className={`flex items-center space-x-3 px-4 h-12 rounded-lg transition-colors font-medium text-base ${
           isActive 
             ? 'bg-[#95a77c] text-white shadow-md' 
@@ -165,11 +224,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     );
   };
 
-  // Helper to format the timestamp
-  const formattedTime = new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
   return (
     <div className="flex h-screen bg-[#f9faf7] text-[#403424] font-sans overflow-hidden">
+      {/* Easter Egg Overlay */}
+      {showEasterEgg && <UselessDashboard onClose={() => setShowEasterEgg(false)} />}
+
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-[#eff2e7] text-[#403424] flex-shrink-0 hidden md:flex flex-col shadow-xl z-20 border-r border-[#403424]/5">
         <div className="p-6 border-b border-[#403424]/10 flex flex-col items-center">
@@ -200,10 +259,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span className="font-medium">Sign Out</span>
           </button>
           
-          {/* Subtle Live Status */}
-          <div className="mt-4 flex justify-center items-center gap-1.5 text-[10px] text-[#403424]/40 font-mono tracking-tighter">
-             <Wifi size={10} className="text-emerald-500 animate-pulse" /> 
-             Live Sync: {formattedTime}
+          {/* Live Status Indicator */}
+          <div className={`mt-4 flex justify-center items-center gap-1.5 text-[10px] font-mono tracking-tighter transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
+             <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} /> 
+             {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
           </div>
         </div>
       </aside>
@@ -255,8 +314,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <LogOut size={20} />
                       <span>Sign Out</span>
                   </button>
-                  <div className="mt-4 flex justify-center items-center gap-1.5 text-[10px] text-[#403424]/40 font-mono">
-                     <Wifi size={10} className="text-emerald-500" /> Live: {formattedTime}
+                  <div className={`mt-4 flex justify-center items-center gap-1.5 text-[10px] font-mono transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
+                     <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} /> 
+                     {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
                   </div>
               </div>
           </div>

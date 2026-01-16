@@ -94,6 +94,7 @@ interface StoreContextType {
   appSettings: AppSettings;
   salesRecords: SalesRecord[];
   lastUpdated: number; // Added timestamp
+  isLiveConnected: boolean; // Connection Status
   
   addBatchTransactions: (txs: any[]) => Promise<boolean>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -176,6 +177,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
   // Persistence Helper
   const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
@@ -436,10 +438,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      .subscribe();
+      .subscribe((status) => {
+          // Update connection status
+          setIsLiveConnected(status === 'SUBSCRIBED');
+      });
 
     return () => {
         supabase.removeChannel(channel);
+        setIsLiveConnected(false);
     };
   }, []);
 
@@ -687,7 +693,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         transactions, skus, branches, orders, todos, menuItems, menuCategories, 
         customers, membershipRules, customerCoupons, attendanceRecords, 
         attendanceOverrides, deletedTransactions, taskTemplates, storageUnits, 
-        appSettings, salesRecords, lastUpdated, isLoading,
+        appSettings, salesRecords, lastUpdated, isLiveConnected, isLoading,
         addBatchTransactions, deleteTransactionBatch, resetData,
         addSku, updateSku, deleteSku, reorderSku,
         addBranch, updateBranch, deleteBranch,
