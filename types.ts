@@ -1,3 +1,4 @@
+
 export type Permission = 
   | 'VIEW_DASHBOARD'
   | 'VIEW_ANALYTICS'
@@ -56,6 +57,7 @@ export interface SKU {
   category: SKUCategory;
   dietary: SKUDietary;
   piecesPerPacket: number;
+  volumePerPacketLitres?: number; // Specific volume for this item
   order: number;
   isDeepFreezerItem?: boolean;
   costPrice?: number;

@@ -57,7 +57,7 @@ const mapTransactionToDB = (tx: Partial<Transaction>) => ({
 });
 
 const mapOrderFromDB = (data: any): Order => ({ ...data, branchId: data.branch_id, customerId: data.customer_id, customerName: data.customer_name, totalAmount: data.total_amount, paymentMethod: data.payment_method, customAmount: data.custom_amount, customAmountReason: data.custom_amount_reason, customSkuItems: data.custom_sku_items, customSkuReason: data.custom_sku_reason });
-const mapSkuFromDB = (data: any): SKU => ({ ...data, piecesPerPacket: data.pieces_per_packet, isDeepFreezerItem: data.is_deep_freezer_item, costPrice: data.cost_price });
+const mapSkuFromDB = (data: any): SKU => ({ ...data, piecesPerPacket: data.pieces_per_packet, isDeepFreezerItem: data.is_deep_freezer_item, costPrice: data.cost_price, volumePerPacketLitres: data.volume_per_packet_litres });
 const mapMenuItemFromDB = (data: any): MenuItem => ({ ...data, halfPrice: data.half_price, halfIngredients: data.half_ingredients });
 const mapCustomerFromDB = (data: any): Customer => ({ ...data, phoneNumber: data.phone_number, totalSpend: data.total_spend, orderCount: data.order_count, joinedAt: data.joined_at, lastOrderDate: data.last_order_date });
 const mapRuleFromDB = (data: any): MembershipRule => ({ ...data, triggerOrderCount: data.trigger_order_count, timeFrameDays: data.time_frame_days, validityDays: data.validity_days, minOrderValue: data.min_order_value, rewardVariant: data.reward_variant });
@@ -520,12 +520,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addSku = async (sku: any) => { 
       const newSku = { ...sku, id: `sku-${Date.now()}` }; 
       setSkus([...skus, newSku]); save('skus', [...skus, newSku]);
-      if(isSupabaseConfigured()) await supabase.from('skus').insert(newSku); 
+      if(isSupabaseConfigured()) await supabase.from('skus').insert({
+          ...newSku,
+          volume_per_packet_litres: newSku.volumePerPacketLitres
+      }); 
   };
   const updateSku = async (sku: any) => { 
       const updated = skus.map(s => s.id === sku.id ? sku : s);
       setSkus(updated); save('skus', updated);
-      if(isSupabaseConfigured()) await supabase.from('skus').update(sku).eq('id', sku.id);
+      if(isSupabaseConfigured()) await supabase.from('skus').update({
+          ...sku,
+          volume_per_packet_litres: sku.volumePerPacketLitres
+      }).eq('id', sku.id);
   };
   const deleteSku = async (id: string) => {
       const updated = skus.filter(s => s.id !== id);

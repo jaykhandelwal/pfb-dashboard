@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee } from 'lucide-react';
-import { StorageUnit, TransactionType } from '../types';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info } from 'lucide-react';
+import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
 import { getLocalISOString } from '../constants';
 
 const StockOrdering: React.FC = () => {
@@ -71,30 +71,36 @@ const StockOrdering: React.FC = () => {
     setEditingUnit({});
   };
 
+  // --- Volume Logic Helper (SIMPLIFIED) ---
+  // Returns estimated Litres for a single packet of a specific SKU
+  const getVolumePerPacket = (sku: SKU): number => {
+      // 1. Chutney / Consumables Exception
+      // Assumes Chutney/Sauce packets are ~1 Litre
+      if (sku.category === SKUCategory.CONSUMABLES) {
+          return 1.0; 
+      }
+      
+      // 2. Global Average for Everything Else
+      // Default: 2.3L per bag
+      return parseFloat(litresPerPacket) || 2.3;
+  };
+
   // --- Calculations ---
 
-  // 1. Total Litres
+  // 1. Total Litres Capacity
   const totalCapacityLitres = useMemo(() => {
       return storageUnits.reduce((acc, unit) => acc + (unit.isActive ? unit.capacityLitres : 0), 0);
   }, [storageUnits]);
 
-  // 2. Max Packets
-  const maxPackets = useMemo(() => {
-      const perPacket = parseFloat(litresPerPacket);
-      if (!perPacket || perPacket <= 0) return 0;
-      return Math.floor(totalCapacityLitres / perPacket);
-  }, [totalCapacityLitres, litresPerPacket]);
-
-  // 3. Current Stock & Consumption Logic
-  const { currentStockPackets, recommendedOrders, availablePackets, stockMap } = useMemo(() => {
+  // 2. Current Stock & Consumption Logic
+  const { currentStockLitres, recommendedOrders, availableLitres, stockMapPackets } = useMemo(() => {
       // A. Calculate Current Stock (Only for Enabled SKUs)
       const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
       
-      // Map SKU IDs to Packet Size for quick lookup
       const skuSizeMap: Record<string, number> = {};
       relevantSkus.forEach(s => skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1));
 
-      const sMap: Record<string, number> = {}; // SKU ID -> Packet Count
+      const sMapPkts: Record<string, number> = {}; // SKU ID -> Packet Count
       
       // Calculate Stock Levels locally (Pieces)
       const levels: Record<string, number> = {};
@@ -109,88 +115,99 @@ const StockOrdering: React.FC = () => {
           }
       });
 
-      let usedPackets = 0;
+      let usedLitres = 0;
       Object.keys(levels).forEach(skuId => {
+          const sku = relevantSkus.find(s => s.id === skuId);
+          if (!sku) return;
+
           const pktSize = skuSizeMap[skuId] || 1;
           const pkts = Math.max(0, levels[skuId]) / pktSize; // Fractional packets count towards volume
-          sMap[skuId] = pkts;
-          usedPackets += pkts;
+          
+          sMapPkts[skuId] = pkts;
+          
+          // VOLUME CALCULATION
+          const volPerPkt = getVolumePerPacket(sku);
+          usedLitres += (pkts * volPerPkt);
       });
 
-      const available = Math.max(0, maxPackets - Math.ceil(usedPackets));
+      const availableL = Math.max(0, totalCapacityLitres - usedLitres);
 
-      // B. Calculate 3-Month Net Consumption (In PACKETS)
-      // Logic: Usage should be based on Volume (Packets), not Pieces, to treat Chutney (1/pkt) and Momos (50/pkt) equally in terms of fridge space.
+      // B. Calculate 90-Day Consumption (In LITRES)
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 90);
       const cutoffStr = cutoffDate.toISOString().slice(0, 10);
 
-      const consumptionMap: Record<string, number> = {}; // PACKETS
-      let totalPacketConsumption = 0;
+      const consumptionLitresMap: Record<string, number> = {}; 
+      let totalLitresConsumed = 0;
 
       transactions.forEach(t => {
-          if (t.date >= cutoffStr && sMap[t.skuId] !== undefined) {
+          if (t.date >= cutoffStr && sMapPkts[t.skuId] !== undefined) {
+              const sku = relevantSkus.find(s => s.id === t.skuId);
+              if (!sku) return;
+
               const pktSize = skuSizeMap[t.skuId] || 1;
               const packets = t.quantityPieces / pktSize;
+              const volPerPkt = getVolumePerPacket(sku);
+              const litres = packets * volPerPkt;
 
               if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE')) {
-                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) + packets;
-                  totalPacketConsumption += packets;
+                  consumptionLitresMap[t.skuId] = (consumptionLitresMap[t.skuId] || 0) + litres;
+                  totalLitresConsumed += litres;
               } else if (t.type === TransactionType.CHECK_IN) {
-                  // Net Consumption: Subtract returns
-                  consumptionMap[t.skuId] = (consumptionMap[t.skuId] || 0) - packets;
-                  totalPacketConsumption -= packets;
+                  consumptionLitresMap[t.skuId] = (consumptionLitresMap[t.skuId] || 0) - litres;
+                  totalLitresConsumed -= litres;
               }
           }
       });
 
-      // Avoid negative totals (just in case of data anomalies)
-      totalPacketConsumption = Math.max(0, totalPacketConsumption);
+      totalLitresConsumed = Math.max(0, totalLitresConsumed);
 
-      // C. Generate Recommendations (Standard - Fill current gap)
+      // C. Generate Recommendations (Fill based on Volume Share)
       const recommendations: { sku: any, currentPkts: number, consumptionShare: number, recommendPkts: number }[] = [];
       
-      // Loop through ALL relevant SKUs to ensure they appear
       relevantSkus.forEach(sku => {
-          const consumedPkts = Math.max(0, consumptionMap[sku.id] || 0);
+          const consumedL = Math.max(0, consumptionLitresMap[sku.id] || 0);
           let share = 0;
-          let recommended = 0;
+          let recommendedPkts = 0;
 
-          if (totalPacketConsumption > 0) {
-              share = consumedPkts / totalPacketConsumption; // % of total PACKET volume
+          if (totalLitresConsumed > 0) {
+              share = consumedL / totalLitresConsumed; // % of total VOLUME consumed
               
-              if (available > 0) {
-                  recommended = Math.floor(available * share);
+              if (availableL > 0) {
+                  // Litres to add for this SKU
+                  const litresToAdd = availableL * share;
+                  // Convert Litres back to Packets (FLOOR to be safe)
+                  const volPerPkt = getVolumePerPacket(sku);
+                  recommendedPkts = Math.floor(litresToAdd / volPerPkt);
               }
           }
           
           recommendations.push({
               sku,
-              currentPkts: sMap[sku.id] || 0,
+              currentPkts: sMapPkts[sku.id] || 0,
               consumptionShare: share,
-              recommendPkts: recommended
+              recommendPkts: recommendedPkts
           });
       });
 
       return { 
-          currentStockPackets: Math.ceil(usedPackets), 
-          availablePackets: available,
+          currentStockLitres: Math.ceil(usedLitres), 
+          availableLitres: Math.floor(availableL),
           recommendedOrders: recommendations.sort((a,b) => b.recommendPkts - a.recommendPkts),
-          stockMap: sMap
+          stockMapPackets: sMapPkts
       };
 
-  }, [skus, transactions, maxPackets]);
+  }, [skus, transactions, totalCapacityLitres, litresPerPacket]);
 
-  // --- SMART GENERATOR LOGIC ---
+  // --- SMART GENERATOR LOGIC (Physical Constraint Aware) ---
   const handleGenerateOrder = () => {
       if (!arrivalDate) {
           alert("Please select an expected arrival date.");
           return;
       }
 
-      // 1. Calculate Days Until Arrival (Lead Time)
+      // 1. Lead Time
       const today = new Date();
-      // Reset hours to avoid timezone issues affecting day diff
       today.setHours(0,0,0,0);
       const arrival = new Date(arrivalDate);
       arrival.setHours(0,0,0,0);
@@ -203,75 +220,96 @@ const StockOrdering: React.FC = () => {
           return;
       }
 
-      // 2. Calculate Daily Velocity (Last 7 Days) - IN PACKETS
+      // 2. Velocity (LITRES per Day) - Last 7 Days
       const d7 = new Date();
       d7.setDate(d7.getDate() - 7);
       const d7Str = d7.toISOString().slice(0,10);
 
-      const velocityMap: Record<string, number> = {}; // SKU ID -> Packets per day
-      let totalWeeklyPacketVolume = 0;
+      const velocityLitresMap: Record<string, number> = {}; 
+      let totalWeeklyLitresVolume = 0;
 
       const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
       const skuSizeMap: Record<string, number> = {};
       relevantSkus.forEach(s => skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1));
 
-      // Initialize
-      relevantSkus.forEach(s => velocityMap[s.id] = 0);
+      relevantSkus.forEach(s => velocityLitresMap[s.id] = 0);
 
       transactions.forEach(t => {
-          if (t.date >= d7Str && velocityMap[t.skuId] !== undefined) {
+          if (t.date >= d7Str && velocityLitresMap[t.skuId] !== undefined) {
+              const sku = relevantSkus.find(s => s.id === t.skuId);
+              if(!sku) return;
+
               const pktSize = skuSizeMap[t.skuId] || 1;
               const packets = t.quantityPieces / pktSize;
+              const volPerPkt = getVolumePerPacket(sku);
+              const litres = packets * volPerPkt;
 
               if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE')) {
-                  velocityMap[t.skuId] += packets;
-                  totalWeeklyPacketVolume += packets;
+                  velocityLitresMap[t.skuId] += litres;
+                  totalWeeklyLitresVolume += litres;
               } else if (t.type === TransactionType.CHECK_IN) {
-                  // Net Velocity: Subtract returns
-                  velocityMap[t.skuId] -= packets;
-                  totalWeeklyPacketVolume -= packets;
+                  velocityLitresMap[t.skuId] -= litres;
+                  totalWeeklyLitresVolume -= litres;
               }
           }
       });
 
-      // 3. Projections & Target
+      // 3. True Physical Availability Calculation
+      const projectedStocks: Record<string, number> = {};
+      let totalProjectedOccupiedLitres = 0;
+
+      // First pass: Calculate projected stock at arrival date for ALL items
+      relevantSkus.forEach(sku => {
+          const volPerPkt = getVolumePerPacket(sku);
+          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
+          const dailyAvgLitres = weeklyLitres / 7;
+
+          const currentPkts = stockMapPackets[sku.id] || 0;
+          const currentLitres = currentPkts * volPerPkt;
+          const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
+          
+          // Project Stock cannot be less than 0
+          const projStock = Math.max(0, currentLitres - projectedBurnLitres);
+          projectedStocks[sku.id] = projStock;
+          
+          totalProjectedOccupiedLitres += projStock;
+      });
+
+      // 4. Calculate True Free Space
+      // This accounts for "Dead Space" occupied by slow-moving overstocked items
+      let trueFreeLitres = Math.max(0, totalCapacityLitres - totalProjectedOccupiedLitres);
+
       const generated: any[] = [];
 
+      // 5. Distribute Free Space based on Velocity Share
+      // Only items with velocity get a share of the free space
       relevantSkus.forEach(sku => {
-          const weeklyPkts = Math.max(0, velocityMap[sku.id] || 0); // Ensure no negative velocity
-          const dailyAvgPkts = weeklyPkts / 7;
-          const share = totalWeeklyPacketVolume > 0 ? weeklyPkts / totalWeeklyPacketVolume : 0;
-
-          // A. Current Stock (Packets)
-          const currentPkts = stockMap[sku.id] || 0;
-
-          // B. Projected Burn during Lead Time (Packets)
-          const projectedBurnPkts = dailyAvgPkts * daysUntilArrival;
-
-          // C. Projected Stock on Arrival Date
-          // Use Math.max(0) so we don't calculate negative stock (OOS logic).
-          // If we have 0 stock now, we arrive with 0 stock. We don't arrive with -50 stock.
-          const projectedStockPkts = Math.max(0, currentPkts - projectedBurnPkts);
-
-          // D. Ideal Stock Level (To fill fridge perfectly balanced by popularity)
-          // Total Capacity (Packets) * Share %
-          const targetLevelPkts = maxPackets * share;
-
-          // E. Suggestion
-          // We need to fill the gap between Projected Stock and Target Level
-          let suggestPkts = Math.ceil(targetLevelPkts - projectedStockPkts);
+          const volPerPkt = getVolumePerPacket(sku);
+          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
           
-          if (suggestPkts < 0) suggestPkts = 0;
+          // Share of ACTIVE velocity (only items that move)
+          const share = totalWeeklyLitresVolume > 0 ? weeklyLitres / totalWeeklyLitresVolume : 0;
 
-          // Include if suggest > 0 OR if it's OOS (to show visibility)
+          // Ideal addition is a share of the TRUE free space
+          const litresToAdd = trueFreeLitres * share;
+          
+          // Convert to Packets (FLOOR to ensure we fit)
+          const suggestPkts = Math.floor(litresToAdd / volPerPkt);
+
+          // Meta data for display
+          const dailyAvgLitres = weeklyLitres / 7;
+          const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
+          const currentPkts = stockMapPackets[sku.id] || 0;
+
           if (suggestPkts > 0 || currentPkts === 0) {
               generated.push({
                   sku,
-                  dailyAvg: dailyAvgPkts.toFixed(1), // Display in packets now
+                  dailyAvgPackets: (dailyAvgLitres / volPerPkt).toFixed(1),
                   daysUntil: daysUntilArrival,
-                  projectedBurn: Math.ceil(projectedBurnPkts),
+                  projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
                   suggestPkts,
-                  isOOS: currentPkts === 0
+                  isOOS: currentPkts === 0,
+                  volPerPkt
               });
           }
       });
@@ -298,7 +336,7 @@ const StockOrdering: React.FC = () => {
             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
             <Truck className="text-indigo-600" size={28} /> Stock Ordering
             </h2>
-            <p className="text-slate-500 mt-1">Manage base storage and plan orders.</p>
+            <p className="text-slate-500 mt-1">Average-volume based ordering system.</p>
         </div>
         <button 
             onClick={() => {
@@ -320,7 +358,7 @@ const StockOrdering: React.FC = () => {
             </div>
             <div>
                 <h3 className="text-lg font-bold">Capacity Calculator</h3>
-                <p className="text-xs text-slate-400">Estimate total storage capability based on volume.</p>
+                <p className="text-xs text-slate-400">Total volume available for stock.</p>
             </div>
          </div>
 
@@ -338,7 +376,7 @@ const StockOrdering: React.FC = () => {
              {/* Calculation Factor */}
              <div className="flex flex-col justify-center">
                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Cuboid size={14} /> Volume per Packet
+                    <Cuboid size={14} /> Standard Bag Volume
                  </label>
                  <div className="relative">
                     <input 
@@ -350,19 +388,26 @@ const StockOrdering: React.FC = () => {
                        onBlur={saveVolumeSetting}
                        className="w-full bg-slate-900/50 border border-slate-600 rounded-xl px-4 py-3 text-lg font-bold text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-center"
                     />
-                    <span className="absolute right-4 top-4 text-xs text-slate-500 font-bold">Litres</span>
+                    <span className="absolute right-4 top-4 text-xs text-slate-500 font-bold">L/pkt</span>
                  </div>
-                 <p className="text-[10px] text-center text-slate-500 mt-2">Avg space taken by 1 packet</p>
+                 <div className="flex items-center justify-center gap-1 mt-2">
+                    <Info size={10} className="text-indigo-300"/>
+                    <p className="text-[10px] text-center text-slate-500">
+                        Applies to all Momos. Consumables fixed at 1.0L.
+                    </p>
+                 </div>
              </div>
 
              {/* Result */}
              <div className="bg-indigo-600/20 rounded-xl p-4 border border-indigo-500/50 flex flex-col items-center justify-center text-center">
-                 <p className="text-xs font-bold text-indigo-200 uppercase tracking-wider mb-1">Max Packet Capacity</p>
+                 <p className="text-xs font-bold text-indigo-200 uppercase tracking-wider mb-1">Usage Status</p>
                  <div className="flex items-baseline gap-1">
-                     <span className="text-4xl font-bold text-white">{maxPackets}</span>
-                     <span className="text-sm font-medium text-indigo-300">Packets</span>
+                     <span className="text-3xl font-bold text-white">{Math.round(totalCapacityLitres - availableLitres)}</span>
+                     <span className="text-sm font-medium text-indigo-300">/ {totalCapacityLitres} L</span>
                  </div>
-                 <p className="text-[10px] text-indigo-300/60 mt-1">Theoretical Maximum</p>
+                 <p className="text-[10px] text-indigo-300/60 mt-1">
+                    {Math.round((totalCapacityLitres - availableLitres) / totalCapacityLitres * 100)}% Full
+                 </p>
              </div>
          </div>
       </section>
@@ -370,28 +415,27 @@ const StockOrdering: React.FC = () => {
       {/* Order Recommendation Engine (Standard) */}
       <section className="mb-8">
          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4">
-            <Settings size={20} className="text-slate-400" /> Standard Recommendation
+            <Settings size={20} className="text-slate-400" /> Stock Analysis (90 Day Trend)
          </h3>
          
          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
              <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center text-sm">
                  <div className="flex gap-4">
                      <div>
-                         <span className="text-slate-500">Current Stock: </span>
-                         <span className="font-bold text-slate-800">{currentStockPackets} pkts</span>
+                         <span className="text-slate-500">Current Volume: </span>
+                         <span className="font-bold text-slate-800">{currentStockLitres} L</span>
                      </div>
                      <div>
-                         <span className="text-slate-500">Available Space: </span>
-                         <span className="font-bold text-emerald-600">{availablePackets} pkts</span>
+                         <span className="text-slate-500">Free Space: </span>
+                         <span className="font-bold text-emerald-600">{availableLitres} L</span>
                      </div>
                  </div>
-                 <div className="text-xs text-slate-400">Based on last 90 days sales</div>
              </div>
 
              {recommendedOrders.length === 0 ? (
                  <div className="p-8 text-center text-slate-400 italic">
-                     {availablePackets <= 0 
-                        ? "Fridge is full! No space to order more stock." 
+                     {availableLitres <= 0 
+                        ? "Fridge is physically full (0 Litres available). No space to order." 
                         : "No items configured for deep freezer. Go to SKU Management to enable items."}
                  </div>
              ) : (
@@ -402,13 +446,16 @@ const StockOrdering: React.FC = () => {
                                  <th className="p-4">Item Name</th>
                                  <th className="p-4 text-center">Current Stock</th>
                                  <th className="p-4 text-center">Volume Share</th>
-                                 <th className="p-4 text-right">Recommended Order</th>
+                                 <th className="p-4 text-right">Recommended</th>
                              </tr>
                          </thead>
                          <tbody className="divide-y divide-slate-100">
                              {recommendedOrders.map((rec, idx) => (
                                  <tr key={idx} className="hover:bg-slate-50">
-                                     <td className="p-4 font-bold text-slate-700">{rec.sku.name}</td>
+                                     <td className="p-4">
+                                         <div className="font-bold text-slate-700">{rec.sku.name}</div>
+                                         <div className="text-[10px] text-slate-400">{getVolumePerPacket(rec.sku)} L / pkt</div>
+                                     </td>
                                      <td className="p-4 text-center text-slate-500">{Math.round(rec.currentPkts)} pkts</td>
                                      <td className="p-4 text-center text-slate-500">{(rec.consumptionShare * 100).toFixed(1)}%</td>
                                      <td className="p-4 text-right">
@@ -428,7 +475,7 @@ const StockOrdering: React.FC = () => {
              )}
          </div>
          <p className="text-xs text-slate-400 mt-2 italic px-1">
-            * Only items marked as "Store in Deep Freezer" in SKU Management are included here. Share calculated by Packet Volume.
+            * Logic: Consumables = 1L. All other items = {litresPerPacket}L.
          </p>
       </section>
 
@@ -536,7 +583,7 @@ const StockOrdering: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
-                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Net Consumption in Packets)</p>
+                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Short Term Trend)</p>
                       </div>
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
@@ -555,7 +602,7 @@ const StockOrdering: React.FC = () => {
                                   />
                               </div>
                               <p className="text-[10px] text-slate-400 mt-1">
-                                  Logic: Calculates remaining stock until this date, then suggests order to 100% fill the fridge.
+                                  Logic: Fills the <strong>True Available Space</strong> (Total Capacity - Projected Stock of ALL items). Does not over-order.
                               </p>
                           </div>
                           <button 
@@ -573,7 +620,7 @@ const StockOrdering: React.FC = () => {
                                       <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
                                           <tr>
                                               <th className="p-3">Item</th>
-                                              <th className="p-3 text-center">Daily Burn (Net)</th>
+                                              <th className="p-3 text-center">Daily Burn (7d)</th>
                                               <th className="p-3 text-center">Proj. Stock (Arrival)</th>
                                               <th className="p-3 text-right bg-emerald-50 text-emerald-700">Order Qty</th>
                                           </tr>
@@ -583,14 +630,15 @@ const StockOrdering: React.FC = () => {
                                               <tr key={idx} className="hover:bg-slate-50">
                                                   <td className="p-3 font-bold text-slate-700">
                                                       {item.sku.name}
+                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.volPerPkt}L / pkt</span>
                                                       {item.isOOS && (
                                                           <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">OOS</span>
                                                       )}
                                                   </td>
-                                                  <td className="p-3 text-center text-slate-500">{item.dailyAvg} pkts</td>
+                                                  <td className="p-3 text-center text-slate-500">{item.dailyAvgPackets} pkts</td>
                                                   <td className="p-3 text-center">
-                                                      {item.projectedBurn > 0 ? (
-                                                          <span className="text-red-500 font-bold">-{item.projectedBurn} used</span>
+                                                      {item.projectedBurnPackets > 0 ? (
+                                                          <span className="text-red-500 font-bold">-{item.projectedBurnPackets} used</span>
                                                       ) : (
                                                           <span className="text-slate-400">-</span>
                                                       )}
