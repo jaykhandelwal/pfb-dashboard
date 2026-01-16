@@ -199,14 +199,14 @@ const StockOrdering: React.FC = () => {
 
   }, [skus, transactions, totalCapacityLitres, litresPerPacket]);
 
-  // --- SMART GENERATOR LOGIC (Physical Constraint Aware) ---
+  // --- SMART GENERATOR LOGIC (Dual-Horizon) ---
   const handleGenerateOrder = () => {
       if (!arrivalDate) {
           alert("Please select an expected arrival date.");
           return;
       }
 
-      // 1. Lead Time
+      // 1. Lead Time Calculation
       const today = new Date();
       today.setHours(0,0,0,0);
       const arrival = new Date(arrivalDate);
@@ -220,47 +220,78 @@ const StockOrdering: React.FC = () => {
           return;
       }
 
-      // 2. Velocity (LITRES per Day) - Last 7 Days
+      // 2. Short Term Velocity (7-Day Burn Rate)
       const d7 = new Date();
       d7.setDate(d7.getDate() - 7);
       const d7Str = d7.toISOString().slice(0,10);
 
       const velocityLitresMap: Record<string, number> = {}; 
-      let totalWeeklyLitresVolume = 0;
+      
+      // 3. Long Term Trends (90-Day Distribution)
+      const d90 = new Date();
+      d90.setDate(d90.getDate() - 90);
+      const d90Str = d90.toISOString().slice(0,10);
+      
+      const distributionLitresMap: Record<string, number> = {};
+      let totalLongTermLitresVolume = 0;
 
       const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
       const skuSizeMap: Record<string, number> = {};
-      relevantSkus.forEach(s => skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1));
+      
+      // Initialize Maps
+      relevantSkus.forEach(s => {
+          skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1);
+          velocityLitresMap[s.id] = 0;
+          distributionLitresMap[s.id] = 0;
+      });
 
-      relevantSkus.forEach(s => velocityLitresMap[s.id] = 0);
-
+      // Single pass through transactions to populate both maps
       transactions.forEach(t => {
-          if (t.date >= d7Str && velocityLitresMap[t.skuId] !== undefined) {
-              const sku = relevantSkus.find(s => s.id === t.skuId);
-              if(!sku) return;
+          // Skip if not a relevant item or wrong transaction type
+          if (!skuSizeMap[t.skuId] || (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.WASTE && t.type !== TransactionType.CHECK_IN)) {
+              return;
+          }
+          // Note: Only CHECK_OUT and WASTE (FRIDGE) count as consumption. CHECK_IN is a reversal.
+          // Adjust logic to correctly net out returns for both windows.
 
-              const pktSize = skuSizeMap[t.skuId] || 1;
-              const packets = t.quantityPieces / pktSize;
-              const volPerPkt = getVolumePerPacket(sku);
-              const litres = packets * volPerPkt;
+          const sku = relevantSkus.find(s => s.id === t.skuId);
+          if(!sku) return;
 
-              if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE')) {
-                  velocityLitresMap[t.skuId] += litres;
-                  totalWeeklyLitresVolume += litres;
-              } else if (t.type === TransactionType.CHECK_IN) {
-                  velocityLitresMap[t.skuId] -= litres;
-                  totalWeeklyLitresVolume -= litres;
+          const pktSize = skuSizeMap[t.skuId];
+          const packets = t.quantityPieces / pktSize;
+          const volPerPkt = getVolumePerPacket(sku);
+          const litres = packets * volPerPkt;
+          
+          const isConsumption = (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE'));
+          const isReturn = (t.type === TransactionType.CHECK_IN);
+
+          // 7-Day Logic
+          if (t.date >= d7Str) {
+              if (isConsumption) velocityLitresMap[t.skuId] += litres;
+              else if (isReturn) velocityLitresMap[t.skuId] -= litres;
+          }
+
+          // 90-Day Logic
+          if (t.date >= d90Str) {
+              if (isConsumption) {
+                  distributionLitresMap[t.skuId] += litres;
+                  totalLongTermLitresVolume += litres;
+              } else if (isReturn) {
+                  distributionLitresMap[t.skuId] -= litres;
+                  totalLongTermLitresVolume -= litres;
               }
           }
       });
 
-      // 3. True Physical Availability Calculation
+      // 4. True Physical Availability Calculation
       const projectedStocks: Record<string, number> = {};
       let totalProjectedOccupiedLitres = 0;
 
       // First pass: Calculate projected stock at arrival date for ALL items
       relevantSkus.forEach(sku => {
           const volPerPkt = getVolumePerPacket(sku);
+          
+          // Use 7-Day Velocity for Burn Rate
           const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
           const dailyAvgLitres = weeklyLitres / 7;
 
@@ -275,20 +306,19 @@ const StockOrdering: React.FC = () => {
           totalProjectedOccupiedLitres += projStock;
       });
 
-      // 4. Calculate True Free Space
+      // 5. Calculate True Free Space
       // This accounts for "Dead Space" occupied by slow-moving overstocked items
       let trueFreeLitres = Math.max(0, totalCapacityLitres - totalProjectedOccupiedLitres);
 
       const generated: any[] = [];
 
-      // 5. Distribute Free Space based on Velocity Share
-      // Only items with velocity get a share of the free space
+      // 6. Distribute Free Space based on 90-Day Share (Long Term Stability)
       relevantSkus.forEach(sku => {
           const volPerPkt = getVolumePerPacket(sku);
-          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
           
-          // Share of ACTIVE velocity (only items that move)
-          const share = totalWeeklyLitresVolume > 0 ? weeklyLitres / totalWeeklyLitresVolume : 0;
+          // Share based on 90-Day Volume (Long Term Preference)
+          const longTermLitres = Math.max(0, distributionLitresMap[sku.id] || 0);
+          const share = totalLongTermLitresVolume > 0 ? longTermLitres / totalLongTermLitresVolume : 0;
 
           // Ideal addition is a share of the TRUE free space
           const litresToAdd = trueFreeLitres * share;
@@ -296,7 +326,8 @@ const StockOrdering: React.FC = () => {
           // Convert to Packets (FLOOR to ensure we fit)
           const suggestPkts = Math.floor(litresToAdd / volPerPkt);
 
-          // Meta data for display
+          // Meta data for display (Show 7-day burn stats for reference)
+          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
           const dailyAvgLitres = weeklyLitres / 7;
           const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
           const currentPkts = stockMapPackets[sku.id] || 0;
@@ -309,7 +340,8 @@ const StockOrdering: React.FC = () => {
                   projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
                   suggestPkts,
                   isOOS: currentPkts === 0,
-                  volPerPkt
+                  volPerPkt,
+                  sharePercent: (share * 100).toFixed(1)
               });
           }
       });
@@ -583,7 +615,7 @@ const StockOrdering: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
-                          <p className="text-xs text-indigo-700">Predictive logic based on 7-day velocity (Short Term Trend)</p>
+                          <p className="text-xs text-indigo-700">Predictive logic using 3-Month Trend & 7-Day Velocity</p>
                       </div>
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
@@ -602,7 +634,7 @@ const StockOrdering: React.FC = () => {
                                   />
                               </div>
                               <p className="text-[10px] text-slate-400 mt-1">
-                                  Logic: Fills the <strong>True Available Space</strong> (Total Capacity - Projected Stock of ALL items). Does not over-order.
+                                  Logic: Uses 7-day data to calculate remaining usage until arrival, then uses 3-month data to fill the empty space proportionally.
                               </p>
                           </div>
                           <button 
@@ -630,7 +662,7 @@ const StockOrdering: React.FC = () => {
                                               <tr key={idx} className="hover:bg-slate-50">
                                                   <td className="p-3 font-bold text-slate-700">
                                                       {item.sku.name}
-                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.volPerPkt}L / pkt</span>
+                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.sharePercent}% of Ideal Mix (3-Month Trend)</span>
                                                       {item.isOOS && (
                                                           <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">OOS</span>
                                                       )}
