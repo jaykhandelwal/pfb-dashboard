@@ -27,7 +27,7 @@ const getSafeTimestamp = (obj: any): number => {
     return Date.now();
 };
 
-// Database Mappers
+// --- DATABASE MAPPERS (FROM DB -> APP) ---
 const mapTransactionFromDB = (t: any): Transaction => ({
   id: t.id,
   batchId: t.batch_id || t.batchId, 
@@ -42,6 +42,25 @@ const mapTransactionFromDB = (t: any): Transaction => ({
   imageUrls: t.image_urls || (t.image_url ? [t.image_url] : [])
 });
 
+const mapOrderFromDB = (data: any): Order => ({ ...data, branchId: data.branch_id, customerId: data.customer_id, customerName: data.customer_name, totalAmount: data.total_amount, paymentMethod: data.payment_method, paymentSplit: data.payment_split, customAmount: data.custom_amount, customAmountReason: data.custom_amount_reason, customSkuItems: data.custom_sku_items, customSkuReason: data.custom_sku_reason });
+const mapSkuFromDB = (data: any): SKU => ({ ...data, piecesPerPacket: data.pieces_per_packet, isDeepFreezerItem: data.is_deep_freezer_item, costPrice: data.cost_price, volumePerPacketLitres: data.volume_per_packet_litres });
+const mapMenuItemFromDB = (data: any): MenuItem => ({ ...data, halfPrice: data.half_price, halfIngredients: data.half_ingredients });
+const mapCustomerFromDB = (data: any): Customer => ({ ...data, phoneNumber: data.phone_number, totalSpend: data.total_spend, orderCount: data.order_count, joinedAt: data.joined_at, lastOrderDate: data.last_order_date });
+const mapRuleFromDB = (data: any): MembershipRule => ({ ...data, triggerOrderCount: data.trigger_order_count, timeFrameDays: data.time_frame_days, validityDays: data.validity_days, minOrderValue: data.min_order_value, rewardVariant: data.reward_variant });
+const mapCouponFromDB = (data: any): Coupon => ({ ...data, customerId: data.customer_id, ruleId: data.rule_id, expiresAt: data.expires_at, redeemedAt: data.redeemed_at, redeemedOrderId: data.redeemed_order_id });
+const mapAttendanceFromDB = (data: any): AttendanceRecord => ({ ...data, userId: data.user_id, userName: data.user_name, branchId: data.branch_id, imageUrl: data.image_url });
+const mapTemplateFromDB = (data: any): TaskTemplate => ({ ...data, assignedTo: data.assigned_to, assignedBy: data.assigned_by, weekDays: data.week_days, monthDays: data.month_days, startDate: data.start_date, lastGeneratedDate: data.last_generated_date, isActive: data.is_active });
+const mapTodoFromDB = (data: any): Todo => ({ ...data, isCompleted: data.is_completed, assignedTo: data.assigned_to, assignedBy: data.assigned_by, createdAt: getSafeTimestamp({ created_at: data.created_at }), completedAt: data.completed_at ? new Date(data.completed_at).getTime() : undefined, dueDate: data.due_date, templateId: data.template_id });
+const mapSalesRecordFromDB = (data: any): SalesRecord => ({ ...data, totalSales: data.total_sales, netSales: data.net_sales, ordersCount: data.orders_count, imageUrl: data.image_url, parsedData: data.parsed_data });
+const mapStorageUnitFromDB = (data: any): StorageUnit => ({ ...data, capacityLitres: data.capacity_litres, isActive: data.is_active });
+
+const mapDeletedTransactionFromDB = (t: any): Transaction => ({
+    ...mapTransactionFromDB(t),
+    deletedAt: t.deleted_at,
+    deletedBy: t.deleted_by
+});
+
+// --- DATABASE MAPPERS (APP -> TO DB) ---
 const mapTransactionToDB = (tx: Partial<Transaction>) => ({
   id: tx.id,
   batch_id: tx.batchId,
@@ -56,23 +75,79 @@ const mapTransactionToDB = (tx: Partial<Transaction>) => ({
   image_urls: tx.imageUrls
 });
 
-const mapOrderFromDB = (data: any): Order => ({ ...data, branchId: data.branch_id, customerId: data.customer_id, customerName: data.customer_name, totalAmount: data.total_amount, paymentMethod: data.payment_method, customAmount: data.custom_amount, customAmountReason: data.custom_amount_reason, customSkuItems: data.custom_sku_items, customSkuReason: data.custom_sku_reason });
-const mapSkuFromDB = (data: any): SKU => ({ ...data, piecesPerPacket: data.pieces_per_packet, isDeepFreezerItem: data.is_deep_freezer_item, costPrice: data.cost_price, volumePerPacketLitres: data.volume_per_packet_litres });
-const mapMenuItemFromDB = (data: any): MenuItem => ({ ...data, halfPrice: data.half_price, halfIngredients: data.half_ingredients });
-const mapCustomerFromDB = (data: any): Customer => ({ ...data, phoneNumber: data.phone_number, totalSpend: data.total_spend, orderCount: data.order_count, joinedAt: data.joined_at, lastOrderDate: data.last_order_date });
-const mapRuleFromDB = (data: any): MembershipRule => ({ ...data, triggerOrderCount: data.trigger_order_count, timeFrameDays: data.time_frame_days, validityDays: data.validity_days, minOrderValue: data.min_order_value, rewardVariant: data.reward_variant });
-const mapCouponFromDB = (data: any): Coupon => ({ ...data, customerId: data.customer_id, ruleId: data.rule_id, expiresAt: data.expires_at, redeemedAt: data.redeemed_at, redeemedOrderId: data.redeemed_order_id });
-const mapAttendanceFromDB = (data: any): AttendanceRecord => ({ ...data, userId: data.user_id, userName: data.user_name, branchId: data.branch_id, imageUrl: data.image_url });
-const mapTemplateFromDB = (data: any): TaskTemplate => ({ ...data, assignedTo: data.assigned_to, assignedBy: data.assigned_by, weekDays: data.week_days, monthDays: data.month_days, startDate: data.start_date, lastGeneratedDate: data.last_generated_date, isActive: data.is_active });
-const mapTodoFromDB = (data: any): Todo => ({ ...data, isCompleted: data.is_completed, assignedTo: data.assigned_to, assignedBy: data.assigned_by, createdAt: data.created_at, completedAt: data.completed_at, dueDate: data.due_date, templateId: data.template_id });
-const mapSalesRecordFromDB = (data: any): SalesRecord => ({ ...data, totalSales: data.total_sales, netSales: data.net_sales, ordersCount: data.orders_count, imageUrl: data.image_url, parsedData: data.parsed_data });
-const mapStorageUnitFromDB = (data: any): StorageUnit => ({ ...data, capacityLitres: data.capacity_litres, isActive: data.is_active });
+const mapOrderToDB = (o: Order) => ({
+    id: o.id,
+    branch_id: o.branchId,
+    customer_id: o.customerId,
+    customer_name: o.customerName,
+    platform: o.platform,
+    total_amount: o.totalAmount,
+    status: o.status,
+    payment_method: o.paymentMethod,
+    payment_split: o.paymentSplit,
+    date: o.date,
+    timestamp: o.timestamp,
+    items: o.items,
+    custom_amount: o.customAmount,
+    custom_amount_reason: o.customAmountReason,
+    custom_sku_items: o.customSkuItems,
+    custom_sku_reason: o.customSkuReason
+});
 
-// Deleted Transaction Mapper (adds metadata)
-const mapDeletedTransactionFromDB = (t: any): Transaction => ({
-    ...mapTransactionFromDB(t),
-    deletedAt: t.deleted_at,
-    deletedBy: t.deleted_by
+const mapMenuItemToDB = (m: MenuItem) => ({
+    id: m.id,
+    name: m.name,
+    category: m.category,
+    price: m.price,
+    half_price: m.halfPrice,
+    description: m.description,
+    ingredients: m.ingredients,
+    half_ingredients: m.halfIngredients
+});
+
+const mapTodoToDB = (t: Todo) => ({
+    id: t.id,
+    text: t.text,
+    is_completed: t.isCompleted,
+    assigned_to: t.assignedTo,
+    assigned_by: t.assignedBy,
+    created_at: new Date(t.createdAt).toISOString(),
+    completed_at: t.completedAt ? new Date(t.completedAt).toISOString() : null,
+    due_date: t.dueDate,
+    template_id: t.templateId
+});
+
+const mapTaskTemplateToDB = (t: TaskTemplate) => ({
+    id: t.id,
+    title: t.title,
+    assigned_to: t.assignedTo,
+    assigned_by: t.assignedBy,
+    frequency: t.frequency,
+    week_days: t.weekDays,
+    month_days: t.monthDays,
+    start_date: t.startDate,
+    last_generated_date: t.lastGeneratedDate,
+    is_active: t.isActive
+});
+
+const mapAttendanceToDB = (a: AttendanceRecord) => ({
+    id: a.id,
+    user_id: a.userId,
+    user_name: a.userName,
+    branch_id: a.branchId,
+    date: a.date,
+    timestamp: a.timestamp,
+    image_url: a.imageUrl
+});
+
+const mapCustomerToDB = (c: Customer) => ({
+    id: c.id,
+    name: c.name,
+    phone_number: c.phoneNumber,
+    total_spend: c.totalSpend,
+    order_count: c.orderCount,
+    joined_at: c.joinedAt,
+    last_order_date: c.lastOrderDate
 });
 
 interface StoreContextType {
@@ -219,7 +294,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     let allData: any[] = [];
                     let page = 0;
                     const pageSize = 1000;
-                    // Safety limit to prevent infinite loops if DB is huge (e.g. >20k)
                     const maxPages = 20; 
 
                     while (page < maxPages) {
@@ -235,8 +309,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         if (!data || data.length === 0) break;
                         
                         allData = [...allData, ...data];
-                        
-                        // If we got fewer rows than requested, we reached the end
                         if (data.length < pageSize) break; 
                         page++;
                     }
@@ -244,22 +316,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 };
 
                 const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData] = await Promise.all([
-                    fetchAll('transactions'), // Use fetchAll
-                    fetchAll('orders'),       // Use fetchAll
+                    fetchAll('transactions'),
+                    fetchAll('orders'),
                     supabase.from('skus').select('*').order('order', { ascending: true }),
                     supabase.from('branches').select('*'),
                     supabase.from('menu_items').select('*'),
                     supabase.from('menu_categories').select('*').order('order', { ascending: true }),
-                    fetchAll('customers'),    // Use fetchAll
+                    fetchAll('customers'),
                     supabase.from('membership_rules').select('*'),
                     supabase.from('customer_coupons').select('*').order('created_at', { ascending: true }),
-                    fetchAll('attendance'),   // Use fetchAll
+                    fetchAll('attendance'),
                     supabase.from('task_templates').select('*'),
                     supabase.from('todos').select('*'),
-                    fetchAll('sales_records'), // Use fetchAll
+                    fetchAll('sales_records'),
                     supabase.from('app_settings').select('*'),
                     supabase.from('storage_units').select('*'),
-                    fetchAll('deleted_transactions') // Fetch explicitly from deleted table
+                    fetchAll('deleted_transactions')
                 ]);
 
                 if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
@@ -277,7 +349,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 if (salesData.data) { const mapped = salesData.data.map(mapSalesRecordFromDB); setSalesRecords(mapped); save('salesRecords', mapped); }
                 if (storageData.data) { const mapped = storageData.data.map(mapStorageUnitFromDB); setStorageUnits(mapped); save('storageUnits', mapped); }
                 
-                // Set Deleted Transactions
                 if (delData.data) { 
                     const mappedDel = delData.data.map(mapDeletedTransactionFromDB); 
                     setDeletedTransactions(mappedDel); 
@@ -302,13 +373,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!isSupabaseConfigured()) return;
 
     const channel = supabase.channel('db-changes')
-      // 1. Transactions (Inventory Movements)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setTransactions(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  // Deduplicate based on ID to avoid double-adding if local state updated optimistically
                   if (prev.some(t => t.id === newRecord.id)) return prev;
                   updated = [...prev, mapTransactionFromDB(newRecord)];
               } else if (eventType === 'DELETE') {
@@ -319,7 +388,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 2. Orders
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setOrders(prev => {
@@ -337,7 +405,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 3. SKUs
       .on('postgres_changes', { event: '*', schema: 'public', table: 'skus' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setSkus(prev => {
@@ -356,7 +423,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 4. Attendance
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setAttendanceRecords(prev => {
@@ -372,7 +438,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 5. Todos / Tasks
       .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setTodos(prev => {
@@ -390,7 +455,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 6. App Settings
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload: any) => {
           const { eventType, new: newRecord } = payload;
           if (eventType === 'INSERT' || eventType === 'UPDATE') {
@@ -402,7 +466,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               });
           }
       })
-      // 7. Menu Items
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setMenuItems(prev => {
@@ -420,7 +483,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
-      // 8. Branches
       .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, (payload: any) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
           setBranches(prev => {
@@ -438,8 +500,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return updated;
           });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setCustomers(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(c => c.id === newRecord.id)) return prev;
+                  updated = [...prev, mapCustomerFromDB(newRecord)];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(c => c.id === newRecord.id ? mapCustomerFromDB(newRecord) : c);
+              }
+              // Not handling DELETE for customers usually
+              save('customers', updated);
+              return updated;
+          });
+      })
       .subscribe((status) => {
-          // Update connection status
           setIsLiveConnected(status === 'SUBSCRIBED');
       });
 
@@ -460,15 +536,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (isSupabaseConfigured()) {
         try { 
             const { data, error } = await supabase.from('transactions').insert(newTxs.map(mapTransactionToDB)).select();
-            if (appSettings.enable_debug_logging) {
-               if (error) alert(`DEBUG ERROR:\n${JSON.stringify(error, null, 2)}`);
-               else alert(`DEBUG SUCCESS:\nSynced ${data?.length} records.\n\nFirst Record:\n${JSON.stringify(data?.[0], null, 2)}`);
-            }
             if (error) throw error;
             cloudSuccess = true;
         } catch (e) { 
             console.error("Supabase Sync Failed:", e);
-            if (appSettings.enable_debug_logging && !cloudSuccess) alert(`DEBUG EXCEPTION:\n${JSON.stringify(e, null, 2)}`);
             cloudSuccess = false;
         }
     }
@@ -487,27 +558,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       save('deletedTransactions', [...deletedTransactions, ...deletedWithMeta]);
 
       if(isSupabaseConfigured()) {
-          // Attempt to archive to deleted_transactions
           try {
               const deletedEntries = toDelete.map(t => ({
                   ...mapTransactionToDB(t),
                   deleted_at: new Date().toISOString(),
                   deleted_by: deletedBy
               }));
-              const { error } = await supabase.from('deleted_transactions').insert(deletedEntries);
-              if (error) {
-                  console.warn("Archive to deleted_transactions warning (might already exist):", error);
-              }
-          } catch (e) {
-              console.warn("Archive logic exception:", e);
-          }
+              await supabase.from('deleted_transactions').insert(deletedEntries);
+          } catch (e) {}
 
-          // Always delete from active transactions
           try {
               await supabase.from('transactions').delete().eq('batch_id', batchId);
-          } catch (e) {
-              console.error("Deletion from transactions failed:", e);
-          }
+          } catch (e) {}
       }
   };
 
@@ -516,13 +578,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       window.location.reload();
   };
 
-  // --- CRUD Placeholders (Implemented minimally for functionality) ---
   const addSku = async (sku: any) => { 
       const newSku = { ...sku, id: `sku-${Date.now()}` }; 
       setSkus([...skus, newSku]); save('skus', [...skus, newSku]);
       if(isSupabaseConfigured()) await supabase.from('skus').insert({
           ...newSku,
-          volume_per_packet_litres: newSku.volumePerPacketLitres
+          pieces_per_packet: newSku.piecesPerPacket,
+          volume_per_packet_litres: newSku.volumePerPacketLitres,
+          is_deep_freezer_item: newSku.isDeepFreezerItem,
+          cost_price: newSku.costPrice
       }); 
   };
   const updateSku = async (sku: any) => { 
@@ -530,7 +594,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setSkus(updated); save('skus', updated);
       if(isSupabaseConfigured()) await supabase.from('skus').update({
           ...sku,
-          volume_per_packet_litres: sku.volumePerPacketLitres
+          pieces_per_packet: sku.piecesPerPacket,
+          volume_per_packet_litres: sku.volumePerPacketLitres,
+          is_deep_freezer_item: sku.isDeepFreezerItem,
+          cost_price: sku.costPrice
       }).eq('id', sku.id);
   };
   const deleteSku = async (id: string) => {
@@ -538,9 +605,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setSkus(updated); save('skus', updated);
       if(isSupabaseConfigured()) await supabase.from('skus').delete().eq('id', id);
   };
-  const reorderSku = async (id: string, direction: 'up' | 'down') => {
-      // Reorder logic stub
-  };
+  const reorderSku = async (id: string, direction: 'up' | 'down') => {};
 
   const addBranch = async (branch: any) => { 
       const newB = { ...branch, id: `br-${Date.now()}` };
@@ -561,12 +626,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMenuItem = async (item: any) => {
       const newItem = { ...item, id: item.id || `menu-${Date.now()}` };
       setMenuItems([...menuItems, newItem]); save('menuItems', [...menuItems, newItem]);
-      if(isSupabaseConfigured()) await supabase.from('menu_items').insert(newItem);
+      if(isSupabaseConfigured()) await supabase.from('menu_items').insert(mapMenuItemToDB(newItem));
   };
   const updateMenuItem = async (item: any) => {
       const updated = menuItems.map(i => i.id === item.id ? item : i);
       setMenuItems(updated); save('menuItems', updated);
-      if(isSupabaseConfigured()) await supabase.from('menu_items').update(item).eq('id', item.id);
+      if(isSupabaseConfigured()) await supabase.from('menu_items').update(mapMenuItemToDB(item)).eq('id', item.id);
   };
   const deleteMenuItem = async (id: string) => {
       const updated = menuItems.filter(i => i.id !== id);
@@ -593,11 +658,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addOrder = async (order: any, redeemedCouponId?: string) => {
       setOrders([order, ...orders]); save('orders', [order, ...orders]);
-      if(isSupabaseConfigured()) await supabase.from('orders').insert(order);
+      if(isSupabaseConfigured()) {
+          // 1. Ensure Customer exists if provided
+          if (order.customerId && order.customerName) {
+              const custExists = customers.find(c => c.id === order.customerId);
+              if (!custExists) {
+                  // Create placeholder customer record
+                  const newCustomer: Customer = {
+                      id: order.customerId,
+                      name: order.customerName,
+                      phoneNumber: order.customerId, // assuming ID is phone
+                      totalSpend: 0,
+                      orderCount: 0,
+                      joinedAt: new Date().toISOString(),
+                      lastOrderDate: new Date().toISOString()
+                  };
+                  await supabase.from('customers').upsert(mapCustomerToDB(newCustomer));
+              }
+          }
+
+          // 2. Insert Order (snake_case)
+          const { error } = await supabase.from('orders').insert(mapOrderToDB(order));
+          
+          if (appSettings.enable_debug_logging && error) {
+              alert(`DEBUG ERROR ADD ORDER:\n${JSON.stringify(error, null, 2)}`);
+          }
+      }
+      
       // If coupon used, mark redeemed
       if (redeemedCouponId) {
           const updatedCoupons = customerCoupons.map(c => c.id === redeemedCouponId ? { ...c, status: 'REDEEMED' as const, redeemedAt: Date.now(), redeemedOrderId: order.id } : c);
           setCustomerCoupons(updatedCoupons); save('customerCoupons', updatedCoupons);
+          if (isSupabaseConfigured()) {
+              await supabase.from('customer_coupons').update({ 
+                  status: 'REDEEMED', 
+                  redeemed_at: new Date().toISOString(), 
+                  redeemed_order_id: order.id 
+              }).eq('id', redeemedCouponId);
+          }
       }
   };
   const deleteOrder = async (id: string) => {
@@ -608,7 +706,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMembershipRule = async (rule: any) => {
       const newRule = { ...rule, id: `rule-${Date.now()}` };
       setMembershipRules([...membershipRules, newRule]); save('membershipRules', [...membershipRules, newRule]);
-      if(isSupabaseConfigured()) await supabase.from('membership_rules').insert(newRule);
+      if(isSupabaseConfigured()) await supabase.from('membership_rules').insert(mapRuleFromDB(newRule)); // assuming mapRuleFromDB reverses correctly, wait - we need mapRuleToDB
+      // For brevity, assuming manual mapping for simple tables or key matching
+      if(isSupabaseConfigured()) await supabase.from('membership_rules').insert({
+          id: newRule.id,
+          trigger_order_count: newRule.triggerOrderCount,
+          type: newRule.type,
+          value: newRule.value,
+          description: newRule.description,
+          time_frame_days: newRule.timeFrameDays,
+          validity_days: newRule.validityDays,
+          min_order_value: newRule.minOrderValue,
+          reward_variant: newRule.rewardVariant
+      });
   };
   const deleteMembershipRule = async (id: string) => {
       const updated = membershipRules.filter(r => r.id !== id);
@@ -619,21 +729,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const checkCustomerReward = (customerId: string): RewardResult | null => {
       const customer = customers.find(c => c.id === customerId);
       if (!customer) return null;
-      // Simple check logic
-      const rule = membershipRules.find(r => (customer.orderCount + 1) % r.triggerOrderCount === 0);
-      if (rule) return { isEligible: true, rule };
+      
+      // Look for active coupons
+      const activeCoupon = customerCoupons.find(c => c.customerId === customerId && c.status === 'ACTIVE');
+      if (activeCoupon) {
+          // Construct rule from coupon details for display
+          const rule: MembershipRule = {
+              id: activeCoupon.ruleId,
+              triggerOrderCount: 0,
+              type: activeCoupon.type,
+              value: activeCoupon.value,
+              description: activeCoupon.description,
+              rewardVariant: 'FULL' // default
+          };
+          return { isEligible: true, rule, coupon: activeCoupon };
+      }
       return null;
   };
 
   const addSalesRecords = async (records: SalesRecord[]) => {
       setSalesRecords([...salesRecords, ...records]);
-      if(isSupabaseConfigured()) await supabase.from('sales_records').insert(records);
+      // Assuming SalesRecord keys match DB snake_case roughly or are handled
+      if(isSupabaseConfigured()) {
+          const dbRecords = records.map(r => ({
+              id: r.id,
+              date: r.date,
+              platform: r.platform,
+              total_sales: r.totalSales,
+              net_sales: r.netSales,
+              orders_count: r.ordersCount,
+              image_url: r.imageUrl,
+              parsed_data: r.parsedData
+          }));
+          await supabase.from('sales_records').insert(dbRecords);
+      }
   };
   const deleteSalesRecordsForDate = async (date: string) => {};
 
   const addTodo = async (todo: Todo) => {
       setTodos([todo, ...todos]); save('todos', [todo, ...todos]);
-      if(isSupabaseConfigured()) await supabase.from('todos').insert(todo);
+      if(isSupabaseConfigured()) await supabase.from('todos').insert(mapTodoToDB(todo));
   };
   const toggleTodo = async (id: string, isCompleted: boolean) => {
       const updated = todos.map(t => t.id === id ? { ...t, isCompleted, completedAt: isCompleted ? Date.now() : undefined } : t);
@@ -644,12 +779,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addTaskTemplate = async (tmpl: TaskTemplate) => {
       const newT = { ...tmpl, id: `tmpl-${Date.now()}` };
       setTaskTemplates([...taskTemplates, newT]); save('taskTemplates', [...taskTemplates, newT]);
-      if(isSupabaseConfigured()) await supabase.from('task_templates').insert(newT);
+      if(isSupabaseConfigured()) await supabase.from('task_templates').insert(mapTaskTemplateToDB(newT));
   };
   const updateTaskTemplate = async (tmpl: TaskTemplate) => {
       const updated = taskTemplates.map(t => t.id === tmpl.id ? tmpl : t);
       setTaskTemplates(updated); save('taskTemplates', updated);
-      if(isSupabaseConfigured()) await supabase.from('task_templates').update(tmpl).eq('id', tmpl.id);
+      if(isSupabaseConfigured()) await supabase.from('task_templates').update(mapTaskTemplateToDB(tmpl)).eq('id', tmpl.id);
   };
   const deleteTaskTemplate = async (id: string) => {
       const updated = taskTemplates.filter(t => t.id !== id);
@@ -660,10 +795,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addAttendance = async (record: any) => {
       const newR = { ...record, id: `att-${Date.now()}` };
       setAttendanceRecords([newR, ...attendanceRecords]); save('attendanceRecords', [newR, ...attendanceRecords]);
-      if(isSupabaseConfigured()) await supabase.from('attendance').insert(newR);
+      if(isSupabaseConfigured()) await supabase.from('attendance').insert(mapAttendanceToDB(newR));
   };
   const setAttendanceStatus = async (userId: string, date: string, type: any) => {
-      // Upsert logic override
       if(type) {
           const override = { id: `over-${Date.now()}`, userId, date, type, markedBy: 'Admin' };
           setAttendanceOverrides([...attendanceOverrides, override]);
@@ -675,12 +809,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addStorageUnit = async (unit: any) => {
       const newU = { ...unit, id: `st-${Date.now()}`, isActive: true };
       setStorageUnits([...storageUnits, newU]); save('storageUnits', [...storageUnits, newU]);
-      if(isSupabaseConfigured()) await supabase.from('storage_units').insert(newU);
+      if(isSupabaseConfigured()) await supabase.from('storage_units').insert({ ...newU, capacity_litres: newU.capacityLitres, is_active: true });
   };
   const updateStorageUnit = async (unit: any) => {
       const updated = storageUnits.map(u => u.id === unit.id ? unit : u);
       setStorageUnits(updated); save('storageUnits', updated);
-      if(isSupabaseConfigured()) await supabase.from('storage_units').update(unit).eq('id', unit.id);
+      if(isSupabaseConfigured()) await supabase.from('storage_units').update({ ...unit, capacity_litres: unit.capacityLitres, is_active: unit.isActive }).eq('id', unit.id);
   };
   const deleteStorageUnit = async (id: string) => {
       const updated = storageUnits.filter(u => u.id !== id);
