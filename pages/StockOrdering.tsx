@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star } from 'lucide-react';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star, Loader2 } from 'lucide-react';
 import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
 import { getLocalISOString } from '../constants';
 
@@ -42,6 +42,7 @@ const StockOrdering: React.FC = () => {
   const [generatedOrder, setGeneratedOrder] = useState<any[]>([]);
   const [copySuccess, setCopySuccess] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleAddNew = () => {
     setEditingUnit({ name: '', capacityLitres: 0, type: 'DEEP_FREEZER' });
@@ -207,11 +208,12 @@ const StockOrdering: React.FC = () => {
   const freeCapacityPackets = Math.floor(availableLitres / displayStandardVol);
 
   // --- SMART GENERATOR LOGIC (Multi-Factor) ---
-  const handleGenerateOrder = () => {
+  const runGenerator = () => {
       try {
         setHasGenerated(false);
         if (!arrivalDate) {
             alert("Please select an expected arrival date.");
+            setIsGenerating(false);
             return;
         }
 
@@ -229,7 +231,10 @@ const StockOrdering: React.FC = () => {
         // 1. Lead Time Calculation
         const today = new Date();
         today.setHours(0,0,0,0);
-        const arrival = new Date(arrivalDate);
+        
+        // Parse date explicitly to avoid UTC shift
+        const [y, m, d] = arrivalDate.split('-').map(Number);
+        const arrival = new Date(y, m - 1, d);
         arrival.setHours(0,0,0,0);
         
         const diffTime = arrival.getTime() - today.getTime();
@@ -237,6 +242,7 @@ const StockOrdering: React.FC = () => {
         
         if (daysUntilArrival < 0) {
             alert("Arrival date cannot be in the past.");
+            setIsGenerating(false);
             return;
         }
 
@@ -251,18 +257,27 @@ const StockOrdering: React.FC = () => {
         
         relevantOrders.forEach(o => {
             const skusInOrder = new Set<string>();
-            o.items.forEach(item => {
-                // Extract SKUs from consumed list or menu lookup
-                if (item.consumed) {
-                    item.consumed.forEach(c => skusInOrder.add(c.skuId));
-                } else {
-                    const menuItem = menuItems.find(m => m.id === item.menuItemId);
-                    if (menuItem) {
-                        const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
-                        (ings || menuItem.ingredients || []).forEach(i => skusInOrder.add(i.skuId));
+            // Safeguard: o.items might be missing if data corrupted
+            if (o.items && Array.isArray(o.items)) {
+                o.items.forEach(item => {
+                    // Extract SKUs from consumed list or menu lookup
+                    if (item.consumed && Array.isArray(item.consumed)) {
+                        item.consumed.forEach(c => skusInOrder.add(c.skuId));
+                    } else {
+                        const menuItem = menuItems.find(m => m.id === item.menuItemId);
+                        if (menuItem) {
+                            const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
+                            // Safeguard: ingredients might be undefined
+                            if (ings && Array.isArray(ings)) {
+                                ings.forEach(i => skusInOrder.add(i.skuId));
+                            } else if (menuItem.ingredients && Array.isArray(menuItem.ingredients)) {
+                                // Fallback to full ingredients if variant invalid
+                                menuItem.ingredients.forEach(i => skusInOrder.add(i.skuId));
+                            }
+                        }
                     }
-                }
-            });
+                });
+            }
             // Also check custom items
             o.customSkuItems?.forEach(ci => skusInOrder.add(ci.skuId));
 
@@ -368,7 +383,13 @@ const StockOrdering: React.FC = () => {
             let safetyMultiplier = 1.0;
             if (freq >= topTierThreshold && freq > 0) safetyMultiplier = 1.15;
             
-            const weightedDemand = blendedVol * safetyMultiplier;
+            let weightedDemand = blendedVol * safetyMultiplier;
+
+            // Cold Start Fix: If item has ZERO history (new item), give it a tiny weight so it gets some allocation space
+            if (weightedDemand === 0 && blendedVol === 0) {
+                weightedDemand = 0.1; // Base allocation weight
+            }
+
             skuWeightedDemandMap[sku.id] = weightedDemand;
             totalWeightedDemand += weightedDemand;
         });
@@ -421,7 +442,15 @@ const StockOrdering: React.FC = () => {
       } catch (err) {
         console.error("Generator Error", err);
         alert("An error occurred while generating the order. Please check the console.");
+      } finally {
+        setIsGenerating(false);
       }
+  };
+
+  // Wrapper to allow UI to render spinner before main thread locks
+  const triggerGeneration = () => {
+      setIsGenerating(true);
+      setTimeout(runGenerator, 100);
   };
 
   const copyOrderToClipboard = () => {
@@ -714,10 +743,12 @@ const StockOrdering: React.FC = () => {
                               </p>
                           </div>
                           <button 
-                              onClick={handleGenerateOrder}
-                              className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-colors w-full md:w-auto flex items-center justify-center gap-2"
+                              onClick={triggerGeneration}
+                              disabled={isGenerating}
+                              className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-colors w-full md:w-auto flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                           >
-                              Generate Suggestion <ArrowRight size={16} />
+                              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                              {isGenerating ? 'Analyzing...' : 'Generate Suggestion'}
                           </button>
                       </div>
 
