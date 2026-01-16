@@ -1,12 +1,11 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info } from 'lucide-react';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star } from 'lucide-react';
 import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
 import { getLocalISOString } from '../constants';
 
 const StockOrdering: React.FC = () => {
-  const { storageUnits, addStorageUnit, updateStorageUnit, deleteStorageUnit, appSettings, updateAppSetting, skus, transactions } = useStore();
+  const { storageUnits, addStorageUnit, updateStorageUnit, deleteStorageUnit, appSettings, updateAppSetting, skus, transactions, orders, menuItems } = useStore();
   
   // Local State for Calculation - initialized from AppSettings or default 2.3
   const [litresPerPacket, setLitresPerPacket] = useState<string>(
@@ -199,7 +198,13 @@ const StockOrdering: React.FC = () => {
 
   }, [skus, transactions, totalCapacityLitres, litresPerPacket]);
 
-  // --- SMART GENERATOR LOGIC (Dual-Horizon) ---
+  // --- Display Conversion Helper ---
+  const displayStandardVol = parseFloat(litresPerPacket) || 2.3;
+  const totalCapacityPackets = Math.floor(totalCapacityLitres / displayStandardVol);
+  const usedCapacityPackets = Math.ceil(currentStockLitres / displayStandardVol);
+  const freeCapacityPackets = Math.floor(availableLitres / displayStandardVol);
+
+  // --- SMART GENERATOR LOGIC (Multi-Factor) ---
   const handleGenerateOrder = () => {
       if (!arrivalDate) {
           alert("Please select an expected arrival date.");
@@ -220,22 +225,57 @@ const StockOrdering: React.FC = () => {
           return;
       }
 
-      // 2. Short Term Velocity (7-Day Burn Rate)
+      const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+      
+      // 2. Calculate Order Popularity (Frequency) - Last 30 Days
+      // This answers "How many orders included this item?"
+      const d30 = new Date();
+      d30.setDate(d30.getDate() - 30);
+      const d30Str = d30.toISOString().slice(0,10);
+      
+      const orderFrequencyMap: Record<string, number> = {};
+      const relevantOrders = orders.filter(o => o.date >= d30Str);
+      
+      relevantOrders.forEach(o => {
+          const skusInOrder = new Set<string>();
+          o.items.forEach(item => {
+              // Extract SKUs from consumed list or menu lookup
+              if (item.consumed) {
+                  item.consumed.forEach(c => skusInOrder.add(c.skuId));
+              } else {
+                  const menuItem = menuItems.find(m => m.id === item.menuItemId);
+                  if (menuItem) {
+                      const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
+                      (ings || menuItem.ingredients || []).forEach(i => skusInOrder.add(i.skuId));
+                  }
+              }
+          });
+          // Also check custom items
+          o.customSkuItems?.forEach(ci => skusInOrder.add(ci.skuId));
+
+          skusInOrder.forEach(skuId => {
+              orderFrequencyMap[skuId] = (orderFrequencyMap[skuId] || 0) + 1;
+          });
+      });
+
+      // Determine Top 20% popular items for "Star" badge
+      const frequencies = Object.values(orderFrequencyMap).sort((a,b) => b - a);
+      const topTierThreshold = frequencies.length > 0 ? frequencies[Math.floor(frequencies.length * 0.2)] : 0;
+
+      // 3. Short Term Velocity (7-Day Burn Rate)
       const d7 = new Date();
       d7.setDate(d7.getDate() - 7);
       const d7Str = d7.toISOString().slice(0,10);
 
       const velocityLitresMap: Record<string, number> = {}; 
       
-      // 3. Long Term Trends (90-Day Distribution)
+      // 4. Long Term Trends (90-Day Distribution)
       const d90 = new Date();
       d90.setDate(d90.getDate() - 90);
       const d90Str = d90.toISOString().slice(0,10);
       
       const distributionLitresMap: Record<string, number> = {};
-      let totalLongTermLitresVolume = 0;
 
-      const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
       const skuSizeMap: Record<string, number> = {};
       
       // Initialize Maps
@@ -245,14 +285,9 @@ const StockOrdering: React.FC = () => {
           distributionLitresMap[s.id] = 0;
       });
 
-      // Single pass through transactions to populate both maps
+      // Populate Volume Data
       transactions.forEach(t => {
-          // Skip if not a relevant item or wrong transaction type
-          if (!skuSizeMap[t.skuId] || (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.WASTE && t.type !== TransactionType.CHECK_IN)) {
-              return;
-          }
-          // Note: Only CHECK_OUT and WASTE (FRIDGE) count as consumption. CHECK_IN is a reversal.
-          // Adjust logic to correctly net out returns for both windows.
+          if (!skuSizeMap[t.skuId] || (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.WASTE && t.type !== TransactionType.CHECK_IN)) return;
 
           const sku = relevantSkus.find(s => s.id === t.skuId);
           if(!sku) return;
@@ -273,25 +308,18 @@ const StockOrdering: React.FC = () => {
 
           // 90-Day Logic
           if (t.date >= d90Str) {
-              if (isConsumption) {
-                  distributionLitresMap[t.skuId] += litres;
-                  totalLongTermLitresVolume += litres;
-              } else if (isReturn) {
-                  distributionLitresMap[t.skuId] -= litres;
-                  totalLongTermLitresVolume -= litres;
-              }
+              if (isConsumption) distributionLitresMap[t.skuId] += litres;
+              else if (isReturn) distributionLitresMap[t.skuId] -= litres;
           }
       });
 
-      // 4. True Physical Availability Calculation
+      // 5. True Physical Availability Calculation
       const projectedStocks: Record<string, number> = {};
       let totalProjectedOccupiedLitres = 0;
 
-      // First pass: Calculate projected stock at arrival date for ALL items
+      // First pass: Calculate projected stock at arrival date for ALL items using 7-day velocity
       relevantSkus.forEach(sku => {
           const volPerPkt = getVolumePerPacket(sku);
-          
-          // Use 7-Day Velocity for Burn Rate
           const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
           const dailyAvgLitres = weeklyLitres / 7;
 
@@ -299,49 +327,77 @@ const StockOrdering: React.FC = () => {
           const currentLitres = currentPkts * volPerPkt;
           const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
           
-          // Project Stock cannot be less than 0
           const projStock = Math.max(0, currentLitres - projectedBurnLitres);
           projectedStocks[sku.id] = projStock;
           
           totalProjectedOccupiedLitres += projStock;
       });
 
-      // 5. Calculate True Free Space
-      // This accounts for "Dead Space" occupied by slow-moving overstocked items
+      // 6. Calculate True Free Space
       let trueFreeLitres = Math.max(0, totalCapacityLitres - totalProjectedOccupiedLitres);
 
       const generated: any[] = [];
+      
+      // Calculate Total Weighted Demand for Normalization
+      let totalWeightedDemand = 0;
+      const skuWeightedDemandMap: Record<string, number> = {};
 
-      // 6. Distribute Free Space based on 90-Day Share (Long Term Stability)
+      relevantSkus.forEach(sku => {
+          const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+          const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
+          
+          // Smart Blended Volume: 60% Weight to 90-Day (Stability), 40% to 7-Day (Recency)
+          const blendedVol = (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
+          
+          // Safety Factor based on Order Popularity
+          // If item is in Top 20% most ordered, add 15% safety buffer
+          const freq = orderFrequencyMap[sku.id] || 0;
+          let safetyMultiplier = 1.0;
+          if (freq >= topTierThreshold && freq > 0) safetyMultiplier = 1.15;
+          
+          const weightedDemand = blendedVol * safetyMultiplier;
+          skuWeightedDemandMap[sku.id] = weightedDemand;
+          totalWeightedDemand += weightedDemand;
+      });
+
+      // 7. Distribute Free Space based on Smart Weighted Demand
       relevantSkus.forEach(sku => {
           const volPerPkt = getVolumePerPacket(sku);
           
-          // Share based on 90-Day Volume (Long Term Preference)
-          const longTermLitres = Math.max(0, distributionLitresMap[sku.id] || 0);
-          const share = totalLongTermLitresVolume > 0 ? longTermLitres / totalLongTermLitresVolume : 0;
+          // Share based on our Smart Weighted Demand
+          const weightedDemand = skuWeightedDemandMap[sku.id] || 0;
+          const share = totalWeightedDemand > 0 ? weightedDemand / totalWeightedDemand : 0;
 
-          // Ideal addition is a share of the TRUE free space
           const litresToAdd = trueFreeLitres * share;
-          
-          // Convert to Packets (FLOOR to ensure we fit)
           const suggestPkts = Math.floor(litresToAdd / volPerPkt);
 
-          // Meta data for display (Show 7-day burn stats for reference)
+          // Meta data for display
           const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
-          const dailyAvgLitres = weeklyLitres / 7;
-          const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
+          const dailyVol7 = weeklyLitres / 7;
+          const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+          
+          const projectedBurnLitres = dailyVol7 * daysUntilArrival;
           const currentPkts = stockMapPackets[sku.id] || 0;
+          
+          // Determine Trend
+          let trend = 'stable';
+          if (dailyVol7 > dailyVol90 * 1.1) trend = 'up'; // +10% increase
+          else if (dailyVol7 < dailyVol90 * 0.9) trend = 'down'; // -10% decrease
+
+          const isTopSeller = (orderFrequencyMap[sku.id] || 0) >= topTierThreshold && topTierThreshold > 0;
 
           if (suggestPkts > 0 || currentPkts === 0) {
               generated.push({
                   sku,
-                  dailyAvgPackets: (dailyAvgLitres / volPerPkt).toFixed(1),
+                  dailyAvgPackets: (dailyVol7 / volPerPkt).toFixed(1),
                   daysUntil: daysUntilArrival,
                   projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
                   suggestPkts,
                   isOOS: currentPkts === 0,
                   volPerPkt,
-                  sharePercent: (share * 100).toFixed(1)
+                  sharePercent: (share * 100).toFixed(1),
+                  trend,
+                  isTopSeller
               });
           }
       });
@@ -397,12 +453,12 @@ const StockOrdering: React.FC = () => {
          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
              {/* Total Volume */}
              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Fridge Volume</p>
+                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Fridge Capacity</p>
                  <div className="flex items-baseline gap-1">
-                     <span className="text-3xl font-mono font-bold text-indigo-400">{totalCapacityLitres}</span>
-                     <span className="text-sm font-medium text-slate-500">Litres</span>
+                     <span className="text-3xl font-mono font-bold text-indigo-400">{totalCapacityPackets}</span>
+                     <span className="text-sm font-medium text-slate-500">Std. Pkts</span>
                  </div>
-                 <p className="text-[10px] text-slate-500 mt-1">Sum of {storageUnits.length} configured units</p>
+                 <p className="text-[10px] text-slate-500 mt-1">Approx. {totalCapacityLitres} Litres</p>
              </div>
 
              {/* Calculation Factor */}
@@ -425,7 +481,7 @@ const StockOrdering: React.FC = () => {
                  <div className="flex items-center justify-center gap-1 mt-2">
                     <Info size={10} className="text-indigo-300"/>
                     <p className="text-[10px] text-center text-slate-500">
-                        Applies to all Momos. Consumables fixed at 1.0L.
+                        Conversion factor to Standard Packets.
                     </p>
                  </div>
              </div>
@@ -434,11 +490,11 @@ const StockOrdering: React.FC = () => {
              <div className="bg-indigo-600/20 rounded-xl p-4 border border-indigo-500/50 flex flex-col items-center justify-center text-center">
                  <p className="text-xs font-bold text-indigo-200 uppercase tracking-wider mb-1">Usage Status</p>
                  <div className="flex items-baseline gap-1">
-                     <span className="text-3xl font-bold text-white">{Math.round(totalCapacityLitres - availableLitres)}</span>
-                     <span className="text-sm font-medium text-indigo-300">/ {totalCapacityLitres} L</span>
+                     <span className="text-3xl font-bold text-white">{usedCapacityPackets}</span>
+                     <span className="text-sm font-medium text-indigo-300">/ {totalCapacityPackets} Pkts</span>
                  </div>
                  <p className="text-[10px] text-indigo-300/60 mt-1">
-                    {Math.round((totalCapacityLitres - availableLitres) / totalCapacityLitres * 100)}% Full
+                    {Math.round((totalCapacityLitres - availableLitres) / totalCapacityLitres * 100)}% Full (Volume Based)
                  </p>
              </div>
          </div>
@@ -454,12 +510,12 @@ const StockOrdering: React.FC = () => {
              <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center text-sm">
                  <div className="flex gap-4">
                      <div>
-                         <span className="text-slate-500">Current Volume: </span>
-                         <span className="font-bold text-slate-800">{currentStockLitres} L</span>
+                         <span className="text-slate-500">Current Stock Space: </span>
+                         <span className="font-bold text-slate-800">{usedCapacityPackets} pkts</span>
                      </div>
                      <div>
                          <span className="text-slate-500">Free Space: </span>
-                         <span className="font-bold text-emerald-600">{availableLitres} L</span>
+                         <span className="font-bold text-emerald-600">{freeCapacityPackets} pkts</span>
                      </div>
                  </div>
              </div>
@@ -507,7 +563,7 @@ const StockOrdering: React.FC = () => {
              )}
          </div>
          <p className="text-xs text-slate-400 mt-2 italic px-1">
-            * Logic: Consumables = 1L. All other items = {litresPerPacket}L.
+            * Logic: 1.0L for Consumables, {litresPerPacket}L for Momos. Display uses Standard Packet units.
          </p>
       </section>
 
@@ -615,7 +671,7 @@ const StockOrdering: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
-                          <p className="text-xs text-indigo-700">Predictive logic using 3-Month Trend & 7-Day Velocity</p>
+                          <p className="text-xs text-indigo-700">Predictive logic using Blended Trends (7d/90d) & Order Frequency</p>
                       </div>
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
@@ -634,7 +690,7 @@ const StockOrdering: React.FC = () => {
                                   />
                               </div>
                               <p className="text-[10px] text-slate-400 mt-1">
-                                  Logic: Uses 7-day data to calculate remaining usage until arrival, then uses 3-month data to fill the empty space proportionally.
+                                  Logic: 60% weight to 90-day volume, 40% to 7-day velocity. Items frequently ordered (Top 20%) get a 15% safety buffer.
                               </p>
                           </div>
                           <button 
@@ -661,10 +717,27 @@ const StockOrdering: React.FC = () => {
                                           {generatedOrder.map((item, idx) => (
                                               <tr key={idx} className="hover:bg-slate-50">
                                                   <td className="p-3 font-bold text-slate-700">
-                                                      {item.sku.name}
-                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.sharePercent}% of Ideal Mix (3-Month Trend)</span>
+                                                      <div className="flex items-center gap-1.5">
+                                                          {item.sku.name}
+                                                          {item.isTopSeller && (
+                                                              <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-0.5" title="High Order Frequency (Popular)">
+                                                                  <Star size={8} fill="currentColor" /> Top
+                                                              </span>
+                                                          )}
+                                                          {item.trend === 'up' && (
+                                                              <span title="Consumption Trending Up (+10%)">
+                                                                  <TrendingUp size={12} className="text-red-500" />
+                                                              </span>
+                                                          )}
+                                                          {item.trend === 'down' && (
+                                                              <span title="Consumption Trending Down (-10%)">
+                                                                  <TrendingDown size={12} className="text-emerald-500" />
+                                                              </span>
+                                                          )}
+                                                      </div>
+                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.sharePercent}% of Ideal Mix (Smart Weight)</span>
                                                       {item.isOOS && (
-                                                          <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase">OOS</span>
+                                                          <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase inline-block mt-0.5">OOS</span>
                                                       )}
                                                   </td>
                                                   <td className="p-3 text-center text-slate-500">{item.dailyAvgPackets} pkts</td>
