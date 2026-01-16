@@ -67,6 +67,7 @@ const mapTodoFromDB = (data: any): Todo => ({ ...data, isCompleted: data.is_comp
 const mapSalesRecordFromDB = (data: any): SalesRecord => ({ ...data, totalSales: data.total_sales, netSales: data.net_sales, ordersCount: data.orders_count, imageUrl: data.image_url, parsedData: data.parsed_data });
 const mapStorageUnitFromDB = (data: any): StorageUnit => ({ ...data, capacityLitres: data.capacity_litres, isActive: data.is_active });
 
+// Deleted Transaction Mapper (adds metadata)
 const mapDeletedTransactionFromDB = (t: any): Transaction => ({
     ...mapTransactionFromDB(t),
     deletedAt: t.deleted_at,
@@ -213,7 +214,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     let allData: any[] = [];
                     let page = 0;
                     const pageSize = 1000;
-                    while (true) {
+                    // Safety limit to prevent infinite loops if DB is huge (e.g. >20k)
+                    const maxPages = 20; 
+
+                    while (page < maxPages) {
                         const { data, error } = await supabase
                             .from(table)
                             .select('*')
@@ -224,30 +228,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                             break;
                         }
                         if (!data || data.length === 0) break;
+                        
                         allData = [...allData, ...data];
-                        if (data.length < pageSize) break; // Reached end
+                        
+                        // If we got fewer rows than requested, we reached the end
+                        if (data.length < pageSize) break; 
                         page++;
                     }
                     return { data: allData };
                 };
 
                 const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData] = await Promise.all([
-                    fetchAll('transactions'), // Use fetchAll for Transactions
-                    fetchAll('orders'),       // Use fetchAll for Orders
+                    fetchAll('transactions'), // Use fetchAll
+                    fetchAll('orders'),       // Use fetchAll
                     supabase.from('skus').select('*').order('order', { ascending: true }),
                     supabase.from('branches').select('*'),
                     supabase.from('menu_items').select('*'),
                     supabase.from('menu_categories').select('*').order('order', { ascending: true }),
-                    fetchAll('customers'),    // Use fetchAll for Customers
+                    fetchAll('customers'),    // Use fetchAll
                     supabase.from('membership_rules').select('*'),
                     supabase.from('customer_coupons').select('*').order('created_at', { ascending: true }),
-                    fetchAll('attendance'),   // Use fetchAll for Attendance
+                    fetchAll('attendance'),   // Use fetchAll
                     supabase.from('task_templates').select('*'),
                     supabase.from('todos').select('*'),
-                    fetchAll('sales_records'), // Use fetchAll for Sales Records
+                    fetchAll('sales_records'), // Use fetchAll
                     supabase.from('app_settings').select('*'),
                     supabase.from('storage_units').select('*'),
-                    fetchAll('deleted_transactions') // Fetch deleted logs
+                    fetchAll('deleted_transactions') // Fetch explicitly from deleted table
                 ]);
 
                 if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
@@ -328,9 +335,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   deleted_at: new Date().toISOString(),
                   deleted_by: deletedBy
               }));
-              await supabase.from('deleted_transactions').insert(deletedEntries);
+              const { error } = await supabase.from('deleted_transactions').insert(deletedEntries);
+              if (error) {
+                  console.warn("Archive to deleted_transactions warning (might already exist):", error);
+              }
           } catch (e) {
-              console.error("Archive to deleted_transactions failed (might already exist):", e);
+              console.warn("Archive logic exception:", e);
           }
 
           // Always delete from active transactions

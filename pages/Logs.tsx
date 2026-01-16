@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType } from '../types';
-import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive } from 'lucide-react';
+import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive, Clock } from 'lucide-react';
 
 const Logs: React.FC = () => {
   const { transactions, deletedTransactions, skus, branches, resetData, deleteTransactionBatch } = useStore();
@@ -94,8 +94,15 @@ const Logs: React.FC = () => {
       }
     });
 
-    // Convert to array and sort by timestamp desc
-    return Object.values(groups).sort((a, b) => b.timestamp - a.timestamp);
+    // Convert to array and sort
+    return Object.values(groups).sort((a, b) => {
+        // 1. Sort by Operational Date (Descending: Newest dates first)
+        const dateComparison = b.date.localeCompare(a.date);
+        if (dateComparison !== 0) return dateComparison;
+        
+        // 2. Sort by Creation Time (Descending: Newest entry within that day first)
+        return b.timestamp - a.timestamp;
+    });
   }, [sourceTransactions, skus, branches, filterType]);
 
   // Specific data for Gallery View (Only Wastage with Images)
@@ -280,7 +287,7 @@ const Logs: React.FC = () => {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="p-4 w-32">Date</th>
+                    <th className="p-4 w-40">Date & Time</th>
                     <th className="p-4 w-24">User</th>
                     <th className="p-4 w-32">Type</th>
                     {dataScope === 'DELETED' && <th className="p-4 w-32 text-red-600">Deleted By</th>}
@@ -295,12 +302,28 @@ const Logs: React.FC = () => {
                     const isAdjustment = group.type === TransactionType.ADJUSTMENT;
                     return (
                       <tr key={group.id} className={`transition-colors ${dataScope === 'DELETED' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50'}`}>
+                        
+                        {/* Modified Date Column */}
                         <td className="p-4 text-slate-600 whitespace-nowrap align-top">
-                          <div className="font-medium text-slate-800">{group.date}</div>
-                          <div className="text-xs text-slate-400 mt-1">
-                            {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          <div className="flex flex-col">
+                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">For Date</span>
+                             <span className="font-bold text-slate-800 text-sm">
+                                {new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                             </span>
+                          </div>
+                          
+                          <div className="flex flex-col mt-2 pt-2 border-t border-slate-100">
+                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide flex items-center gap-1">
+                                <Clock size={8} /> Logged On
+                             </span>
+                             <span className="text-xs text-slate-500">
+                                {new Date(group.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                <span className="text-slate-300 mx-1">|</span> 
+                                {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                             </span>
                           </div>
                         </td>
+
                         <td className="p-4 align-top">
                           {group.userName ? (
                             <div className="flex items-center gap-1.5 text-slate-700 font-medium">
