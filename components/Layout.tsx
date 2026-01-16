@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake, 
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils, 
-  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck
+  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -26,7 +26,7 @@ type NavItem = {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, logout, hasPermission } = useAuth();
-  const { appSettings } = useStore();
+  const { appSettings, lastUpdated } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Track expanded state of dropdowns - Default collapsed
@@ -165,6 +165,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     );
   };
 
+  // Helper to format the timestamp
+  const formattedTime = new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   return (
     <div className="flex h-screen bg-[#f9faf7] text-[#403424] font-sans overflow-hidden">
       {/* Sidebar (Desktop) */}
@@ -196,6 +199,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <LogOut size={20} />
             <span className="font-medium">Sign Out</span>
           </button>
+          
+          {/* Subtle Live Status */}
+          <div className="mt-4 flex justify-center items-center gap-1.5 text-[10px] text-[#403424]/40 font-mono tracking-tighter">
+             <Wifi size={10} className="text-emerald-500 animate-pulse" /> 
+             Live Sync: {formattedTime}
+          </div>
         </div>
       </aside>
 
@@ -246,6 +255,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <LogOut size={20} />
                       <span>Sign Out</span>
                   </button>
+                  <div className="mt-4 flex justify-center items-center gap-1.5 text-[10px] text-[#403424]/40 font-mono">
+                     <Wifi size={10} className="text-emerald-500" /> Live: {formattedTime}
+                  </div>
               </div>
           </div>
         )}

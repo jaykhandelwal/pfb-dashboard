@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   AppSettings, Branch, SKU, MenuItem, MenuCategory, Customer, 
@@ -92,6 +93,7 @@ interface StoreContextType {
   storageUnits: StorageUnit[];
   appSettings: AppSettings;
   salesRecords: SalesRecord[];
+  lastUpdated: number; // Added timestamp
   
   addBatchTransactions: (txs: any[]) => Promise<boolean>;
   deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -173,6 +175,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT] 
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
 
   // Persistence Helper
   const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
@@ -284,10 +287,160 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     setAppSettings(prev => ({ ...prev, ...settingsMap }));
                     save('appSettings', settingsMap);
                 }
+                
+                setLastUpdated(Date.now());
             }
         } catch (e) { console.error("Sync Failed", e); } finally { setIsLoading(false); }
     };
     initializeStore();
+  }, []);
+
+  // --- REALTIME SUBSCRIPTIONS ---
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    const channel = supabase.channel('db-changes')
+      // 1. Transactions (Inventory Movements)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setTransactions(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  // Deduplicate based on ID to avoid double-adding if local state updated optimistically
+                  if (prev.some(t => t.id === newRecord.id)) return prev;
+                  updated = [...prev, mapTransactionFromDB(newRecord)];
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(t => t.id !== oldRecord.id);
+              }
+              save('transactions', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 2. Orders
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setOrders(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(o => o.id === newRecord.id)) return prev;
+                  updated = [mapOrderFromDB(newRecord), ...prev];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(o => o.id === newRecord.id ? mapOrderFromDB(newRecord) : o);
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(o => o.id !== oldRecord.id);
+              }
+              save('orders', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 3. SKUs
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'skus' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setSkus(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(s => s.id === newRecord.id)) return prev;
+                  updated = [...prev, mapSkuFromDB(newRecord)];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(s => s.id === newRecord.id ? mapSkuFromDB(newRecord) : s);
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(s => s.id !== oldRecord.id);
+              }
+              updated.sort((a,b) => a.order - b.order);
+              save('skus', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 4. Attendance
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setAttendanceRecords(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(a => a.id === newRecord.id)) return prev;
+                  updated = [mapAttendanceFromDB(newRecord), ...prev];
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(a => a.id !== oldRecord.id);
+              }
+              save('attendanceRecords', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 5. Todos / Tasks
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setTodos(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(t => t.id === newRecord.id)) return prev;
+                  updated = [mapTodoFromDB(newRecord), ...prev];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(t => t.id === newRecord.id ? mapTodoFromDB(newRecord) : t);
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(t => t.id !== oldRecord.id);
+              }
+              save('todos', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 6. App Settings
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload: any) => {
+          const { eventType, new: newRecord } = payload;
+          if (eventType === 'INSERT' || eventType === 'UPDATE') {
+              setAppSettings(prev => {
+                  const updated = { ...prev, [newRecord.key]: newRecord.value };
+                  save('appSettings', updated);
+                  setLastUpdated(Date.now());
+                  return updated;
+              });
+          }
+      })
+      // 7. Menu Items
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setMenuItems(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(m => m.id === newRecord.id)) return prev;
+                  updated = [...prev, mapMenuItemFromDB(newRecord)];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(m => m.id === newRecord.id ? mapMenuItemFromDB(newRecord) : m);
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(m => m.id !== oldRecord.id);
+              }
+              save('menuItems', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      // 8. Branches
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, (payload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+          setBranches(prev => {
+              let updated = prev;
+              if (eventType === 'INSERT') {
+                  if (prev.some(b => b.id === newRecord.id)) return prev;
+                  updated = [...prev, newRecord];
+              } else if (eventType === 'UPDATE') {
+                  updated = prev.map(b => b.id === newRecord.id ? newRecord : b);
+              } else if (eventType === 'DELETE') {
+                  updated = prev.filter(b => b.id !== oldRecord.id);
+              }
+              save('branches', updated);
+              setLastUpdated(Date.now());
+              return updated;
+          });
+      })
+      .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
   }, []);
 
   const addBatchTransactions = async (txs: any[]): Promise<boolean> => {
@@ -534,7 +687,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         transactions, skus, branches, orders, todos, menuItems, menuCategories, 
         customers, membershipRules, customerCoupons, attendanceRecords, 
         attendanceOverrides, deletedTransactions, taskTemplates, storageUnits, 
-        appSettings, salesRecords, isLoading,
+        appSettings, salesRecords, lastUpdated, isLoading,
         addBatchTransactions, deleteTransactionBatch, resetData,
         addSku, updateSku, deleteSku, reorderSku,
         addBranch, updateBranch, deleteBranch,
