@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star } from 'lucide-react';
@@ -40,6 +41,7 @@ const StockOrdering: React.FC = () => {
   const [arrivalDate, setArrivalDate] = useState<string>('');
   const [generatedOrder, setGeneratedOrder] = useState<any[]>([]);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
 
   const handleAddNew = () => {
     setEditingUnit({ name: '', capacityLitres: 0, type: 'DEEP_FREEZER' });
@@ -206,203 +208,220 @@ const StockOrdering: React.FC = () => {
 
   // --- SMART GENERATOR LOGIC (Multi-Factor) ---
   const handleGenerateOrder = () => {
-      if (!arrivalDate) {
-          alert("Please select an expected arrival date.");
-          return;
+      try {
+        setHasGenerated(false);
+        if (!arrivalDate) {
+            alert("Please select an expected arrival date.");
+            return;
+        }
+
+        if (totalCapacityLitres <= 0) {
+            alert("Total Capacity is 0. Please add Deep Freezers in the configuration section below.");
+            return;
+        }
+
+        const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
+        if (relevantSkus.length === 0) {
+            alert("No SKUs are marked for 'Deep Freezer' storage. Go to SKU Management and check 'Store in Deep Freezer' for items you want to order.");
+            return;
+        }
+
+        // 1. Lead Time Calculation
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const arrival = new Date(arrivalDate);
+        arrival.setHours(0,0,0,0);
+        
+        const diffTime = arrival.getTime() - today.getTime();
+        const daysUntilArrival = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (daysUntilArrival < 0) {
+            alert("Arrival date cannot be in the past.");
+            return;
+        }
+
+        // 2. Calculate Order Popularity (Frequency) - Last 30 Days
+        // This answers "How many orders included this item?"
+        const d30 = new Date();
+        d30.setDate(d30.getDate() - 30);
+        const d30Str = d30.toISOString().slice(0,10);
+        
+        const orderFrequencyMap: Record<string, number> = {};
+        const relevantOrders = orders.filter(o => o.date >= d30Str);
+        
+        relevantOrders.forEach(o => {
+            const skusInOrder = new Set<string>();
+            o.items.forEach(item => {
+                // Extract SKUs from consumed list or menu lookup
+                if (item.consumed) {
+                    item.consumed.forEach(c => skusInOrder.add(c.skuId));
+                } else {
+                    const menuItem = menuItems.find(m => m.id === item.menuItemId);
+                    if (menuItem) {
+                        const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
+                        (ings || menuItem.ingredients || []).forEach(i => skusInOrder.add(i.skuId));
+                    }
+                }
+            });
+            // Also check custom items
+            o.customSkuItems?.forEach(ci => skusInOrder.add(ci.skuId));
+
+            skusInOrder.forEach(skuId => {
+                orderFrequencyMap[skuId] = (orderFrequencyMap[skuId] || 0) + 1;
+            });
+        });
+
+        // Determine Top 20% popular items for "Star" badge
+        const frequencies = Object.values(orderFrequencyMap).sort((a,b) => b - a);
+        const topTierThreshold = frequencies.length > 0 ? frequencies[Math.floor(frequencies.length * 0.2)] : 0;
+
+        // 3. Short Term Velocity (7-Day Burn Rate)
+        const d7 = new Date();
+        d7.setDate(d7.getDate() - 7);
+        const d7Str = d7.toISOString().slice(0,10);
+
+        const velocityLitresMap: Record<string, number> = {}; 
+        
+        // 4. Long Term Trends (90-Day Distribution)
+        const d90 = new Date();
+        d90.setDate(d90.getDate() - 90);
+        const d90Str = d90.toISOString().slice(0,10);
+        
+        const distributionLitresMap: Record<string, number> = {};
+
+        const skuSizeMap: Record<string, number> = {};
+        
+        // Initialize Maps
+        relevantSkus.forEach(s => {
+            skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1);
+            velocityLitresMap[s.id] = 0;
+            distributionLitresMap[s.id] = 0;
+        });
+
+        // Populate Volume Data
+        transactions.forEach(t => {
+            if (!skuSizeMap[t.skuId] || (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.WASTE && t.type !== TransactionType.CHECK_IN)) return;
+
+            const sku = relevantSkus.find(s => s.id === t.skuId);
+            if(!sku) return;
+
+            const pktSize = skuSizeMap[t.skuId];
+            const packets = t.quantityPieces / pktSize;
+            const volPerPkt = getVolumePerPacket(sku);
+            const litres = packets * volPerPkt;
+            
+            const isConsumption = (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE'));
+            const isReturn = (t.type === TransactionType.CHECK_IN);
+
+            // 7-Day Logic
+            if (t.date >= d7Str) {
+                if (isConsumption) velocityLitresMap[t.skuId] += litres;
+                else if (isReturn) velocityLitresMap[t.skuId] -= litres;
+            }
+
+            // 90-Day Logic
+            if (t.date >= d90Str) {
+                if (isConsumption) distributionLitresMap[t.skuId] += litres;
+                else if (isReturn) distributionLitresMap[t.skuId] -= litres;
+            }
+        });
+
+        // 5. True Physical Availability Calculation
+        const projectedStocks: Record<string, number> = {};
+        let totalProjectedOccupiedLitres = 0;
+
+        // First pass: Calculate projected stock at arrival date for ALL items using 7-day velocity
+        relevantSkus.forEach(sku => {
+            const volPerPkt = getVolumePerPacket(sku);
+            const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
+            const dailyAvgLitres = weeklyLitres / 7;
+
+            const currentPkts = stockMapPackets[sku.id] || 0;
+            const currentLitres = currentPkts * volPerPkt;
+            const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
+            
+            const projStock = Math.max(0, currentLitres - projectedBurnLitres);
+            projectedStocks[sku.id] = projStock;
+            
+            totalProjectedOccupiedLitres += projStock;
+        });
+
+        // 6. Calculate True Free Space
+        let trueFreeLitres = Math.max(0, totalCapacityLitres - totalProjectedOccupiedLitres);
+
+        const generated: any[] = [];
+        
+        // Calculate Total Weighted Demand for Normalization
+        let totalWeightedDemand = 0;
+        const skuWeightedDemandMap: Record<string, number> = {};
+
+        relevantSkus.forEach(sku => {
+            const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+            const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
+            
+            // Smart Blended Volume: 60% Weight to 90-Day (Stability), 40% to 7-Day (Recency)
+            const blendedVol = (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
+            
+            // Safety Factor based on Order Popularity
+            // If item is in Top 20% most ordered, add 15% safety buffer
+            const freq = orderFrequencyMap[sku.id] || 0;
+            let safetyMultiplier = 1.0;
+            if (freq >= topTierThreshold && freq > 0) safetyMultiplier = 1.15;
+            
+            const weightedDemand = blendedVol * safetyMultiplier;
+            skuWeightedDemandMap[sku.id] = weightedDemand;
+            totalWeightedDemand += weightedDemand;
+        });
+
+        // 7. Distribute Free Space based on Smart Weighted Demand
+        relevantSkus.forEach(sku => {
+            const volPerPkt = getVolumePerPacket(sku);
+            
+            // Share based on our Smart Weighted Demand
+            const weightedDemand = skuWeightedDemandMap[sku.id] || 0;
+            const share = totalWeightedDemand > 0 ? weightedDemand / totalWeightedDemand : 0;
+
+            const litresToAdd = trueFreeLitres * share;
+            const suggestPkts = Math.floor(litresToAdd / volPerPkt);
+
+            // Meta data for display
+            const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
+            const dailyVol7 = weeklyLitres / 7;
+            const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+            
+            const projectedBurnLitres = dailyVol7 * daysUntilArrival;
+            const currentPkts = stockMapPackets[sku.id] || 0;
+            
+            // Determine Trend
+            let trend = 'stable';
+            if (dailyVol7 > dailyVol90 * 1.1) trend = 'up'; // +10% increase
+            else if (dailyVol7 < dailyVol90 * 0.9) trend = 'down'; // -10% decrease
+
+            const isTopSeller = (orderFrequencyMap[sku.id] || 0) >= topTierThreshold && topTierThreshold > 0;
+
+            // Include if suggestion > 0 OR if item is out of stock (even if suggestion 0, show it as OOS awareness)
+            if (suggestPkts > 0 || currentPkts === 0) {
+                generated.push({
+                    sku,
+                    dailyAvgPackets: (dailyVol7 / volPerPkt).toFixed(1),
+                    daysUntil: daysUntilArrival,
+                    projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
+                    suggestPkts,
+                    isOOS: currentPkts === 0,
+                    volPerPkt,
+                    sharePercent: (share * 100).toFixed(1),
+                    trend,
+                    isTopSeller
+                });
+            }
+        });
+
+        setGeneratedOrder(generated.sort((a,b) => b.suggestPkts - a.suggestPkts));
+        setHasGenerated(true);
+      } catch (err) {
+        console.error("Generator Error", err);
+        alert("An error occurred while generating the order. Please check the console.");
       }
-
-      // 1. Lead Time Calculation
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const arrival = new Date(arrivalDate);
-      arrival.setHours(0,0,0,0);
-      
-      const diffTime = arrival.getTime() - today.getTime();
-      const daysUntilArrival = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilArrival < 0) {
-          alert("Arrival date cannot be in the past.");
-          return;
-      }
-
-      const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
-      
-      // 2. Calculate Order Popularity (Frequency) - Last 30 Days
-      // This answers "How many orders included this item?"
-      const d30 = new Date();
-      d30.setDate(d30.getDate() - 30);
-      const d30Str = d30.toISOString().slice(0,10);
-      
-      const orderFrequencyMap: Record<string, number> = {};
-      const relevantOrders = orders.filter(o => o.date >= d30Str);
-      
-      relevantOrders.forEach(o => {
-          const skusInOrder = new Set<string>();
-          o.items.forEach(item => {
-              // Extract SKUs from consumed list or menu lookup
-              if (item.consumed) {
-                  item.consumed.forEach(c => skusInOrder.add(c.skuId));
-              } else {
-                  const menuItem = menuItems.find(m => m.id === item.menuItemId);
-                  if (menuItem) {
-                      const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
-                      (ings || menuItem.ingredients || []).forEach(i => skusInOrder.add(i.skuId));
-                  }
-              }
-          });
-          // Also check custom items
-          o.customSkuItems?.forEach(ci => skusInOrder.add(ci.skuId));
-
-          skusInOrder.forEach(skuId => {
-              orderFrequencyMap[skuId] = (orderFrequencyMap[skuId] || 0) + 1;
-          });
-      });
-
-      // Determine Top 20% popular items for "Star" badge
-      const frequencies = Object.values(orderFrequencyMap).sort((a,b) => b - a);
-      const topTierThreshold = frequencies.length > 0 ? frequencies[Math.floor(frequencies.length * 0.2)] : 0;
-
-      // 3. Short Term Velocity (7-Day Burn Rate)
-      const d7 = new Date();
-      d7.setDate(d7.getDate() - 7);
-      const d7Str = d7.toISOString().slice(0,10);
-
-      const velocityLitresMap: Record<string, number> = {}; 
-      
-      // 4. Long Term Trends (90-Day Distribution)
-      const d90 = new Date();
-      d90.setDate(d90.getDate() - 90);
-      const d90Str = d90.toISOString().slice(0,10);
-      
-      const distributionLitresMap: Record<string, number> = {};
-
-      const skuSizeMap: Record<string, number> = {};
-      
-      // Initialize Maps
-      relevantSkus.forEach(s => {
-          skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1);
-          velocityLitresMap[s.id] = 0;
-          distributionLitresMap[s.id] = 0;
-      });
-
-      // Populate Volume Data
-      transactions.forEach(t => {
-          if (!skuSizeMap[t.skuId] || (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.WASTE && t.type !== TransactionType.CHECK_IN)) return;
-
-          const sku = relevantSkus.find(s => s.id === t.skuId);
-          if(!sku) return;
-
-          const pktSize = skuSizeMap[t.skuId];
-          const packets = t.quantityPieces / pktSize;
-          const volPerPkt = getVolumePerPacket(sku);
-          const litres = packets * volPerPkt;
-          
-          const isConsumption = (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE'));
-          const isReturn = (t.type === TransactionType.CHECK_IN);
-
-          // 7-Day Logic
-          if (t.date >= d7Str) {
-              if (isConsumption) velocityLitresMap[t.skuId] += litres;
-              else if (isReturn) velocityLitresMap[t.skuId] -= litres;
-          }
-
-          // 90-Day Logic
-          if (t.date >= d90Str) {
-              if (isConsumption) distributionLitresMap[t.skuId] += litres;
-              else if (isReturn) distributionLitresMap[t.skuId] -= litres;
-          }
-      });
-
-      // 5. True Physical Availability Calculation
-      const projectedStocks: Record<string, number> = {};
-      let totalProjectedOccupiedLitres = 0;
-
-      // First pass: Calculate projected stock at arrival date for ALL items using 7-day velocity
-      relevantSkus.forEach(sku => {
-          const volPerPkt = getVolumePerPacket(sku);
-          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
-          const dailyAvgLitres = weeklyLitres / 7;
-
-          const currentPkts = stockMapPackets[sku.id] || 0;
-          const currentLitres = currentPkts * volPerPkt;
-          const projectedBurnLitres = dailyAvgLitres * daysUntilArrival;
-          
-          const projStock = Math.max(0, currentLitres - projectedBurnLitres);
-          projectedStocks[sku.id] = projStock;
-          
-          totalProjectedOccupiedLitres += projStock;
-      });
-
-      // 6. Calculate True Free Space
-      let trueFreeLitres = Math.max(0, totalCapacityLitres - totalProjectedOccupiedLitres);
-
-      const generated: any[] = [];
-      
-      // Calculate Total Weighted Demand for Normalization
-      let totalWeightedDemand = 0;
-      const skuWeightedDemandMap: Record<string, number> = {};
-
-      relevantSkus.forEach(sku => {
-          const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
-          const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
-          
-          // Smart Blended Volume: 60% Weight to 90-Day (Stability), 40% to 7-Day (Recency)
-          const blendedVol = (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
-          
-          // Safety Factor based on Order Popularity
-          // If item is in Top 20% most ordered, add 15% safety buffer
-          const freq = orderFrequencyMap[sku.id] || 0;
-          let safetyMultiplier = 1.0;
-          if (freq >= topTierThreshold && freq > 0) safetyMultiplier = 1.15;
-          
-          const weightedDemand = blendedVol * safetyMultiplier;
-          skuWeightedDemandMap[sku.id] = weightedDemand;
-          totalWeightedDemand += weightedDemand;
-      });
-
-      // 7. Distribute Free Space based on Smart Weighted Demand
-      relevantSkus.forEach(sku => {
-          const volPerPkt = getVolumePerPacket(sku);
-          
-          // Share based on our Smart Weighted Demand
-          const weightedDemand = skuWeightedDemandMap[sku.id] || 0;
-          const share = totalWeightedDemand > 0 ? weightedDemand / totalWeightedDemand : 0;
-
-          const litresToAdd = trueFreeLitres * share;
-          const suggestPkts = Math.floor(litresToAdd / volPerPkt);
-
-          // Meta data for display
-          const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
-          const dailyVol7 = weeklyLitres / 7;
-          const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
-          
-          const projectedBurnLitres = dailyVol7 * daysUntilArrival;
-          const currentPkts = stockMapPackets[sku.id] || 0;
-          
-          // Determine Trend
-          let trend = 'stable';
-          if (dailyVol7 > dailyVol90 * 1.1) trend = 'up'; // +10% increase
-          else if (dailyVol7 < dailyVol90 * 0.9) trend = 'down'; // -10% decrease
-
-          const isTopSeller = (orderFrequencyMap[sku.id] || 0) >= topTierThreshold && topTierThreshold > 0;
-
-          if (suggestPkts > 0 || currentPkts === 0) {
-              generated.push({
-                  sku,
-                  dailyAvgPackets: (dailyVol7 / volPerPkt).toFixed(1),
-                  daysUntil: daysUntilArrival,
-                  projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
-                  suggestPkts,
-                  isOOS: currentPkts === 0,
-                  volPerPkt,
-                  sharePercent: (share * 100).toFixed(1),
-                  trend,
-                  isTopSeller
-              });
-          }
-      });
-
-      setGeneratedOrder(generated.sort((a,b) => b.suggestPkts - a.suggestPkts));
   };
 
   const copyOrderToClipboard = () => {
@@ -431,6 +450,7 @@ const StockOrdering: React.FC = () => {
                 setArrivalDate(getLocalISOString());
                 setIsGeneratorOpen(true);
                 setGeneratedOrder([]);
+                setHasGenerated(false);
             }}
             className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
         >
@@ -785,8 +805,18 @@ const StockOrdering: React.FC = () => {
                           </div>
                       ) : (
                           <div className="text-center py-10 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                              <BarChart2 size={32} className="mx-auto mb-2 opacity-30" />
-                              <p>Select a date and click Generate.</p>
+                              {hasGenerated ? (
+                                <>
+                                  <CheckCircle2 size={32} className="mx-auto mb-2 text-emerald-500" />
+                                  <p className="font-bold text-slate-700">Fridge is Fully Stocked!</p>
+                                  <p className="text-sm">Based on current trends and capacity, no new stock is needed.</p>
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart2 size={32} className="mx-auto mb-2 opacity-30" />
+                                  <p>Select a date and click Generate.</p>
+                                </>
+                              )}
                           </div>
                       )}
                   </div>
