@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee } from 'lucide-react';
 import { StorageUnit, TransactionType } from '../types';
 import { getLocalISOString } from '../constants';
 
@@ -286,6 +286,10 @@ const StockOrdering: React.FC = () => {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
   };
+
+  const totalOrderValue = useMemo(() => {
+      return generatedOrder.reduce((acc, item) => acc + (item.suggestPkts * (item.sku.costPrice || 0)), 0);
+  }, [generatedOrder]);
 
   return (
     <div className="pb-24 max-w-5xl mx-auto">
@@ -601,12 +605,21 @@ const StockOrdering: React.FC = () => {
                                       </tbody>
                                   </table>
                               </div>
-                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
-                                  <div>
-                                      <span className="text-xs font-bold text-slate-500 uppercase">Total Order</span>
-                                      <p className="text-xl font-bold text-slate-800">
-                                          {generatedOrder.reduce((acc, i) => acc + i.suggestPkts, 0)} pkts
-                                      </p>
+                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                                  <div className="flex gap-6 items-center">
+                                      <div>
+                                          <span className="text-xs font-bold text-slate-500 uppercase">Total Order</span>
+                                          <p className="text-xl font-bold text-slate-800">
+                                              {generatedOrder.reduce((acc, i) => acc + i.suggestPkts, 0)} pkts
+                                          </p>
+                                      </div>
+                                      <div className="h-8 w-px bg-slate-200"></div>
+                                      <div>
+                                          <span className="text-xs font-bold text-slate-500 uppercase">Est. Value</span>
+                                          <p className="text-xl font-bold text-emerald-600 flex items-center gap-0.5">
+                                              <IndianRupee size={16} />{totalOrderValue.toLocaleString()}
+                                          </p>
+                                      </div>
                                   </div>
                                   <button 
                                       onClick={copyOrderToClipboard}

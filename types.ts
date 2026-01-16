@@ -27,6 +27,7 @@ export interface SKU {
   category: SKUCategory; // e.g. Steam, Kurkure
   dietary: SKUDietary;   // e.g. Veg, Non-Veg
   piecesPerPacket: number; // Inventory unit size
+  costPrice?: number; // New: Cost per packet
   order: number; // For custom sorting
   isDeepFreezerItem?: boolean; // New: Specific flag for stock ordering
 }

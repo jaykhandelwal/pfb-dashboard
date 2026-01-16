@@ -1,8 +1,13 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { SKU, SKUCategory, SKUDietary } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Box, ArrowUp, ArrowDown, Copy, Check, FileJson, Download, Snowflake } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Box, ArrowUp, ArrowDown, Copy, Check, FileJson, Download, Snowflake, IndianRupee } from 'lucide-react';
+
+// Helper to escape regex characters
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
 const SkuManagement: React.FC = () => {
   const { skus, addSku, updateSku, deleteSku, reorderSku, menuItems, menuCategories } = useStore();
@@ -21,7 +26,8 @@ const SkuManagement: React.FC = () => {
     category: SKUCategory.STEAM,
     dietary: SKUDietary.VEG,
     piecesPerPacket: 50,
-    isDeepFreezerItem: false
+    isDeepFreezerItem: false,
+    costPrice: 0
   };
 
   const handleAddNew = () => {
@@ -219,17 +225,34 @@ const SkuManagement: React.FC = () => {
               </div>
             )}
 
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-               <label className="block text-sm font-medium text-slate-700 mb-1">Packet Size (Pcs)</label>
-               <div className="text-xs text-slate-500 mb-2">Pieces per sealed packet (or 1 for loose items)</div>
-               <input 
-                type="number" 
-                required
-                min="1"
-                value={currentSku.piecesPerPacket || ''}
-                onChange={e => setCurrentSku({...currentSku, piecesPerPacket: parseInt(e.target.value)})}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              />
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex gap-4">
+               <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Packet Size (Pcs)</label>
+                  <div className="text-xs text-slate-500 mb-2">Pieces per sealed packet</div>
+                  <input 
+                    type="number" 
+                    required
+                    min="1"
+                    value={currentSku.piecesPerPacket || ''}
+                    onChange={e => setCurrentSku({...currentSku, piecesPerPacket: parseInt(e.target.value)})}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+               </div>
+               <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Cost Price (per Pkt)</label>
+                  <div className="text-xs text-slate-500 mb-2">Unit cost for reports</div>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={currentSku.costPrice || ''}
+                      onChange={e => setCurrentSku({...currentSku, costPrice: parseFloat(e.target.value)})}
+                      className="w-full border border-slate-300 rounded-lg pl-7 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      placeholder="0"
+                    />
+                    <IndianRupee size={14} className="absolute left-2 top-2.5 text-slate-400" />
+                  </div>
+               </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -281,6 +304,7 @@ const SkuManagement: React.FC = () => {
                 <th className="hidden md:table-cell p-4">Dietary</th>
                 <th className="hidden md:table-cell p-4">Category</th>
                 <th className="hidden sm:table-cell p-4">Packet Size</th>
+                <th className="hidden sm:table-cell p-4">Cost Price</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -309,7 +333,9 @@ const SkuManagement: React.FC = () => {
                     <div className="flex items-center gap-2">
                         {sku.name}
                         {sku.isDeepFreezerItem && (
-                            <Snowflake size={14} className="text-indigo-400" title="Deep Freezer Item" />
+                            <span title="Deep Freezer Item">
+                                <Snowflake size={14} className="text-indigo-400" />
+                            </span>
                         )}
                     </div>
                     <div className="md:hidden flex flex-wrap items-center gap-2 mt-1">
@@ -356,6 +382,15 @@ const SkuManagement: React.FC = () => {
                       <Box size={16} />
                       {sku.piecesPerPacket} pcs
                     </span>
+                  </td>
+                  <td className="hidden sm:table-cell p-4">
+                    {sku.costPrice ? (
+                        <span className="flex items-center gap-1 text-slate-700 font-medium">
+                            <IndianRupee size={12} /> {sku.costPrice}
+                        </span>
+                    ) : (
+                        <span className="text-slate-300 text-xs italic">--</span>
+                    )}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">

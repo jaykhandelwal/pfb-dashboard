@@ -33,6 +33,14 @@ CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT);
 
 -- 3. SKUS TABLE
 CREATE TABLE IF NOT EXISTS skus (id TEXT PRIMARY KEY, name TEXT, category TEXT, dietary TEXT, pieces_per_packet INTEGER, "order" INTEGER);
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'is_deep_freezer_item') THEN
+        ALTER TABLE skus ADD COLUMN is_deep_freezer_item BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skus' AND column_name = 'cost_price') THEN
+        ALTER TABLE skus ADD COLUMN cost_price NUMERIC DEFAULT 0;
+    END IF;
+END $$;
 
 -- 4. TRANSACTIONS TABLE
 CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, batch_id TEXT, date TEXT, timestamp BIGINT, sku_id TEXT, branch_id TEXT, type TEXT, quantity_pieces INTEGER, user_id TEXT, user_name TEXT);
@@ -220,7 +228,7 @@ erDiagram
     
     %% Table Definitions
     BRANCHES { string id PK, string name }
-    SKUS { string id PK, string name, int pieces_per_packet }
+    SKUS { string id PK, string name, int pieces_per_packet, numeric cost_price }
     TRANSACTIONS { string id PK, string type, int quantity_pieces }
     ORDERS { string id PK, jsonb items, numeric total_amount }
     TODOS { string id PK, string text, boolean is_completed, string due_date }
