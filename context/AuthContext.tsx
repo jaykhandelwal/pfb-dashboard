@@ -1,8 +1,14 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Permission } from '../types';
 import { INITIAL_ADMIN_USER } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+
+// Global declaration for Window
+declare global {
+  interface Window {
+    PAKAJA_AUTH_CODE?: string;
+  }
+}
 
 interface AuthContextType {
   currentUser: User | null;

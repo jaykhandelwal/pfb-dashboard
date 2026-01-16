@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType, SKUCategory, SKUDietary, SKU } from '../types';
-import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock, Calculator, PackageCheck, Utensils } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock, Calculator, PackageCheck, Utensils, WifiOff } from 'lucide-react';
 import { getLocalISOString } from '../constants';
 
 const Operations: React.FC = () => {
@@ -20,10 +20,12 @@ const Operations: React.FC = () => {
   // Track if the return value has been applied to hide the button
   const [appliedReturns, setAppliedReturns] = useState<Record<string, boolean>>({});
   const [successMsg, setSuccessMsg] = useState('');
+  const [warningMsg, setWarningMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   
   // Confirmation Modal State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- Smart Date Logic ---
   // Ensure we use Local Time to avoid UTC shift
@@ -182,6 +184,7 @@ const Operations: React.FC = () => {
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSuccessMsg('');
+    setWarningMsg('');
     setErrorMsg('');
     
     // Validation: Ensure Returns do not exceed Stock Taken
@@ -215,7 +218,8 @@ const Operations: React.FC = () => {
     setIsConfirmOpen(true);
   };
 
-  const confirmSubmit = () => {
+  const confirmSubmit = async () => {
+    setIsSubmitting(true);
     const transactionsToSave: any[] = [];
 
     skus.forEach(sku => {
@@ -234,13 +238,23 @@ const Operations: React.FC = () => {
     });
 
     if (transactionsToSave.length > 0) {
-      addBatchTransactions(transactionsToSave);
-      setSuccessMsg(`Successfully recorded ${transactionsToSave.length} items.`);
+      const cloudSuccess = await addBatchTransactions(transactionsToSave);
+      
+      if (cloudSuccess) {
+          setSuccessMsg(`Successfully recorded ${transactionsToSave.length} items.`);
+      } else {
+          setWarningMsg(`Saved to DEVICE ONLY. Internet sync failed. Check connection.`);
+      }
+
       setInputs({});
       setAppliedReturns({});
       setIsConfirmOpen(false);
-      setTimeout(() => setSuccessMsg(''), 3000);
+      setTimeout(() => {
+          setSuccessMsg('');
+          setWarningMsg('');
+      }, 4000);
     }
+    setIsSubmitting(false);
   };
 
   const getCategoryColor = (category: SKUCategory) => {
@@ -614,10 +628,19 @@ const Operations: React.FC = () => {
             </div>
           )}
 
+          {warningMsg && (
+            <div className="fixed bottom-20 left-4 right-4 md:bottom-4 md:left-auto md:right-4 z-50">
+              <div className="bg-amber-500 text-white px-6 py-3 rounded-xl shadow-lg text-center font-medium animate-fade-in-up flex items-center justify-center gap-2">
+                <WifiOff size={18} />
+                {warningMsg}
+              </div>
+            </div>
+          )}
+
           <div className="pt-4 border-t border-slate-200 sticky bottom-0 bg-white md:static p-4 md:p-0 -mx-4 md:mx-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none z-40">
             <button 
               type="submit"
-              disabled={branches.length === 0}
+              disabled={branches.length === 0 || isSubmitting}
               className={`w-full md:w-auto ml-auto px-8 py-3.5 md:py-3 rounded-xl text-white font-bold shadow-lg transition-all flex items-center justify-center gap-2 transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
                 type === TransactionType.CHECK_OUT 
                   ? 'bg-emerald-600 hover:bg-emerald-700' 
@@ -625,7 +648,7 @@ const Operations: React.FC = () => {
               }`}
             >
               <Save size={20} />
-              Review & Submit
+              {isSubmitting ? 'Saving...' : 'Review & Submit'}
             </button>
           </div>
         </form>
@@ -691,17 +714,19 @@ const Operations: React.FC = () => {
                  <button 
                    onClick={() => setIsConfirmOpen(false)}
                    className="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors"
+                   disabled={isSubmitting}
                   >
                    Back to Edit
                  </button>
                  <button 
                    onClick={confirmSubmit}
+                   disabled={isSubmitting}
                    className={`px-6 py-2.5 rounded-lg text-white font-bold transition-colors shadow-sm flex items-center gap-2 ${
                       type === TransactionType.CHECK_OUT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
                    }`}
                  >
                    <CheckCircle2 size={18} />
-                   Confirm & Save
+                   {isSubmitting ? 'Saving...' : 'Confirm & Save'}
                  </button>
               </div>
            </div>
