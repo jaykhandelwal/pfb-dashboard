@@ -69,17 +69,23 @@ export const UselessDashboard: React.FC<UselessDashboardProps> = ({ onClose }) =
             >
                 useless <br className="md:hidden"/> dashboard
             </h1>
-            <p className="text-slate-400 text-xl md:text-2xl font-bold mt-4 inline-block px-8 py-2 rounded-full border border-slate-800 bg-slate-900/50">
+            <p 
+                style={{ fontFamily: "'Mynerve', cursive" }}
+                className="text-slate-400 text-2xl md:text-3xl mt-4"
+            >
                 Stats you absolutely didn't need 🤪
             </p>
         </div>
 
-        {/* Cards Grid */}
-        <div className="max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20">
+        {/* Cards Grid - Randomly placed */}
+        <div className="max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 pb-20 pt-8 px-4">
             
             {/* 1. Momos Eaten */}
-            <div className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center transform hover:scale-105 transition-all duration-300 shadow-2xl shadow-purple-900/20 hover:border-purple-500 hover:shadow-purple-500/40 group relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div 
+                style={{ transform: 'rotate(-6deg) translateY(20px)' }}
+                className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center shadow-2xl shadow-purple-900/20 group relative overflow-hidden"
+            >
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-50"></div>
                 <div className="relative z-10">
                     <div className="text-7xl mb-4">🥟</div>
                     <h3 className="text-purple-400 text-lg font-bold uppercase tracking-widest mb-2">Momos Sacrificed</h3>
@@ -91,8 +97,11 @@ export const UselessDashboard: React.FC<UselessDashboardProps> = ({ onClose }) =
             </div>
 
             {/* 2. Weight in Cats */}
-            <div className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center transform hover:-rotate-1 hover:scale-105 transition-all duration-300 shadow-2xl shadow-orange-900/20 hover:border-orange-500 hover:shadow-orange-500/40 group relative overflow-hidden">
-                 <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div 
+                style={{ transform: 'rotate(4deg) translateY(-20px)' }}
+                className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center shadow-2xl shadow-orange-900/20 group relative overflow-hidden"
+            >
+                 <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-50"></div>
                  <div className="relative z-10">
                     <div className="text-7xl mb-4">🐈</div>
                     <h3 className="text-orange-400 text-lg font-bold uppercase tracking-widest mb-2">Mass Sold</h3>
@@ -104,8 +113,11 @@ export const UselessDashboard: React.FC<UselessDashboardProps> = ({ onClose }) =
             </div>
 
             {/* 3. Revenue */}
-            <div className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center transform hover:rotate-1 hover:scale-105 transition-all duration-300 shadow-2xl shadow-emerald-900/20 hover:border-emerald-500 hover:shadow-emerald-500/40 group relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div 
+                style={{ transform: 'rotate(-3deg) translateX(10px) translateY(15px)' }}
+                className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center shadow-2xl shadow-emerald-900/20 group relative overflow-hidden"
+            >
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent opacity-50"></div>
                 <div className="relative z-10">
                     <div className="text-7xl mb-4">🤑</div>
                     <h3 className="text-emerald-400 text-lg font-bold uppercase tracking-widest mb-2">Cash Money</h3>
@@ -120,8 +132,11 @@ export const UselessDashboard: React.FC<UselessDashboardProps> = ({ onClose }) =
             </div>
 
             {/* 4. Operations */}
-            <div className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center transform hover:scale-105 transition-all duration-300 shadow-2xl shadow-blue-900/20 hover:border-blue-500 hover:shadow-blue-500/40 group relative overflow-hidden md:col-span-2 lg:col-span-1">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div 
+                style={{ transform: 'rotate(7deg) translateY(30px) translateX(-10px)' }}
+                className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center shadow-2xl shadow-blue-900/20 group relative overflow-hidden md:col-span-2 lg:col-span-1"
+            >
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-50"></div>
                 <div className="relative z-10 flex flex-col justify-center h-full">
                     <div className="text-7xl mb-4">🖱️</div>
                     <h3 className="text-blue-400 text-lg font-bold uppercase tracking-widest mb-2">Button Clicks</h3>
@@ -133,8 +148,11 @@ export const UselessDashboard: React.FC<UselessDashboardProps> = ({ onClose }) =
             </div>
 
             {/* 5. Waste */}
-            <div className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center transform hover:scale-105 transition-all duration-300 shadow-2xl shadow-red-900/20 hover:border-red-500 hover:shadow-red-500/40 group relative overflow-hidden md:col-span-3 lg:col-span-2">
-                <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div 
+                style={{ transform: 'rotate(-5deg) translateY(-10px)' }}
+                className="bg-slate-900/60 border-2 border-slate-800 p-8 rounded-[2.5rem] text-center shadow-2xl shadow-red-900/20 group relative overflow-hidden md:col-span-3 lg:col-span-2"
+            >
+                <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent opacity-50"></div>
                 
                 {/* Background Element */}
                 <div className="absolute -right-10 -bottom-10 text-9xl opacity-5 rotate-12 grayscale">🗑️</div>
