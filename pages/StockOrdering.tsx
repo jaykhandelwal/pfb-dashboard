@@ -246,14 +246,15 @@ const StockOrdering: React.FC = () => {
                 return;
             }
 
-            // 2. Calculate Order Popularity (Frequency) - Last 30 Days
+            // 2. Calculate Order Popularity (Frequency) - Last 90 Days (Extended from 30d for Stability)
             // This answers "How many orders included this item?"
-            const d30 = new Date();
-            d30.setDate(d30.getDate() - 30);
-            const d30Str = d30.toISOString().slice(0, 10);
+            // Using 90 days protects items that were OOS recently from losing their "Top Seller" status
+            const dPop = new Date();
+            dPop.setDate(dPop.getDate() - 90);
+            const dPopStr = dPop.toISOString().slice(0, 10);
 
             const orderFrequencyMap: Record<string, number> = {};
-            const relevantOrders = orders.filter(o => o.date >= d30Str);
+            const relevantOrders = orders.filter(o => o.date >= dPopStr);
 
             relevantOrders.forEach(o => {
                 const skusInOrder = new Set<string>();
@@ -403,10 +404,11 @@ const StockOrdering: React.FC = () => {
 
                 // IMPROVEMENT 1: Trend Multiplier - Boost items trending upward, reduce those trending down
                 // BUT: Skip downward trend penalty for suppressed items (their low 7-day is due to external factors)
+                // REFINED: Flattened multipliers (1.05 max) to prevent "Flavor of the Week" from stealing share from OOS staples
                 let trendMultiplier = 1.0;
-                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.15; // Strong upward trend
-                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.05; // Mild upward trend
-                else if (dailyVol7 < dailyVol90 * 0.7 && !is7daySuppressed) trendMultiplier = 0.90; // Downward trend (only if NOT suppressed)
+                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.05; // Strong upward trend (flatted from 1.15)
+                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.02; // Mild upward trend (flattened from 1.05)
+                else if (dailyVol7 < dailyVol90 * 0.7 && !is7daySuppressed) trendMultiplier = 0.95; // Downward trend (flattened from 0.90)
                 weightedDemand *= trendMultiplier;
 
                 // IMPROVEMENT 2 & 3: OOS and Shortfall use ADDITIVE boost (not multiplicative)

@@ -72,8 +72,8 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 1.  **Lead Time:** Calculates days until "Expected Arrival".
 2.  **Velocity:** Calculates 7-day burn rate (recency) and 90-day volume (stability).
 3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** If 7-day rate is severely suppressed (< 50% of 90-day), uses 90-day only. This protects OOS items AND linked items (e.g., chutney when momos were OOS).
-4.  **Popularity Boost:** "Top Seller" items (top 20% by order freq) get a +15% safety buffer.
-5.  **Trend Multiplier:** Upward trends get mild boost (up to 1.15x), downward trends get 0.90x reduction. **Suppressed items (OOS or linked) are exempt from downward penalty.**
+4.  **Popularity Boost:** "Top Seller" status now uses **90-day history** (was 30d) to ensure OOS items don't lose their status. Top 20% get +15% safety buffer.
+5.  **Trend Multiplier:** FLATTENED multipliers (max 1.05x up, 0.95x down) to prevent short-term trends from destabilizing the order mix.
 6.  **OOS & Shortfall:** Strong ADDITIVE boost (+50% for OOS, +25% for Shortfall) prioritizes proven demand recovery.
 7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer.
 8.  **Bootstrap Mode:** Conservative allocation (weight 0.75) for new OOS items to prevent diluting proven demand. Stocked items with no history are skipped.
