@@ -370,6 +370,9 @@ const StockOrdering: React.FC = () => {
             let totalWeightedDemand = 0;
             const skuWeightedDemandMap: Record<string, number> = {};
 
+            // IMPROVEMENT: Minimum Safety Days constant (ensures X days of stock at current burn rate)
+            const SAFETY_DAYS = 3;
+
             relevantSkus.forEach(sku => {
                 const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
                 const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
@@ -385,9 +388,45 @@ const StockOrdering: React.FC = () => {
 
                 let weightedDemand = blendedVol * safetyMultiplier;
 
-                // Cold Start Fix: If item has ZERO history (new item), give it a tiny weight so it gets some allocation space
+                // IMPROVEMENT 1: Trend Multiplier - Boost items trending upward, reduce those trending down
+                let trendMultiplier = 1.0;
+                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.25; // Strong upward trend (+30%)
+                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.10; // Mild upward trend (+10%)
+                else if (dailyVol7 < dailyVol90 * 0.7) trendMultiplier = 0.85; // Strong downward trend (-30%)
+                weightedDemand *= trendMultiplier;
+
+                // IMPROVEMENT 2: OOS Priority Boost - Items at zero stock get 1.5x priority
+                const currentPkts = stockMapPackets[sku.id] || 0;
+                const isOOS = currentPkts <= 0;
+                if (isOOS) {
+                    weightedDemand *= 1.5;
+                }
+
+                // IMPROVEMENT 3: Minimum Safety Stock - Ensure at least SAFETY_DAYS of stock
+                const volPerPkt = getVolumePerPacket(sku);
+                const dailyVol = dailyVol7 > 0 ? dailyVol7 : dailyVol90;
+                const minSafetyLitres = dailyVol * SAFETY_DAYS;
+                const projectedStockLitres = projectedStocks[sku.id] || 0;
+                const shortfall = Math.max(0, minSafetyLitres - projectedStockLitres);
+
+                // If there's a shortfall, boost weighted demand proportionally
+                if (shortfall > 0 && minSafetyLitres > 0) {
+                    const shortfallRatio = 1 + (shortfall / minSafetyLitres);
+                    weightedDemand *= shortfallRatio;
+                }
+
+                // BOOTSTRAP MODE: For first-time use when many items are OOS with no history
+                // Give OOS items with no consumption history a meaningful base allocation
+                // This ensures fair distribution on initial stock ordering
                 if (weightedDemand === 0 && blendedVol === 0) {
-                    weightedDemand = 0.1; // Base allocation weight
+                    if (isOOS) {
+                        // OOS items with no history get full baseline weight (1.0) × OOS boost (1.5)
+                        // This gives them equal footing for initial stocking
+                        weightedDemand = 1.5;
+                    } else {
+                        // Items with stock but no history get smaller baseline
+                        weightedDemand = 0.5;
+                    }
                 }
 
                 skuWeightedDemandMap[sku.id] = weightedDemand;
@@ -483,11 +522,47 @@ const StockOrdering: React.FC = () => {
     const capacityDiff = originalTotalPkts - currentTotalPkts;
 
     const fillSlack = () => {
-        // Find top seller index
-        const topIdx = generatedOrder.findIndex(i => i.isTopSeller) || 0;
-        if (topIdx >= 0 && capacityDiff > 0) {
-            updateItemQuantity(topIdx, generatedOrder[topIdx].suggestPkts + capacityDiff);
+        // IMPROVEMENT 4: Distribute slack proportionally across all items with suggestions
+        if (capacityDiff <= 0) return;
+
+        // Calculate total original qty to determine proportions
+        const itemsWithSuggestions = generatedOrder.filter(i => i.originalQty > 0);
+        const totalOriginal = itemsWithSuggestions.reduce((acc, i) => acc + i.originalQty, 0);
+
+        if (totalOriginal === 0) {
+            // Fallback: If no original suggestions, add to first top seller
+            const topIdx = generatedOrder.findIndex(i => i.isTopSeller);
+            if (topIdx >= 0) {
+                updateItemQuantity(topIdx, generatedOrder[topIdx].suggestPkts + capacityDiff);
+            }
+            return;
         }
+
+        // Distribute proportionally
+        setGeneratedOrder(prev => {
+            const next = [...prev];
+            let remainingSlack = capacityDiff;
+
+            itemsWithSuggestions.forEach(item => {
+                const idx = prev.findIndex(p => p.sku.id === item.sku.id);
+                if (idx >= 0 && remainingSlack > 0) {
+                    const proportion = item.originalQty / totalOriginal;
+                    const addition = Math.floor(capacityDiff * proportion);
+                    next[idx] = { ...next[idx], suggestPkts: next[idx].suggestPkts + addition };
+                    remainingSlack -= addition;
+                }
+            });
+
+            // Add any rounding remainder to the top seller
+            if (remainingSlack > 0) {
+                const topIdx = prev.findIndex(i => i.isTopSeller);
+                if (topIdx >= 0) {
+                    next[topIdx] = { ...next[topIdx], suggestPkts: next[topIdx].suggestPkts + remainingSlack };
+                }
+            }
+
+            return next;
+        });
     };
 
     return (
