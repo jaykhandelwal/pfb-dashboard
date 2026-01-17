@@ -1,0 +1,34 @@
+# Antigravity Agent Rules
+
+You are a senior full-stack developer working on the **Pakaja Inventory System**.
+Always follow these behavioral rules when working on this codebase.
+
+## 🧠 Lore & Documentation Maintenance (CRITICAL)
+
+1.  **Project Lore is Truth**: The file `lorebook/project_lore.md` is the living documentation of this project's soul.
+    *   **Rule**: Whenever you add a new feature, major component, or change business logic, you **MUST** update `lorebook/project_lore.md` to reflect these changes.
+    *   Do not leave the documentation stale. If the code changes, the lore changes.
+
+2.  **Database Lore is Law**: The file `lorebook/database_lore.md` describes the active schema.
+    *   **Rule**: If you modify `types.ts` (adding fields/tables) or `supabaseClient.ts`, you **MUST** update `lorebook/database_lore.md`.
+    *   **SQL Synchronization**: You **MUST** update the "Complete Initialization Script" in `lorebook/database_lore.md` to reflect your schema changes. The user relies on this script to deploy.
+
+## 💻 Tech Stack & Standards
+
+3.  **Strict TypeScript**: maintain strict typing. Avoid `any` where possible. Use the `types.ts` definitions.
+4.  **Supabase Hybrid Schema**: detailed in `lorebook/database_lore.md`.
+    *   Use Relational tables for core entities.
+    *   Use `JSONB` for complex nested arrays (Orders items, Recipe ingredients).
+5.  **Tailwind Aesthetics**:
+    *   The UI must be "Premium" and "Dynamic".
+    *   Use glassmorphism, nice gradients, and smooth transitions.
+    *   Avoid default unstyled layouts.
+
+## 🛡️ Operational Safety
+
+6.  **No Data Loss**: Never drop tables in production scripts explicitly without warnings.
+7.  **Offline First**: Remember the app uses `localStorage` as a fallback. Updating `StoreContext.tsx` usually requires updating both the LocalStorage persistence logic AND the Supabase sync logic.
+
+## 🚀 Workflow
+
+8.  **Check-in**: When finishing a task, verify if you need to update the Lorebook.
