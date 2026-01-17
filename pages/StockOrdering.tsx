@@ -429,10 +429,12 @@ const StockOrdering: React.FC = () => {
                     if (isOOS) {
                         // OOS items with no history get baseline weight for initial stocking
                         weightedDemand = 1.5;
-                    } else {
-                        // Items with stock but no history get smaller baseline
+                    } else if (currentPkts < 2) {
+                        // Critical low stock (< 2 pkts) but no history: gentle boost to keep shelf presentable
                         weightedDemand = 0.5;
                     }
+                    // Else: If we have stock (>= 2 pkts) and NO sales, do not order more.
+                    // This prevents overstocking "dead" inventory like Chicken Kurkure (17 pkts, 0 sales).
                 }
 
                 skuWeightedDemandMap[sku.id] = weightedDemand;
@@ -965,7 +967,7 @@ const StockOrdering: React.FC = () => {
                                             onClick={fillSlack}
                                             className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
                                         >
-                                            <RefreshCcw size={12} /> Smart Fill Top Item
+                                            <RefreshCcw size={12} /> Smart Distribute
                                         </button>
                                     </div>
                                 )}
