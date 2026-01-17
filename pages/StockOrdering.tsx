@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star, Loader2 } from 'lucide-react';
+import { Truck, Plus, Trash2, Edit2, Snowflake, X, Box, Calculator, Cuboid, Settings, BarChart2, Calendar, ArrowRight, ClipboardCopy, CheckCircle2, AlertCircle, IndianRupee, Info, TrendingUp, TrendingDown, Star, Loader2, Minus, RefreshCcw } from 'lucide-react';
 import { StorageUnit, TransactionType, SKUCategory, SKU } from '../types';
 import { getLocalISOString } from '../constants';
 
@@ -428,6 +428,7 @@ const StockOrdering: React.FC = () => {
                     daysUntil: daysUntilArrival,
                     projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
                     suggestPkts,
+                    originalQty: suggestPkts, // Baseline for user edits
                     isOOS: currentPkts === 0,
                     volPerPkt,
                     sharePercent: (share * 100).toFixed(1),
@@ -464,6 +465,27 @@ const StockOrdering: React.FC = () => {
   const totalOrderValue = useMemo(() => {
       return generatedOrder.reduce((acc, item) => acc + (item.suggestPkts * (item.sku.costPrice || 0)), 0);
   }, [generatedOrder]);
+
+  // --- Manual Adjustment Logic ---
+  const updateItemQuantity = (index: number, newQty: number) => {
+      setGeneratedOrder(prev => {
+          const next = [...prev];
+          next[index] = { ...next[index], suggestPkts: Math.max(0, newQty) };
+          return next;
+      });
+  };
+
+  const currentTotalPkts = generatedOrder.reduce((acc, i) => acc + i.suggestPkts, 0);
+  const originalTotalPkts = generatedOrder.reduce((acc, i) => acc + (i.originalQty || 0), 0);
+  const capacityDiff = originalTotalPkts - currentTotalPkts;
+
+  const fillSlack = () => {
+      // Find top seller index
+      const topIdx = generatedOrder.findIndex(i => i.isTopSeller) || 0;
+      if (topIdx >= 0 && capacityDiff > 0) {
+          updateItemQuantity(topIdx, generatedOrder[topIdx].suggestPkts + capacityDiff);
+      }
+  };
 
   return (
     <div className="pb-24 max-w-5xl mx-auto">
@@ -716,7 +738,7 @@ const StockOrdering: React.FC = () => {
       {/* Generator Modal */}
       {isGeneratorOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
                   <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
                       <div>
                           <h3 className="font-bold text-indigo-900 flex items-center gap-2"><BarChart2 size={18}/> Smart Order Generator</h3>
@@ -725,7 +747,7 @@ const StockOrdering: React.FC = () => {
                       <button onClick={() => setIsGeneratorOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                   </div>
                   
-                  <div className="p-6 flex-1 overflow-y-auto">
+                  <div className="p-6 flex-1 overflow-y-auto pb-24">
                       <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
                           <div className="flex-1 w-full">
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Expected Stock Arrival Date</label>
@@ -761,12 +783,12 @@ const StockOrdering: React.FC = () => {
                                               <th className="p-3">Item</th>
                                               <th className="p-3 text-center">Daily Burn (7d)</th>
                                               <th className="p-3 text-center">Proj. Stock (Arrival)</th>
-                                              <th className="p-3 text-right bg-emerald-50 text-emerald-700">Order Qty</th>
+                                              <th className="p-3 text-right bg-emerald-50 text-emerald-700 w-32">Order Qty</th>
                                           </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-100">
                                           {generatedOrder.map((item, idx) => (
-                                              <tr key={idx} className="hover:bg-slate-50">
+                                              <tr key={idx} className="hover:bg-slate-50 group">
                                                   <td className="p-3 font-bold text-slate-700">
                                                       <div className="flex items-center gap-1.5">
                                                           {item.sku.name}
@@ -786,7 +808,7 @@ const StockOrdering: React.FC = () => {
                                                               </span>
                                                           )}
                                                       </div>
-                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.sharePercent}% of Ideal Mix (Smart Weight)</span>
+                                                      <span className="block text-[9px] text-slate-400 font-normal">{item.sharePercent}% of Ideal Mix</span>
                                                       {item.isOOS && (
                                                           <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase inline-block mt-0.5">OOS</span>
                                                       )}
@@ -799,39 +821,33 @@ const StockOrdering: React.FC = () => {
                                                           <span className="text-slate-400">-</span>
                                                       )}
                                                   </td>
-                                                  <td className="p-3 text-right bg-emerald-50/50">
-                                                      <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full font-bold text-xs">
-                                                          {item.suggestPkts} pkts
-                                                      </span>
+                                                  <td className="p-3 text-right bg-emerald-50/30">
+                                                      <div className="flex items-center justify-end gap-1">
+                                                          <button 
+                                                            onClick={() => updateItemQuantity(idx, item.suggestPkts - 1)}
+                                                            className="w-6 h-6 rounded bg-white border border-emerald-200 text-emerald-700 flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                                                          >
+                                                              <Minus size={12} />
+                                                          </button>
+                                                          <input 
+                                                            type="number" 
+                                                            min="0"
+                                                            value={item.suggestPkts}
+                                                            onChange={(e) => updateItemQuantity(idx, parseInt(e.target.value) || 0)}
+                                                            className="w-12 h-6 text-center border border-emerald-300 rounded text-xs font-bold text-emerald-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                                          />
+                                                          <button 
+                                                            onClick={() => updateItemQuantity(idx, item.suggestPkts + 1)}
+                                                            className="w-6 h-6 rounded bg-white border border-emerald-200 text-emerald-700 flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                                                          >
+                                                              <Plus size={12} />
+                                                          </button>
+                                                      </div>
                                                   </td>
                                               </tr>
                                           ))}
                                       </tbody>
                                   </table>
-                              </div>
-                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                                  <div className="flex gap-6 items-center">
-                                      <div>
-                                          <span className="text-xs font-bold text-slate-500 uppercase">Total Order</span>
-                                          <p className="text-xl font-bold text-slate-800">
-                                              {generatedOrder.reduce((acc, i) => acc + i.suggestPkts, 0)} pkts
-                                          </p>
-                                      </div>
-                                      <div className="h-8 w-px bg-slate-200"></div>
-                                      <div>
-                                          <span className="text-xs font-bold text-slate-500 uppercase">Est. Value</span>
-                                          <p className="text-xl font-bold text-emerald-600 flex items-center gap-0.5">
-                                              <IndianRupee size={16} />{totalOrderValue.toLocaleString()}
-                                          </p>
-                                      </div>
-                                  </div>
-                                  <button 
-                                      onClick={copyOrderToClipboard}
-                                      className="text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors border border-indigo-100"
-                                  >
-                                      {copySuccess ? <CheckCircle2 size={18}/> : <ClipboardCopy size={18}/>}
-                                      {copySuccess ? 'Copied!' : 'Copy List'}
-                                  </button>
                               </div>
                           </div>
                       ) : (
@@ -851,6 +867,51 @@ const StockOrdering: React.FC = () => {
                           </div>
                       )}
                   </div>
+
+                  {generatedOrder.length > 0 && (
+                      <div className="p-4 border-t border-slate-200 bg-white absolute bottom-0 w-full z-10 rounded-b-2xl shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
+                          {/* Capacity Adjuster */}
+                          {capacityDiff > 0 && (
+                              <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-2 flex justify-between items-center animate-fade-in-up">
+                                  <div className="flex items-center gap-2 text-amber-800">
+                                      <AlertCircle size={16} />
+                                      <span className="text-xs font-bold">Unused Capacity: {capacityDiff} pkts</span>
+                                  </div>
+                                  <button 
+                                    onClick={fillSlack}
+                                    className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                                  >
+                                      <RefreshCcw size={12} /> Smart Fill Top Item
+                                  </button>
+                              </div>
+                          )}
+
+                          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                              <div className="flex gap-6 items-center">
+                                  <div>
+                                      <span className="text-xs font-bold text-slate-500 uppercase">Total Order</span>
+                                      <p className="text-xl font-bold text-slate-800">
+                                          {currentTotalPkts} pkts
+                                      </p>
+                                  </div>
+                                  <div className="h-8 w-px bg-slate-200"></div>
+                                  <div>
+                                      <span className="text-xs font-bold text-slate-500 uppercase">Est. Value</span>
+                                      <p className="text-xl font-bold text-emerald-600 flex items-center gap-0.5">
+                                          <IndianRupee size={16} />{totalOrderValue.toLocaleString()}
+                                      </p>
+                                  </div>
+                              </div>
+                              <button 
+                                  onClick={copyOrderToClipboard}
+                                  className="text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors border border-indigo-100"
+                              >
+                                  {copySuccess ? <CheckCircle2 size={18}/> : <ClipboardCopy size={18}/>}
+                                  {copySuccess ? 'Copied!' : 'Copy List'}
+                              </button>
+                          </div>
+                      </div>
+                  )}
               </div>
           </div>
       )}
