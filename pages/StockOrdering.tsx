@@ -377,8 +377,16 @@ const StockOrdering: React.FC = () => {
                 const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
                 const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
 
+                // Check OOS status EARLY - this affects how we interpret the data
+                const currentPkts = stockMapPackets[sku.id] || 0;
+                const isOOS = currentPkts <= 0;
+
                 // Smart Blended Volume: 60% Weight to 90-Day (Stability), 40% to 7-Day (Recency)
-                const blendedVol = (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
+                // CRITICAL: If item is OOS, ignore 7-day data - low sales reflect AVAILABILITY, not demand!
+                // An OOS item's 7-day sales are suppressed because it couldn't be sold, not because nobody wants it.
+                const blendedVol = (isOOS && dailyVol7 < dailyVol90 * 0.5)
+                    ? dailyVol90  // Use 90-day rate only for OOS items with suppressed 7-day sales
+                    : (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
 
                 // Safety Factor based on Order Popularity
                 // If item is in Top 20% most ordered, add 15% safety buffer
@@ -390,17 +398,16 @@ const StockOrdering: React.FC = () => {
                 let weightedDemand = blendedVol * safetyMultiplier;
 
                 // IMPROVEMENT 1: Trend Multiplier - Boost items trending upward, reduce those trending down
-                // This is multiplicative as it adjusts the base consumption pattern
+                // BUT: Skip downward trend penalty for OOS items (their low 7-day is due to unavailability)
                 let trendMultiplier = 1.0;
-                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.15; // Strong upward trend (reduced from 1.25)
-                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.05; // Mild upward trend (reduced from 1.10)
-                else if (dailyVol7 < dailyVol90 * 0.7) trendMultiplier = 0.90; // Strong downward trend (less aggressive)
+                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.15; // Strong upward trend
+                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.05; // Mild upward trend
+                else if (dailyVol7 < dailyVol90 * 0.7 && !isOOS) trendMultiplier = 0.90; // Downward trend (only if NOT OOS)
                 weightedDemand *= trendMultiplier;
 
                 // IMPROVEMENT 2 & 3: OOS and Shortfall use ADDITIVE boost (not multiplicative)
                 // This prevents low-consumption OOS items from outranking high-consumption items
-                const currentPkts = stockMapPackets[sku.id] || 0;
-                const isOOS = currentPkts <= 0;
+                // NOTE: currentPkts and isOOS are already defined above
 
                 const volPerPkt = getVolumePerPacket(sku);
                 const dailyVol = dailyVol7 > 0 ? dailyVol7 : dailyVol90;
@@ -474,6 +481,7 @@ const StockOrdering: React.FC = () => {
                         dailyAvgPackets: (dailyVol7 / volPerPkt).toFixed(1),
                         daysUntil: daysUntilArrival,
                         projectedBurnPackets: Math.ceil(projectedBurnLitres / volPerPkt),
+                        currentPkts: Number(currentPkts.toFixed(1)), // Add current stock for display
                         suggestPkts,
                         originalQty: suggestPkts, // Baseline for user edits
                         isOOS: currentPkts === 0,
@@ -867,6 +875,7 @@ const StockOrdering: React.FC = () => {
                                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
                                                 <tr>
                                                     <th className="p-3">Item</th>
+                                                    <th className="p-3 text-center">Current Stock</th>
                                                     <th className="p-3 text-center">Daily Burn (7d)</th>
                                                     <th className="p-3 text-center">Proj. Stock (Arrival)</th>
                                                     <th className="p-3 text-right bg-emerald-50 text-emerald-700 w-32">Order Qty</th>
@@ -898,6 +907,9 @@ const StockOrdering: React.FC = () => {
                                                             {item.isOOS && (
                                                                 <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase inline-block mt-0.5">OOS</span>
                                                             )}
+                                                        </td>
+                                                        <td className="p-3 text-center text-slate-700 font-medium">
+                                                            {item.currentPkts} pkts
                                                         </td>
                                                         <td className="p-3 text-center text-slate-500">{item.dailyAvgPackets} pkts</td>
                                                         <td className="p-3 text-center">
