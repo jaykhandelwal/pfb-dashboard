@@ -71,9 +71,9 @@
 The system recommends Restock quantities based on a sophisticated multi-factor heuristic (found in `StockOrdering.tsx`):
 1.  **Lead Time:** Calculates days until "Expected Arrival".
 2.  **Velocity:** Calculates 7-day burn rate (recency) and 90-day volume (stability).
-3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** OOS items use 90-day rate only (7-day data is suppressed due to unavailability, not lack of demand).
+3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** If 7-day rate is severely suppressed (< 50% of 90-day), uses 90-day only. This protects OOS items AND linked items (e.g., chutney when momos were OOS).
 4.  **Popularity Boost:** "Top Seller" items (top 20% by order freq) get a +15% safety buffer.
-5.  **Trend Multiplier:** Upward trends get mild boost (up to 1.15x), downward trends get 0.90x reduction. **OOS items are exempt from downward trend penalty.**
+5.  **Trend Multiplier:** Upward trends get mild boost (up to 1.15x), downward trends get 0.90x reduction. **Suppressed items (OOS or linked) are exempt from downward penalty.**
 6.  **OOS & Shortfall:** Uses ADDITIVE boost (not multiplicative) - OOS adds 20% of base demand, shortfall adds up to 15%.
 7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer at current burn rate.
 8.  **Bootstrap Mode:** On first-time use, OOS items get base allocation (1.5). Items with stock (>2 pkts) but no sales history are ignored to prevent accumulating dead stock.

@@ -382,10 +382,14 @@ const StockOrdering: React.FC = () => {
                 const isOOS = currentPkts <= 0;
 
                 // Smart Blended Volume: 60% Weight to 90-Day (Stability), 40% to 7-Day (Recency)
-                // CRITICAL: If item is OOS, ignore 7-day data - low sales reflect AVAILABILITY, not demand!
-                // An OOS item's 7-day sales are suppressed because it couldn't be sold, not because nobody wants it.
-                const blendedVol = (isOOS && dailyVol7 < dailyVol90 * 0.5)
-                    ? dailyVol90  // Use 90-day rate only for OOS items with suppressed 7-day sales
+                // CRITICAL: If 7-day rate is severely suppressed (< 50% of 90-day), use 90-day only.
+                // This protects against:
+                // 1. OOS items whose sales are 0 because they weren't available
+                // 2. Linked items (e.g., chutney) whose sales dropped because their parent items (momos) were OOS
+                // 3. Supply chain disruptions that temporarily depressed sales
+                const is7daySuppressed = dailyVol90 > 0 && dailyVol7 < dailyVol90 * 0.5;
+                const blendedVol = is7daySuppressed
+                    ? dailyVol90  // Use stable 90-day rate when 7-day is artificially low
                     : (dailyVol90 * 0.6) + (dailyVol7 * 0.4);
 
                 // Safety Factor based on Order Popularity
@@ -398,11 +402,11 @@ const StockOrdering: React.FC = () => {
                 let weightedDemand = blendedVol * safetyMultiplier;
 
                 // IMPROVEMENT 1: Trend Multiplier - Boost items trending upward, reduce those trending down
-                // BUT: Skip downward trend penalty for OOS items (their low 7-day is due to unavailability)
+                // BUT: Skip downward trend penalty for suppressed items (their low 7-day is due to external factors)
                 let trendMultiplier = 1.0;
                 if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.15; // Strong upward trend
                 else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.05; // Mild upward trend
-                else if (dailyVol7 < dailyVol90 * 0.7 && !isOOS) trendMultiplier = 0.90; // Downward trend (only if NOT OOS)
+                else if (dailyVol7 < dailyVol90 * 0.7 && !is7daySuppressed) trendMultiplier = 0.90; // Downward trend (only if NOT suppressed)
                 weightedDemand *= trendMultiplier;
 
                 // IMPROVEMENT 2 & 3: OOS and Shortfall use ADDITIVE boost (not multiplicative)
