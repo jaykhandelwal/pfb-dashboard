@@ -40,3 +40,8 @@ ORDER BY
     table_name, 
     ordinal_position;
 */
+
+-- 21. ENABLE DECIMALS FOR COST PRICE
+-- Run this to allow decimal values (e.g., 10.50) in the Cost Price column.
+-- By default, it might be an INTEGER which would round your values.
+ALTER TABLE skus ALTER COLUMN cost_price TYPE numeric;

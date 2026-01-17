@@ -247,6 +247,7 @@ const SkuManagement: React.FC = () => {
                     <input 
                       type="number" 
                       min="0"
+                      step="0.01"
                       value={currentSku.costPrice || ''}
                       onChange={e => setCurrentSku({...currentSku, costPrice: parseFloat(e.target.value)})}
                       className="w-full border border-slate-300 rounded-lg pl-7 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
