@@ -386,42 +386,48 @@ const StockOrdering: React.FC = () => {
                 let safetyMultiplier = 1.0;
                 if (freq >= topTierThreshold && freq > 0) safetyMultiplier = 1.15;
 
+                // BASE weighted demand from consumption history (this is the PRIMARY factor)
                 let weightedDemand = blendedVol * safetyMultiplier;
 
                 // IMPROVEMENT 1: Trend Multiplier - Boost items trending upward, reduce those trending down
+                // This is multiplicative as it adjusts the base consumption pattern
                 let trendMultiplier = 1.0;
-                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.25; // Strong upward trend (+30%)
-                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.10; // Mild upward trend (+10%)
-                else if (dailyVol7 < dailyVol90 * 0.7) trendMultiplier = 0.85; // Strong downward trend (-30%)
+                if (dailyVol7 > dailyVol90 * 1.3) trendMultiplier = 1.15; // Strong upward trend (reduced from 1.25)
+                else if (dailyVol7 > dailyVol90 * 1.1) trendMultiplier = 1.05; // Mild upward trend (reduced from 1.10)
+                else if (dailyVol7 < dailyVol90 * 0.7) trendMultiplier = 0.90; // Strong downward trend (less aggressive)
                 weightedDemand *= trendMultiplier;
 
-                // IMPROVEMENT 2: OOS Priority Boost - Items at zero stock get 1.5x priority
+                // IMPROVEMENT 2 & 3: OOS and Shortfall use ADDITIVE boost (not multiplicative)
+                // This prevents low-consumption OOS items from outranking high-consumption items
                 const currentPkts = stockMapPackets[sku.id] || 0;
                 const isOOS = currentPkts <= 0;
-                if (isOOS) {
-                    weightedDemand *= 1.5;
-                }
 
-                // IMPROVEMENT 3: Minimum Safety Stock - Ensure at least SAFETY_DAYS of stock
                 const volPerPkt = getVolumePerPacket(sku);
                 const dailyVol = dailyVol7 > 0 ? dailyVol7 : dailyVol90;
                 const minSafetyLitres = dailyVol * SAFETY_DAYS;
                 const projectedStockLitres = projectedStocks[sku.id] || 0;
                 const shortfall = Math.max(0, minSafetyLitres - projectedStockLitres);
 
-                // If there's a shortfall, boost weighted demand proportionally
-                if (shortfall > 0 && minSafetyLitres > 0) {
-                    const shortfallRatio = 1 + (shortfall / minSafetyLitres);
-                    weightedDemand *= shortfallRatio;
+                // Calculate an ADDITIVE boost based on urgency (OOS + shortfall)
+                // This boost is proportional to the item's own consumption, not a flat multiplier
+                let urgencyBoost = 0;
+                if (isOOS && blendedVol > 0) {
+                    // OOS items get a boost equal to 20% of their base demand
+                    urgencyBoost += blendedVol * 0.20;
                 }
+                if (shortfall > 0 && minSafetyLitres > 0) {
+                    // Shortfall adds up to 15% of base demand proportional to severity
+                    const shortfallRatio = Math.min(1, shortfall / minSafetyLitres);
+                    urgencyBoost += blendedVol * 0.15 * shortfallRatio;
+                }
+                weightedDemand += urgencyBoost;
 
                 // BOOTSTRAP MODE: For first-time use when many items are OOS with no history
                 // Give OOS items with no consumption history a meaningful base allocation
                 // This ensures fair distribution on initial stock ordering
                 if (weightedDemand === 0 && blendedVol === 0) {
                     if (isOOS) {
-                        // OOS items with no history get full baseline weight (1.0) × OOS boost (1.5)
-                        // This gives them equal footing for initial stocking
+                        // OOS items with no history get baseline weight for initial stocking
                         weightedDemand = 1.5;
                     } else {
                         // Items with stock but no history get smaller baseline

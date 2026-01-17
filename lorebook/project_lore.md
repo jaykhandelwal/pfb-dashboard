@@ -73,9 +73,9 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 2.  **Velocity:** Calculates 7-day burn rate (recency) and 90-day volume (stability).
 3.  **Weighted Demand:** Blends 90-day (60% weight) and 7-day (40% weight) usage.
 4.  **Popularity Boost:** "Top Seller" items (top 20% by order freq) get a +15% safety buffer.
-5.  **Trend Multiplier:** Strong upward trends (+30%) get 1.25x boost, mild (+10%) get 1.10x, strong downward (-30%) get 0.85x reduction.
-6.  **OOS Priority:** Items at zero stock get a 1.5x allocation priority boost.
-7.  **Safety Stock:** Each SKU maintains a 3-day minimum safety buffer at current burn rate.
+5.  **Trend Multiplier:** Upward trends get mild boost (up to 1.15x), downward trends get reduction (0.90x).
+6.  **OOS & Shortfall:** Uses ADDITIVE boost (not multiplicative) - OOS adds 20% of base demand, shortfall adds up to 15%.
+7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer at current burn rate.
 8.  **Bootstrap Mode:** On first-time use, OOS items with no history get meaningful base allocation (1.5 weight vs 0.5 for stocked items).
 9.  **Capacity Constraint:** Calculates "True Free Space" in configured Deep Freezers (Litres).
 10. **Allocation:** Distributes free space to SKUs proportional to their Weighted Demand.
