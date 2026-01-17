@@ -423,13 +423,13 @@ const StockOrdering: React.FC = () => {
                 // This boost is proportional to the item's own consumption, not a flat multiplier
                 let urgencyBoost = 0;
                 if (isOOS && blendedVol > 0) {
-                    // OOS items get a boost equal to 20% of their base demand
-                    urgencyBoost += blendedVol * 0.20;
+                    // OOS items get a STRONG boost (50%) to ensure they recover fast vs new items
+                    urgencyBoost += blendedVol * 0.50;
                 }
                 if (shortfall > 0 && minSafetyLitres > 0) {
-                    // Shortfall adds up to 15% of base demand proportional to severity
+                    // Shortfall adds up to 25% of base demand proportional to severity
                     const shortfallRatio = Math.min(1, shortfall / minSafetyLitres);
-                    urgencyBoost += blendedVol * 0.15 * shortfallRatio;
+                    urgencyBoost += blendedVol * 0.25 * shortfallRatio;
                 }
                 weightedDemand += urgencyBoost;
 
@@ -438,8 +438,9 @@ const StockOrdering: React.FC = () => {
                 // This ensures fair distribution on initial stock ordering
                 if (weightedDemand === 0 && blendedVol === 0) {
                     if (isOOS) {
-                        // OOS items with no history get baseline weight for initial stocking
-                        weightedDemand = 1.5;
+                        // OOS items with no history get a conservative base weight (0.75)
+                        // significantly LOWER than proven items (which get ~1.2+)
+                        weightedDemand = 0.75;
                     } else if (currentPkts < 2) {
                         // Critical low stock (< 2 pkts) but no history: gentle boost to keep shelf presentable
                         weightedDemand = 0.5;

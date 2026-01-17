@@ -74,9 +74,9 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** If 7-day rate is severely suppressed (< 50% of 90-day), uses 90-day only. This protects OOS items AND linked items (e.g., chutney when momos were OOS).
 4.  **Popularity Boost:** "Top Seller" items (top 20% by order freq) get a +15% safety buffer.
 5.  **Trend Multiplier:** Upward trends get mild boost (up to 1.15x), downward trends get 0.90x reduction. **Suppressed items (OOS or linked) are exempt from downward penalty.**
-6.  **OOS & Shortfall:** Uses ADDITIVE boost (not multiplicative) - OOS adds 20% of base demand, shortfall adds up to 15%.
-7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer at current burn rate.
-8.  **Bootstrap Mode:** On first-time use, OOS items get base allocation (1.5). Items with stock (>2 pkts) but no sales history are ignored to prevent accumulating dead stock.
+6.  **OOS & Shortfall:** Strong ADDITIVE boost (+50% for OOS, +25% for Shortfall) prioritizes proven demand recovery.
+7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer.
+8.  **Bootstrap Mode:** Conservative allocation (weight 0.75) for new OOS items to prevent diluting proven demand. Stocked items with no history are skipped.
 9.  **Capacity Constraint:** Calculates "True Free Space" in configured Deep Freezers (Litres).
 10. **Allocation:** Distributes free space to SKUs proportional to their Weighted Demand.
 11. **Smart Fill:** Unused capacity is distributed proportionally across all items (not just top seller).
