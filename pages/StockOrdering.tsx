@@ -95,7 +95,7 @@ const StockOrdering: React.FC = () => {
     }, [storageUnits]);
 
     // 2. Current Stock & Consumption Logic
-    const { currentStockLitres, recommendedOrders, availableLitres, stockMapPackets } = useMemo(() => {
+    const { currentStockLitres, recommendedOrders, availableLitres, stockMapPackets, consumptionLitresMap } = useMemo(() => {
         // A. Calculate Current Stock (Only for Enabled SKUs)
         const relevantSkus = skus.filter(s => s.isDeepFreezerItem);
 
@@ -196,7 +196,8 @@ const StockOrdering: React.FC = () => {
             currentStockLitres: Math.ceil(usedLitres),
             availableLitres: Math.floor(availableL),
             recommendedOrders: recommendations.sort((a, b) => b.recommendPkts - a.recommendPkts),
-            stockMapPackets: sMapPkts
+            stockMapPackets: sMapPkts,
+            consumptionLitresMap // Exporting for Generator to use consistent data
         };
 
     }, [skus, transactions, totalCapacityLitres, litresPerPacket]);
@@ -299,11 +300,9 @@ const StockOrdering: React.FC = () => {
             const velocityLitresMap: Record<string, number> = {};
 
             // 4. Long Term Trends (90-Day Distribution)
-            const d90 = new Date();
-            d90.setDate(d90.getDate() - 90);
-            const d90Str = d90.toISOString().slice(0, 10);
-
-            const distributionLitresMap: Record<string, number> = {};
+            // WE NOW USE consumptionLitresMap (Transaction Data) passed from useMemo
+            // This ensures consistency with the Page Recommendation logic
+            // const distributionLitresMap: Record<string, number> = {};
 
             const skuSizeMap: Record<string, number> = {};
 
@@ -311,7 +310,6 @@ const StockOrdering: React.FC = () => {
             relevantSkus.forEach(s => {
                 skuSizeMap[s.id] = (s.piecesPerPacket > 0 ? s.piecesPerPacket : 1);
                 velocityLitresMap[s.id] = 0;
-                distributionLitresMap[s.id] = 0;
             });
 
             // Populate Volume Data
@@ -329,16 +327,10 @@ const StockOrdering: React.FC = () => {
                 const isConsumption = (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE'));
                 const isReturn = (t.type === TransactionType.CHECK_IN);
 
-                // 7-Day Logic
+                // 7-Day Logic (Short Term Velocity)
                 if (t.date >= d7Str) {
                     if (isConsumption) velocityLitresMap[t.skuId] += litres;
                     else if (isReturn) velocityLitresMap[t.skuId] -= litres;
-                }
-
-                // 90-Day Logic
-                if (t.date >= d90Str) {
-                    if (isConsumption) distributionLitresMap[t.skuId] += litres;
-                    else if (isReturn) distributionLitresMap[t.skuId] -= litres;
                 }
             });
 
@@ -371,11 +363,11 @@ const StockOrdering: React.FC = () => {
             let totalWeightedDemand = 0;
             const skuWeightedDemandMap: Record<string, number> = {};
 
-            // IMPROVEMENT: Minimum Safety Days constant (ensures X days of stock at current burn rate)
+            // IMPROVEMENT: Minimum Safety Days constant (ensures X days
             const SAFETY_DAYS = 3;
 
             relevantSkus.forEach(sku => {
-                const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+                const dailyVol90 = Math.max(0, consumptionLitresMap[sku.id] || 0) / 90;
                 const dailyVol7 = Math.max(0, velocityLitresMap[sku.id] || 0) / 7;
 
                 // Check OOS status EARLY - this affects how we interpret the data
@@ -469,7 +461,7 @@ const StockOrdering: React.FC = () => {
                 // Meta data for display
                 const weeklyLitres = Math.max(0, velocityLitresMap[sku.id] || 0);
                 const dailyVol7 = weeklyLitres / 7;
-                const dailyVol90 = Math.max(0, distributionLitresMap[sku.id] || 0) / 90;
+                const dailyVol90 = Math.max(0, consumptionLitresMap[sku.id] || 0) / 90;
 
                 const projectedBurnLitres = dailyVol7 * daysUntilArrival;
                 const currentPkts = stockMapPackets[sku.id] || 0;

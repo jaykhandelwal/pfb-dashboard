@@ -70,13 +70,14 @@
 ### 4.1. "Smart" Stock Ordering
 The system recommends Restock quantities based on a sophisticated multi-factor heuristic (found in `StockOrdering.tsx`):
 1.  **Lead Time:** Calculates days until "Expected Arrival".
-2.  **Velocity:** Calculates 7-day burn rate (recency) and 90-day volume (stability).
-3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** If 7-day rate is severely suppressed (< 50% of 90-day), uses 90-day only. This protects OOS items AND linked items (e.g., chutney when momos were OOS).
-4.  **Popularity Boost:** "Top Seller" status now uses **90-day history** (was 30d) to ensure OOS items don't lose their status. Top 20% get +15% safety buffer.
-5.  **Trend Multiplier:** FLATTENED multipliers (max 1.05x up, 0.95x down) to prevent short-term trends from destabilizing the order mix.
-6.  **OOS & Shortfall:** Strong ADDITIVE boost (+50% for OOS, +25% for Shortfall) prioritizes proven demand recovery.
-7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer.
-8.  **Bootstrap Mode:** Minimal allocation (weight 0.20) for new OOS items. This prevents "phantom demand" from diluting the share of proven, high-volume items.
+2.  **Velocity:** Calculates 7-day burn rate (from Sales) and 90-day volume (from **Transactions/Consumption**).
+3.  **Weighted Demand:** Blends 90-day (60%) and 7-day (40%) usage. **Critical:** If 7-day rate is severely suppressed (< 50% of 90-day), uses 90-day only.
+4.  **Unified Data:** Generator now shares the exact same 90-day history source (**Transactions**) as the Page Recommendations to ensure consistency.
+5.  **Popularity Boost:** "Top Seller" status now uses **90-day history** (was 30d) to ensure OOS items don't lose their status. Top 20% get +15% safety buffer.
+6.  **Trend Multiplier:** FLATTENED multipliers (max 1.05x up, 0.95x down) to prevent short-term trends from destabilizing the order mix.
+7.  **OOS & Shortfall:** Strong ADDITIVE boost (+50% for OOS, +25% for Shortfall) prioritizes proven demand recovery.
+8.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer.
+9.  **Bootstrap Mode:** Minimal allocation (weight 0.20) for new OOS items. This prevents "phantom demand" from diluting the share of proven, high-volume items.
 9.  **Capacity Constraint:** Calculates "True Free Space" in configured Deep Freezers (Litres).
 10. **Allocation:** Distributes free space to SKUs proportional to their Weighted Demand.
 11. **Smart Fill:** Unused capacity is distributed proportionally across all items (not just top seller).
