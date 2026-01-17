@@ -76,7 +76,7 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 5.  **Trend Multiplier:** FLATTENED multipliers (max 1.05x up, 0.95x down) to prevent short-term trends from destabilizing the order mix.
 6.  **OOS & Shortfall:** Strong ADDITIVE boost (+50% for OOS, +25% for Shortfall) prioritizes proven demand recovery.
 7.  **Safety Stock:** Each SKU targets a 3-day minimum safety buffer.
-8.  **Bootstrap Mode:** Conservative allocation (weight 0.75) for new OOS items to prevent diluting proven demand. Stocked items with no history are skipped.
+8.  **Bootstrap Mode:** Minimal allocation (weight 0.20) for new OOS items. This prevents "phantom demand" from diluting the share of proven, high-volume items.
 9.  **Capacity Constraint:** Calculates "True Free Space" in configured Deep Freezers (Litres).
 10. **Allocation:** Distributes free space to SKUs proportional to their Weighted Demand.
 11. **Smart Fill:** Unused capacity is distributed proportionally across all items (not just top seller).

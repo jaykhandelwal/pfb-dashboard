@@ -440,9 +440,9 @@ const StockOrdering: React.FC = () => {
                 // This ensures fair distribution on initial stock ordering
                 if (weightedDemand === 0 && blendedVol === 0) {
                     if (isOOS) {
-                        // OOS items with no history get a conservative base weight (0.75)
-                        // significantly LOWER than proven items (which get ~1.2+)
-                        weightedDemand = 0.75;
+                        // OOS items with no history get a conservative base weight (0.20)
+                        // This prevents phantom demand from newer items diluting the share of proven items
+                        weightedDemand = 0.20;
                     } else if (currentPkts < 2) {
                         // Critical low stock (< 2 pkts) but no history: gentle boost to keep shelf presentable
                         weightedDemand = 0.5;
