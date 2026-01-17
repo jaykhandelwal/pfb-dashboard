@@ -27,7 +27,10 @@ const getSafeTimestamp = (obj: any): number => {
     return Date.now();
 };
 
-// Database Mappers
+// --- HYBRID DATABASE MAPPERS (READ: DB -> App) ---
+// Translates Supabase snake_case to App camelCase
+// These are "Safe" mappers: they check both snake_case (DB) and camelCase (Legacy/Local) keys.
+
 const mapTransactionFromDB = (t: any): Transaction => ({
   id: t.id,
   batchId: t.batch_id || t.batchId, 
@@ -42,6 +45,117 @@ const mapTransactionFromDB = (t: any): Transaction => ({
   imageUrls: t.image_urls || (t.image_url ? [t.image_url] : [])
 });
 
+const mapOrderFromDB = (data: any): Order => ({ 
+    ...data, 
+    branchId: data.branch_id || data.branchId, 
+    customerId: data.customer_id || data.customerId, 
+    customerName: data.customer_name || data.customerName, 
+    totalAmount: data.total_amount || data.totalAmount, 
+    paymentMethod: data.payment_method || data.paymentMethod, 
+    customAmount: data.custom_amount || data.customAmount, 
+    customAmountReason: data.custom_amount_reason || data.customAmountReason, 
+    customSkuItems: data.custom_sku_items || data.customSkuItems, 
+    customSkuReason: data.custom_sku_reason || data.customSkuReason, 
+    paymentSplit: data.payment_split || data.paymentSplit,
+    customerPhone: data.customer_phone || data.customerPhone
+});
+
+const mapSkuFromDB = (data: any): SKU => ({ 
+    ...data, 
+    piecesPerPacket: data.pieces_per_packet || data.piecesPerPacket || 1, 
+    isDeepFreezerItem: data.is_deep_freezer_item ?? data.isDeepFreezerItem ?? false, 
+    costPrice: data.cost_price || data.costPrice || 0, 
+    volumePerPacketLitres: data.volume_per_packet_litres || data.volumePerPacketLitres || 0 
+});
+
+const mapMenuItemFromDB = (data: any): MenuItem => ({ 
+    ...data, 
+    halfPrice: data.half_price || data.halfPrice, 
+    halfIngredients: data.half_ingredients || data.halfIngredients 
+});
+
+const mapCustomerFromDB = (data: any): Customer => ({ 
+    ...data, 
+    phoneNumber: data.phone_number || data.phoneNumber, 
+    totalSpend: data.total_spend || data.totalSpend || 0, 
+    orderCount: data.order_count || data.orderCount || 0, 
+    joinedAt: data.joined_at || data.joinedAt, 
+    lastOrderDate: data.last_order_date || data.lastOrderDate 
+});
+
+const mapRuleFromDB = (data: any): MembershipRule => ({ 
+    ...data, 
+    triggerOrderCount: data.trigger_order_count || data.triggerOrderCount, 
+    timeFrameDays: data.time_frame_days || data.timeFrameDays, 
+    validityDays: data.validity_days || data.validityDays, 
+    minOrderValue: data.min_order_value || data.minOrderValue, 
+    rewardVariant: data.reward_variant || data.rewardVariant 
+});
+
+const mapCouponFromDB = (data: any): Coupon => ({ 
+    ...data, 
+    customerId: data.customer_id || data.customerId, 
+    ruleId: data.rule_id || data.ruleId, 
+    expiresAt: data.expires_at || data.expiresAt, 
+    redeemedAt: data.redeemed_at || data.redeemedAt, 
+    redeemedOrderId: data.redeemed_order_id || data.redeemedOrderId 
+});
+
+const mapAttendanceFromDB = (data: any): AttendanceRecord => ({ 
+    ...data, 
+    userId: data.user_id || data.userId, 
+    userName: data.user_name || data.userName, 
+    branchId: data.branch_id || data.branchId, 
+    imageUrl: data.image_url || data.imageUrl 
+});
+
+const mapTemplateFromDB = (data: any): TaskTemplate => ({ 
+    ...data, 
+    assignedTo: data.assigned_to || data.assignedTo, 
+    assignedBy: data.assigned_by || data.assignedBy, 
+    weekDays: data.week_days || data.weekDays, 
+    monthDays: data.month_days || data.monthDays, 
+    startDate: data.start_date || data.startDate, 
+    lastGeneratedDate: data.last_generated_date || data.lastGeneratedDate, 
+    isActive: data.is_active ?? data.isActive ?? true 
+});
+
+const mapTodoFromDB = (data: any): Todo => ({ 
+    ...data, 
+    isCompleted: data.is_completed ?? data.isCompleted ?? false, 
+    assignedTo: data.assigned_to || data.assignedTo, 
+    assignedBy: data.assigned_by || data.assignedBy, 
+    createdAt: data.created_at || data.createdAt, 
+    completedAt: data.completed_at || data.completedAt, 
+    dueDate: data.due_date || data.dueDate, 
+    templateId: data.template_id || data.templateId 
+});
+
+const mapSalesRecordFromDB = (data: any): SalesRecord => ({ 
+    ...data, 
+    totalSales: data.total_sales || data.totalSales, 
+    netSales: data.net_sales || data.netSales, 
+    ordersCount: data.orders_count || data.ordersCount, 
+    imageUrl: data.image_url || data.imageUrl, 
+    parsedData: data.parsed_data || data.parsedData 
+});
+
+const mapStorageUnitFromDB = (data: any): StorageUnit => ({ 
+    ...data, 
+    capacityLitres: data.capacity_litres || data.capacityLitres, 
+    isActive: data.is_active ?? data.isActive ?? true 
+});
+
+const mapDeletedTransactionFromDB = (t: any): Transaction => ({
+    ...mapTransactionFromDB(t),
+    deletedAt: t.deleted_at || t.deletedAt,
+    deletedBy: t.deleted_by || t.deletedBy
+});
+
+// --- DATABASE MAPPERS (WRITE: App -> DB) ---
+// Translates App camelCase to Supabase snake_case.
+// Configured to match YOUR database schema provided in JSON.
+
 const mapTransactionToDB = (tx: Partial<Transaction>) => ({
   id: tx.id,
   batch_id: tx.batchId,
@@ -50,30 +164,121 @@ const mapTransactionToDB = (tx: Partial<Transaction>) => ({
   branch_id: tx.branchId,
   sku_id: tx.skuId,
   type: tx.type,
-  quantity_pieces: tx.quantityPieces,
+  quantity_pieces: tx.quantityPieces, // Confirmed: quantity_pieces
   user_id: tx.userId,
   user_name: tx.userName,
   image_urls: tx.imageUrls
 });
 
-const mapOrderFromDB = (data: any): Order => ({ ...data, branchId: data.branch_id, customerId: data.customer_id, customerName: data.customer_name, totalAmount: data.total_amount, paymentMethod: data.payment_method, customAmount: data.custom_amount, customAmountReason: data.custom_amount_reason, customSkuItems: data.custom_sku_items, customSkuReason: data.custom_sku_reason });
-const mapSkuFromDB = (data: any): SKU => ({ ...data, piecesPerPacket: data.pieces_per_packet, isDeepFreezerItem: data.is_deep_freezer_item, costPrice: data.cost_price, volumePerPacketLitres: data.volume_per_packet_litres });
-const mapMenuItemFromDB = (data: any): MenuItem => ({ ...data, halfPrice: data.half_price, halfIngredients: data.half_ingredients });
-const mapCustomerFromDB = (data: any): Customer => ({ ...data, phoneNumber: data.phone_number, totalSpend: data.total_spend, orderCount: data.order_count, joinedAt: data.joined_at, lastOrderDate: data.last_order_date });
-const mapRuleFromDB = (data: any): MembershipRule => ({ ...data, triggerOrderCount: data.trigger_order_count, timeFrameDays: data.time_frame_days, validityDays: data.validity_days, minOrderValue: data.min_order_value, rewardVariant: data.reward_variant });
-const mapCouponFromDB = (data: any): Coupon => ({ ...data, customerId: data.customer_id, ruleId: data.rule_id, expiresAt: data.expires_at, redeemedAt: data.redeemed_at, redeemedOrderId: data.redeemed_order_id });
-const mapAttendanceFromDB = (data: any): AttendanceRecord => ({ ...data, userId: data.user_id, userName: data.user_name, branchId: data.branch_id, imageUrl: data.image_url });
-const mapTemplateFromDB = (data: any): TaskTemplate => ({ ...data, assignedTo: data.assigned_to, assignedBy: data.assigned_by, weekDays: data.week_days, monthDays: data.month_days, startDate: data.start_date, lastGeneratedDate: data.last_generated_date, isActive: data.is_active });
-const mapTodoFromDB = (data: any): Todo => ({ ...data, isCompleted: data.is_completed, assignedTo: data.assigned_to, assignedBy: data.assigned_by, createdAt: data.created_at, completedAt: data.completed_at, dueDate: data.due_date, templateId: data.template_id });
-const mapSalesRecordFromDB = (data: any): SalesRecord => ({ ...data, totalSales: data.total_sales, netSales: data.net_sales, ordersCount: data.orders_count, imageUrl: data.image_url, parsedData: data.parsed_data });
-const mapStorageUnitFromDB = (data: any): StorageUnit => ({ ...data, capacityLitres: data.capacity_litres, isActive: data.is_active });
-
-// Deleted Transaction Mapper (adds metadata)
-const mapDeletedTransactionFromDB = (t: any): Transaction => ({
-    ...mapTransactionFromDB(t),
-    deletedAt: t.deleted_at,
-    deletedBy: t.deleted_by
+const mapOrderToDB = (o: Order) => ({
+  id: o.id,
+  branch_id: o.branchId,
+  customer_id: o.customerId,
+  customer_name: o.customerName,
+  platform: o.platform,
+  total_amount: o.totalAmount,
+  status: o.status,
+  payment_method: o.paymentMethod,
+  payment_split: o.paymentSplit,
+  date: o.date,
+  timestamp: o.timestamp,
+  items: o.items,
+  custom_amount: o.customAmount,
+  custom_amount_reason: o.customAmountReason,
+  custom_sku_items: o.customSkuItems,
+  custom_sku_reason: o.customSkuReason,
+  customer_phone: (o as any).customerPhone // Optional: Sync phone if available
 });
+
+const mapSkuToDB = (s: SKU) => ({
+  id: s.id,
+  name: s.name,
+  category: s.category,
+  dietary: s.dietary,
+  pieces_per_packet: s.piecesPerPacket, // Confirmed: pieces_per_packet
+  // volume_per_packet_litres: s.volumePerPacketLitres, // DISABLED: Column missing in DB JSON. Run migration to enable.
+  "order": s.order,
+  is_deep_freezer_item: s.isDeepFreezerItem,
+  cost_price: s.costPrice
+});
+
+const mapMenuItemToDB = (m: MenuItem) => ({
+  id: m.id,
+  name: m.name,
+  category: m.category,
+  price: m.price,
+  half_price: m.halfPrice,
+  description: m.description,
+  ingredients: m.ingredients,
+  half_ingredients: m.halfIngredients
+});
+
+const mapRuleToDB = (r: MembershipRule) => ({
+  id: r.id,
+  trigger_order_count: r.triggerOrderCount,
+  type: r.type,
+  value: r.value,
+  description: r.description,
+  time_frame_days: r.timeFrameDays,
+  validity_days: r.validityDays,
+  min_order_value: r.minOrderValue,
+  reward_variant: r.rewardVariant
+});
+
+const mapAttendanceToDB = (a: Partial<AttendanceRecord>) => ({
+  id: a.id,
+  user_id: a.userId,
+  user_name: a.userName,
+  branch_id: a.branchId,
+  date: a.date,
+  timestamp: a.timestamp,
+  image_url: a.imageUrl
+});
+
+const mapTemplateToDB = (t: TaskTemplate) => ({
+  id: t.id,
+  title: t.title,
+  assigned_to: t.assignedTo,
+  assigned_by: t.assignedBy,
+  frequency: t.frequency,
+  week_days: t.weekDays,
+  month_days: t.monthDays,
+  start_date: t.startDate,
+  last_generated_date: t.lastGeneratedDate,
+  is_active: t.isActive
+});
+
+const mapTodoToDB = (t: Todo) => ({
+  id: t.id,
+  text: t.text,
+  is_completed: t.isCompleted,
+  assigned_to: t.assignedTo,
+  assigned_by: t.assignedBy,
+  created_at: t.createdAt, 
+  completed_at: t.completedAt, 
+  due_date: t.dueDate,
+  template_id: t.templateId
+});
+
+const mapSalesRecordToDB = (s: SalesRecord) => ({
+  id: s.id,
+  date: s.date,
+  platform: s.platform,
+  total_sales: s.totalSales,
+  net_sales: s.netSales,
+  orders_count: s.ordersCount,
+  image_url: s.imageUrl,
+  parsed_data: s.parsedData
+});
+
+const mapStorageUnitToDB = (u: StorageUnit) => ({
+  id: u.id,
+  name: u.name,
+  capacity_litres: u.capacityLitres,
+  type: u.type,
+  is_active: u.isActive
+});
+
 
 interface StoreContextType {
   transactions: Transaction[];
@@ -308,9 +513,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setTransactions(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  // Deduplicate based on ID to avoid double-adding if local state updated optimistically
-                  if (prev.some(t => t.id === newRecord.id)) return prev;
-                  updated = [...prev, mapTransactionFromDB(newRecord)];
+                  const mapped = mapTransactionFromDB(newRecord);
+                  // Deduplicate
+                  if (prev.some(t => t.id === mapped.id)) return prev;
+                  updated = [...prev, mapped];
               } else if (eventType === 'DELETE') {
                   updated = prev.filter(t => t.id !== oldRecord.id);
               }
@@ -325,8 +531,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setOrders(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  if (prev.some(o => o.id === newRecord.id)) return prev;
-                  updated = [mapOrderFromDB(newRecord), ...prev];
+                  const mapped = mapOrderFromDB(newRecord);
+                  if (prev.some(o => o.id === mapped.id)) return prev;
+                  updated = [mapped, ...prev];
               } else if (eventType === 'UPDATE') {
                   updated = prev.map(o => o.id === newRecord.id ? mapOrderFromDB(newRecord) : o);
               } else if (eventType === 'DELETE') {
@@ -343,8 +550,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setSkus(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  if (prev.some(s => s.id === newRecord.id)) return prev;
-                  updated = [...prev, mapSkuFromDB(newRecord)];
+                  const mapped = mapSkuFromDB(newRecord);
+                  if (prev.some(s => s.id === mapped.id)) return prev;
+                  updated = [...prev, mapped];
               } else if (eventType === 'UPDATE') {
                   updated = prev.map(s => s.id === newRecord.id ? mapSkuFromDB(newRecord) : s);
               } else if (eventType === 'DELETE') {
@@ -362,8 +570,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setAttendanceRecords(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  if (prev.some(a => a.id === newRecord.id)) return prev;
-                  updated = [mapAttendanceFromDB(newRecord), ...prev];
+                  const mapped = mapAttendanceFromDB(newRecord);
+                  if (prev.some(a => a.id === mapped.id)) return prev;
+                  updated = [mapped, ...prev];
               } else if (eventType === 'DELETE') {
                   updated = prev.filter(a => a.id !== oldRecord.id);
               }
@@ -378,8 +587,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setTodos(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  if (prev.some(t => t.id === newRecord.id)) return prev;
-                  updated = [mapTodoFromDB(newRecord), ...prev];
+                  const mapped = mapTodoFromDB(newRecord);
+                  if (prev.some(t => t.id === mapped.id)) return prev;
+                  updated = [mapped, ...prev];
               } else if (eventType === 'UPDATE') {
                   updated = prev.map(t => t.id === newRecord.id ? mapTodoFromDB(newRecord) : t);
               } else if (eventType === 'DELETE') {
@@ -408,8 +618,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setMenuItems(prev => {
               let updated = prev;
               if (eventType === 'INSERT') {
-                  if (prev.some(m => m.id === newRecord.id)) return prev;
-                  updated = [...prev, mapMenuItemFromDB(newRecord)];
+                  const mapped = mapMenuItemFromDB(newRecord);
+                  if (prev.some(m => m.id === mapped.id)) return prev;
+                  updated = [...prev, mapped];
               } else if (eventType === 'UPDATE') {
                   updated = prev.map(m => m.id === newRecord.id ? mapMenuItemFromDB(newRecord) : m);
               } else if (eventType === 'DELETE') {
@@ -520,18 +731,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addSku = async (sku: any) => { 
       const newSku = { ...sku, id: `sku-${Date.now()}` }; 
       setSkus([...skus, newSku]); save('skus', [...skus, newSku]);
-      if(isSupabaseConfigured()) await supabase.from('skus').insert({
-          ...newSku,
-          volume_per_packet_litres: newSku.volumePerPacketLitres
-      }); 
+      if(isSupabaseConfigured()) await supabase.from('skus').insert(mapSkuToDB(newSku)); 
   };
   const updateSku = async (sku: any) => { 
       const updated = skus.map(s => s.id === sku.id ? sku : s);
       setSkus(updated); save('skus', updated);
-      if(isSupabaseConfigured()) await supabase.from('skus').update({
-          ...sku,
-          volume_per_packet_litres: sku.volumePerPacketLitres
-      }).eq('id', sku.id);
+      if(isSupabaseConfigured()) await supabase.from('skus').update(mapSkuToDB(sku)).eq('id', sku.id);
   };
   const deleteSku = async (id: string) => {
       const updated = skus.filter(s => s.id !== id);
@@ -561,12 +766,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMenuItem = async (item: any) => {
       const newItem = { ...item, id: item.id || `menu-${Date.now()}` };
       setMenuItems([...menuItems, newItem]); save('menuItems', [...menuItems, newItem]);
-      if(isSupabaseConfigured()) await supabase.from('menu_items').insert(newItem);
+      if(isSupabaseConfigured()) await supabase.from('menu_items').insert(mapMenuItemToDB(newItem));
   };
   const updateMenuItem = async (item: any) => {
       const updated = menuItems.map(i => i.id === item.id ? item : i);
       setMenuItems(updated); save('menuItems', updated);
-      if(isSupabaseConfigured()) await supabase.from('menu_items').update(item).eq('id', item.id);
+      if(isSupabaseConfigured()) await supabase.from('menu_items').update(mapMenuItemToDB(item)).eq('id', item.id);
   };
   const deleteMenuItem = async (id: string) => {
       const updated = menuItems.filter(i => i.id !== id);
@@ -591,13 +796,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
   const reorderMenuCategory = async (id: string, direction: 'up' | 'down') => {};
 
-  const addOrder = async (order: any, redeemedCouponId?: string) => {
+  const addOrder = async (order: Order, redeemedCouponId?: string) => {
       setOrders([order, ...orders]); save('orders', [order, ...orders]);
-      if(isSupabaseConfigured()) await supabase.from('orders').insert(order);
+      if(isSupabaseConfigured()) {
+          const dbOrder = mapOrderToDB(order);
+          const { error } = await supabase.from('orders').insert(dbOrder);
+          if (error) console.error("Supabase Order Insert Error:", error);
+      }
+      
       // If coupon used, mark redeemed
       if (redeemedCouponId) {
           const updatedCoupons = customerCoupons.map(c => c.id === redeemedCouponId ? { ...c, status: 'REDEEMED' as const, redeemedAt: Date.now(), redeemedOrderId: order.id } : c);
           setCustomerCoupons(updatedCoupons); save('customerCoupons', updatedCoupons);
+          if (isSupabaseConfigured()) {
+             await supabase.from('customer_coupons').update({ 
+                 status: 'REDEEMED', 
+                 redeemed_at: new Date().toISOString(), // Use ISO for DB consistency 
+                 redeemed_order_id: order.id 
+             }).eq('id', redeemedCouponId);
+          }
       }
   };
   const deleteOrder = async (id: string) => {
@@ -608,7 +825,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMembershipRule = async (rule: any) => {
       const newRule = { ...rule, id: `rule-${Date.now()}` };
       setMembershipRules([...membershipRules, newRule]); save('membershipRules', [...membershipRules, newRule]);
-      if(isSupabaseConfigured()) await supabase.from('membership_rules').insert(newRule);
+      if(isSupabaseConfigured()) await supabase.from('membership_rules').insert(mapRuleToDB(newRule));
   };
   const deleteMembershipRule = async (id: string) => {
       const updated = membershipRules.filter(r => r.id !== id);
@@ -627,13 +844,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addSalesRecords = async (records: SalesRecord[]) => {
       setSalesRecords([...salesRecords, ...records]);
-      if(isSupabaseConfigured()) await supabase.from('sales_records').insert(records);
+      if(isSupabaseConfigured()) await supabase.from('sales_records').insert(records.map(mapSalesRecordToDB));
   };
   const deleteSalesRecordsForDate = async (date: string) => {};
 
   const addTodo = async (todo: Todo) => {
       setTodos([todo, ...todos]); save('todos', [todo, ...todos]);
-      if(isSupabaseConfigured()) await supabase.from('todos').insert(todo);
+      if(isSupabaseConfigured()) await supabase.from('todos').insert(mapTodoToDB(todo));
   };
   const toggleTodo = async (id: string, isCompleted: boolean) => {
       const updated = todos.map(t => t.id === id ? { ...t, isCompleted, completedAt: isCompleted ? Date.now() : undefined } : t);
@@ -644,12 +861,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addTaskTemplate = async (tmpl: TaskTemplate) => {
       const newT = { ...tmpl, id: `tmpl-${Date.now()}` };
       setTaskTemplates([...taskTemplates, newT]); save('taskTemplates', [...taskTemplates, newT]);
-      if(isSupabaseConfigured()) await supabase.from('task_templates').insert(newT);
+      if(isSupabaseConfigured()) await supabase.from('task_templates').insert(mapTemplateToDB(newT));
   };
   const updateTaskTemplate = async (tmpl: TaskTemplate) => {
       const updated = taskTemplates.map(t => t.id === tmpl.id ? tmpl : t);
       setTaskTemplates(updated); save('taskTemplates', updated);
-      if(isSupabaseConfigured()) await supabase.from('task_templates').update(tmpl).eq('id', tmpl.id);
+      if(isSupabaseConfigured()) await supabase.from('task_templates').update(mapTemplateToDB(tmpl)).eq('id', tmpl.id);
   };
   const deleteTaskTemplate = async (id: string) => {
       const updated = taskTemplates.filter(t => t.id !== id);
@@ -660,7 +877,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addAttendance = async (record: any) => {
       const newR = { ...record, id: `att-${Date.now()}` };
       setAttendanceRecords([newR, ...attendanceRecords]); save('attendanceRecords', [newR, ...attendanceRecords]);
-      if(isSupabaseConfigured()) await supabase.from('attendance').insert(newR);
+      if(isSupabaseConfigured()) await supabase.from('attendance').insert(mapAttendanceToDB(newR));
   };
   const setAttendanceStatus = async (userId: string, date: string, type: any) => {
       // Upsert logic override
@@ -675,12 +892,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addStorageUnit = async (unit: any) => {
       const newU = { ...unit, id: `st-${Date.now()}`, isActive: true };
       setStorageUnits([...storageUnits, newU]); save('storageUnits', [...storageUnits, newU]);
-      if(isSupabaseConfigured()) await supabase.from('storage_units').insert(newU);
+      if(isSupabaseConfigured()) await supabase.from('storage_units').insert(mapStorageUnitToDB(newU));
   };
   const updateStorageUnit = async (unit: any) => {
       const updated = storageUnits.map(u => u.id === unit.id ? unit : u);
       setStorageUnits(updated); save('storageUnits', updated);
-      if(isSupabaseConfigured()) await supabase.from('storage_units').update(unit).eq('id', unit.id);
+      if(isSupabaseConfigured()) await supabase.from('storage_units').update(mapStorageUnitToDB(unit)).eq('id', unit.id);
   };
   const deleteStorageUnit = async (id: string) => {
       const updated = storageUnits.filter(u => u.id !== id);

@@ -24,3 +24,19 @@ DO $$ BEGIN
         EXECUTE 'CREATE POLICY "Enable access to all users" ON deleted_transactions FOR ALL USING (true) WITH CHECK (true)';
     END IF;
 END $$;
+
+-- 20. VERIFICATION SCRIPT (Run this to check your Column Names)
+-- Copy and run this in Supabase SQL Editor to see exactly what columns exist
+/*
+SELECT 
+    table_name, 
+    column_name, 
+    data_type 
+FROM 
+    information_schema.columns 
+WHERE 
+    table_schema = 'public' 
+ORDER BY 
+    table_name, 
+    ordinal_position;
+*/
