@@ -28,11 +28,11 @@ const MenuManagement: React.FC = () => {
    const [halfIngredients, setHalfIngredients] = useState<MenuIngredient[]>([]);
    const [recipeTab, setRecipeTab] = useState<'FULL' | 'HALF'>('FULL');
 
-   // Grouping State
-   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+   // Grouping State: Default to collapsed (expanded = false)
+   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
    const toggleGroup = (category: string) => {
-      setCollapsedGroups(prev => ({ ...prev, [category]: !prev[category] }));
+      setExpandedGroups(prev => ({ ...prev, [category]: !prev[category] }));
    };
 
    // Derived State: Grouped & Sorted Items
@@ -606,7 +606,7 @@ const MenuManagement: React.FC = () => {
                      ) : (
                         sortedCategoryKeys.map(category => {
                            const items = groupedItems[category].sort((a, b) => a.name.localeCompare(b.name));
-                           const isCollapsed = collapsedGroups[category];
+                           const isExpanded = expandedGroups[category];
                            const catColor = getCategoryColor(category);
 
                            return (
@@ -619,7 +619,7 @@ const MenuManagement: React.FC = () => {
                                     <td colSpan={6} className="p-3 border-y border-slate-200">
                                        <div className="flex items-center gap-2">
                                           <button className="text-slate-400 hover:text-slate-600 transition-colors">
-                                             {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+                                             {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                           </button>
                                           <span
                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-xs font-bold shadow-sm"
@@ -635,7 +635,7 @@ const MenuManagement: React.FC = () => {
                                  </tr>
 
                                  {/* Items */}
-                                 {!isCollapsed && items.map((item, index) => (
+                                 {isExpanded && items.map((item, index) => (
                                     <tr key={item.id} id={`menu-row-${item.id}`} className="hover:bg-slate-50 transition-colors scroll-mt-32 border-b border-slate-100 last:border-0">
                                        <td className="p-4 text-center text-slate-400 text-sm">
                                           {/* Global index can be complex here, using per-group index or just a dot */}
