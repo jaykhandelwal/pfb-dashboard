@@ -801,7 +801,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isSupabaseConfigured()) await supabase.from('skus').delete().eq('id', id);
     };
     const reorderSku = async (id: string, direction: 'up' | 'down') => {
-        // Reorder logic stub
+        const currentIndex = skus.findIndex(s => s.id === id);
+        if (currentIndex === -1) return;
+
+        const swapIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (swapIndex < 0 || swapIndex >= skus.length) return;
+
+        const currentSku = { ...skus[currentIndex] };
+        const swapSku = { ...skus[swapIndex] };
+
+        // Swap Orders
+        const tempOrder = currentSku.order;
+        currentSku.order = swapSku.order;
+        swapSku.order = tempOrder;
+
+        // Update State
+        const updatedSkus = skus.map(s => {
+            if (s.id === currentSku.id) return currentSku;
+            if (s.id === swapSku.id) return swapSku;
+            return s;
+        }).sort((a, b) => a.order - b.order);
+
+        setSkus(updatedSkus);
+        save('skus', updatedSkus);
+
+        // Update DB
+        if (isSupabaseConfigured()) {
+            await Promise.all([
+                supabase.from('skus').update({ order: currentSku.order }).eq('id', currentSku.id),
+                supabase.from('skus').update({ order: swapSku.order }).eq('id', swapSku.id)
+            ]);
+        }
     };
 
     const addBranch = async (branch: any) => {
