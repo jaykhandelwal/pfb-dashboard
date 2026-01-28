@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen } from 'lucide-react';
 
 const AppSettings: React.FC = () => {
    const { appSettings, updateAppSetting, isLoading } = useStore();
@@ -19,7 +19,7 @@ const AppSettings: React.FC = () => {
       if (savingKeys.includes(key)) return;
 
       // Permission Check specifically for BETA features
-      if ((key === 'enable_beta_tasks' || key === 'enable_whatsapp_webhook' || key === 'debug_whatsapp_webhook') && currentUser?.role !== 'ADMIN') {
+      if ((key === 'enable_beta_tasks' || key === 'enable_beta_ledger' || key === 'enable_whatsapp_webhook' || key === 'debug_whatsapp_webhook') && currentUser?.role !== 'ADMIN') {
          alert("Beta/Admin features can only be managed by an Admin.");
          return;
       }
@@ -286,6 +286,37 @@ const AppSettings: React.FC = () => {
                                  disabled={currentUser?.role !== 'ADMIN'}
                               />
                               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                           </label>
+                        )}
+                     </div>
+
+                     {/* Setting: Ledger */}
+                     <div className="p-6 flex items-center justify-between">
+                        <div className="flex gap-4">
+                           <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                              <BookOpen size={20} />
+                           </div>
+                           <div>
+                              <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                                 Ledger
+                              </h4>
+                              <p className="text-sm text-slate-500">
+                                 Track income, expenses, and transfers across branches.
+                              </p>
+                           </div>
+                        </div>
+                        {savingKeys.includes('enable_beta_ledger') ? (
+                           <Loader2 size={24} className="text-amber-600 animate-spin" />
+                        ) : (
+                           <label className={`relative inline-flex items-center cursor-pointer ${currentUser?.role !== 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                              <input
+                                 type="checkbox"
+                                 className="sr-only peer"
+                                 checked={appSettings.enable_beta_ledger || false}
+                                 onChange={() => handleToggle('enable_beta_ledger')}
+                                 disabled={currentUser?.role !== 'ADMIN'}
+                              />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                            </label>
                         )}
                      </div>

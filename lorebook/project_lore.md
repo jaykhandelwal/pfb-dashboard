@@ -63,6 +63,18 @@
 *   **Staff:** Restricted to Daily Operations (Check-In/Out), Attendance, and basic Orders.
 *   *Access Control:* Alphanumeric Access Codes.
 
+### 3.3. Ledger & Financials (Beta)
+The Ledger feature provides a unified system for tracking non-POS financial transactions.
+*   **Entity:** `LedgerEntry`
+*   **Entry Types:** `INCOME`, `EXPENSE`, `TRANSFER`.
+*   **Categories:** Predefined common business expenses (Rent, Utilities, Salaries, Supplier Payment, etc.).
+*   **Workflow:**
+    1.  Enabled via App Settings (Experimental).
+    2.  Accessible only to **Admin** users with the `MANAGE_LEDGER` permission.
+    3.  Supports basic CRUD operations with real-time sync to Supabase.
+    4.  Visualized via stats cards for real-time balance tracking.
+*   **Access Control**: Strictly restricted to the `ADMIN` role. Even if granted the permission, non-admin users cannot access the route or see the sidebar link. Permission must be manually enabled in User Management (not auto-granted).
+
 ---
 
 ## 4. Key Algorithms & Automations

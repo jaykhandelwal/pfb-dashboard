@@ -1,5 +1,5 @@
 
-export type Permission = 
+export type Permission =
   | 'VIEW_DASHBOARD'
   | 'VIEW_ANALYTICS'
   | 'MANAGE_ATTENDANCE'
@@ -16,7 +16,8 @@ export type Permission =
   | 'MANAGE_RECONCILIATION'
   | 'VIEW_ORDERS'
   | 'MANAGE_CUSTOMERS'
-  | 'MANAGE_MEMBERSHIP';
+  | 'MANAGE_MEMBERSHIP'
+  | 'MANAGE_LEDGER';
 
 export type Role = 'ADMIN' | 'MANAGER' | 'STAFF';
 
@@ -260,17 +261,48 @@ export interface AppSettings {
   require_customer_phone: boolean;
   require_customer_name: boolean;
   enable_beta_tasks: boolean;
-  enable_whatsapp_webhook: boolean; 
-  whatsapp_webhook_url: string; 
-  debug_whatsapp_webhook: boolean; 
-  enable_debug_logging: boolean; 
-  stock_ordering_litres_per_packet: number | string; 
-  deep_freezer_categories: string[]; 
-  [key: string]: any; 
+  enable_beta_ledger: boolean;
+  enable_whatsapp_webhook: boolean;
+  whatsapp_webhook_url: string;
+  debug_whatsapp_webhook: boolean;
+  enable_debug_logging: boolean;
+  stock_ordering_litres_per_packet: number | string;
+  deep_freezer_categories: string[];
+  [key: string]: any;
 }
 
 export interface RewardResult {
-    isEligible: boolean;
-    rule: MembershipRule;
-    coupon?: Coupon;
+  isEligible: boolean;
+  rule: MembershipRule;
+  coupon?: Coupon;
 }
+
+// --- LEDGER (BETA) ---
+
+export type LedgerEntryType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+
+export enum LedgerCategory {
+  RENT = 'Rent',
+  UTILITIES = 'Utilities',
+  SUPPLIES = 'Supplies',
+  SALARIES = 'Salaries',
+  REPAIRS = 'Repairs',
+  MARKETING = 'Marketing',
+  TRANSPORT = 'Transport',
+  OTHER = 'Other',
+}
+
+export interface LedgerEntry {
+  id: string;
+  date: string;
+  timestamp: number;
+  branchId: string;
+  entryType: LedgerEntryType;
+  category: LedgerCategory;
+  amount: number;
+  description: string;
+  paymentMethod: 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER';
+  createdBy: string;
+  createdByName: string;
+}
+

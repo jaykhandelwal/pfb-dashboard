@@ -5,7 +5,7 @@ import {
     MembershipRule, Coupon, Transaction, Order, Todo,
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
-    TransactionType
+    TransactionType, LedgerEntry
 } from '../types';
 import {
     INITIAL_SKUS, INITIAL_BRANCHES, INITIAL_MENU_ITEMS,
@@ -290,6 +290,30 @@ const mapStorageUnitToDB = (u: StorageUnit) => ({
     is_active: u.isActive
 });
 
+// --- LEDGER MAPPERS (BETA) ---
+const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
+    ...data,
+    branchId: data.branch_id || data.branchId,
+    entryType: data.entry_type || data.entryType,
+    paymentMethod: data.payment_method || data.paymentMethod,
+    createdBy: data.created_by || data.createdBy,
+    createdByName: data.created_by_name || data.createdByName,
+});
+
+const mapLedgerEntryToDB = (e: LedgerEntry) => ({
+    id: e.id,
+    date: e.date,
+    timestamp: e.timestamp,
+    branch_id: e.branchId,
+    entry_type: e.entryType,
+    category: e.category,
+    amount: e.amount,
+    description: e.description,
+    payment_method: e.paymentMethod,
+    created_by: e.createdBy,
+    created_by_name: e.createdByName,
+});
+
 
 interface StoreContextType {
     transactions: Transaction[];
@@ -357,6 +381,12 @@ interface StoreContextType {
     updateStorageUnit: (unit: StorageUnit) => Promise<void>;
     deleteStorageUnit: (id: string) => Promise<void>;
 
+    // Ledger (Beta)
+    ledgerEntries: LedgerEntry[];
+    addLedgerEntry: (entry: Omit<LedgerEntry, 'id'>) => Promise<void>;
+    updateLedgerEntry: (entry: LedgerEntry) => Promise<void>;
+    deleteLedgerEntry: (id: string) => Promise<void>;
+
     updateAppSetting: (key: string, value: any) => Promise<void>;
     isLoading: boolean;
 }
@@ -384,6 +414,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         require_customer_phone: false,
         require_customer_name: false,
         enable_beta_tasks: false,
+        enable_beta_ledger: false,
         enable_whatsapp_webhook: false,
         whatsapp_webhook_url: '',
         debug_whatsapp_webhook: false,
@@ -391,6 +422,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT]
     });
+    const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
     const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -998,6 +1030,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isSupabaseConfigured()) await supabase.from('app_settings').upsert({ key, value });
     };
 
+    // --- LEDGER CRUD (BETA) ---
+    const addLedgerEntry = async (entry: Omit<LedgerEntry, 'id'>) => {
+        const newEntry: LedgerEntry = { ...entry, id: `ledger-${Date.now()}` } as LedgerEntry;
+        const updated = [newEntry, ...ledgerEntries];
+        setLedgerEntries(updated); save('ledgerEntries', updated);
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').insert(mapLedgerEntryToDB(newEntry));
+            } catch (e) { console.error('Ledger sync failed:', e); }
+        }
+    };
+    const updateLedgerEntry = async (entry: LedgerEntry) => {
+        const updated = ledgerEntries.map(e => e.id === entry.id ? entry : e);
+        setLedgerEntries(updated); save('ledgerEntries', updated);
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').update(mapLedgerEntryToDB(entry)).eq('id', entry.id);
+            } catch (e) { console.error('Ledger update sync failed:', e); }
+        }
+    };
+    const deleteLedgerEntry = async (id: string) => {
+        const updated = ledgerEntries.filter(e => e.id !== id);
+        setLedgerEntries(updated); save('ledgerEntries', updated);
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').delete().eq('id', id);
+            } catch (e) { console.error('Ledger delete sync failed:', e); }
+        }
+    };
+
     return (
         <StoreContext.Provider value={{
             transactions, skus, branches, orders, todos, menuItems, menuCategories,
@@ -1015,6 +1077,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             addTodo, toggleTodo, addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
             addAttendance, setAttendanceStatus,
             addStorageUnit, updateStorageUnit, deleteStorageUnit,
+            ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry,
             updateAppSetting
         }}>
             {children}

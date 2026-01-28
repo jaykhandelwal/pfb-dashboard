@@ -24,7 +24,7 @@ export const INITIAL_SKUS: SKU[] = [
 
   // Rolls
   { id: 'sku-8', name: 'Veg Spring Roll', category: SKUCategory.ROLL, dietary: SKUDietary.VEG, piecesPerPacket: 20, order: 7 },
-  
+
   // Consumables (Price 0 usually, or internal cost)
   { id: 'sku-9', name: 'Red Chutney', category: SKUCategory.CONSUMABLES, dietary: SKUDietary.NA, piecesPerPacket: 1, order: 8 },
   { id: 'sku-10', name: 'Mayonnaise', category: SKUCategory.CONSUMABLES, dietary: SKUDietary.NA, piecesPerPacket: 1, order: 9 },
@@ -41,55 +41,55 @@ export const INITIAL_MENU_CATEGORIES: MenuCategory[] = [
 ];
 
 export const INITIAL_MENU_ITEMS: MenuItem[] = [
-  { 
-    id: 'menu-1', 
-    name: 'Veg Steam Full Plate', 
+  {
+    id: 'menu-1',
+    name: 'Veg Steam Full Plate',
     category: 'Steam',
-    price: 100, 
-    ingredients: [{ skuId: 'sku-1', quantity: 10 }] 
+    price: 100,
+    ingredients: [{ skuId: 'sku-1', quantity: 10 }]
   },
-  { 
-    id: 'menu-2', 
-    name: 'Paneer Steam Full Plate', 
+  {
+    id: 'menu-2',
+    name: 'Paneer Steam Full Plate',
     category: 'Steam',
-    price: 120, 
+    price: 120,
     ingredients: [{ skuId: 'sku-2', quantity: 10 }]
   },
-  { 
-    id: 'menu-3', 
-    name: 'Chicken Steam Full Plate', 
+  {
+    id: 'menu-3',
+    name: 'Chicken Steam Full Plate',
     category: 'Steam',
-    price: 140, 
+    price: 140,
     ingredients: [{ skuId: 'sku-3', quantity: 10 }]
   },
-  { 
-    id: 'menu-4', 
-    name: 'Mixed Platter (12pcs)', 
+  {
+    id: 'menu-4',
+    name: 'Mixed Platter (12pcs)',
     category: 'Platters',
-    price: 180, 
+    price: 180,
     description: '4 Veg, 4 Paneer, 4 Chicken',
     ingredients: [
-        { skuId: 'sku-1', quantity: 4 },
-        { skuId: 'sku-2', quantity: 4 },
-        { skuId: 'sku-3', quantity: 4 }
+      { skuId: 'sku-1', quantity: 4 },
+      { skuId: 'sku-2', quantity: 4 },
+      { skuId: 'sku-3', quantity: 4 }
     ]
   },
 ];
 
 export const INITIAL_MEMBERSHIP_RULES: MembershipRule[] = [
-  { 
-    id: 'rule-1', 
-    triggerOrderCount: 5, 
-    type: 'DISCOUNT_PERCENT', 
-    value: 20, 
-    description: 'Get 20% Off on your 5th order!' 
+  {
+    id: 'rule-1',
+    triggerOrderCount: 5,
+    type: 'DISCOUNT_PERCENT',
+    value: 20,
+    description: 'Get 20% Off on your 5th order!'
   },
-  { 
-    id: 'rule-2', 
-    triggerOrderCount: 10, 
-    type: 'FREE_ITEM', 
-    value: 'menu-1', 
-    description: 'Free Veg Steam Plate on your 10th order!' 
+  {
+    id: 'rule-2',
+    triggerOrderCount: 10,
+    type: 'FREE_ITEM',
+    value: 'menu-1',
+    description: 'Free Veg Steam Plate on your 10th order!'
   }
 ];
 
@@ -120,12 +120,13 @@ export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
   { id: 'VIEW_ORDERS', label: 'View Orders (POS/Online)' },
   { id: 'MANAGE_CUSTOMERS', label: 'Manage Customers & CRM' },
   { id: 'MANAGE_MEMBERSHIP', label: 'Manage Membership & Rewards' },
+  { id: 'MANAGE_LEDGER', label: 'Manage Ledger (Income/Expenses)' },
 ];
 
 export const ROLE_PRESETS: Record<string, Permission[]> = {
   ADMIN: ALL_PERMISSIONS.map(p => p.id),
   MANAGER: ['VIEW_DASHBOARD', 'VIEW_ANALYTICS', 'MANAGE_TASKS', 'MANAGE_OPERATIONS', 'MANAGE_INVENTORY', 'MANAGE_WASTAGE', 'VIEW_LOGS', 'MANAGE_RECONCILIATION', 'VIEW_ORDERS', 'MANAGE_CUSTOMERS', 'MANAGE_MENU', 'MANAGE_ATTENDANCE', 'MANAGE_SETTINGS'],
-  STAFF: ['VIEW_DASHBOARD', 'MANAGE_TASKS', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'], 
+  STAFF: ['VIEW_DASHBOARD', 'MANAGE_TASKS', 'MANAGE_OPERATIONS', 'MANAGE_WASTAGE', 'VIEW_ORDERS', 'MANAGE_ATTENDANCE'],
 };
 
 export const INITIAL_ADMIN_USER: User = {
@@ -147,6 +148,7 @@ export const APP_PAGES = [
   { path: '/inventory', label: 'Deep Freezer' },
   { path: '/reconciliation', label: 'Sales Reconciliation' },
   { path: '/logs', label: 'Logs' },
+  { path: '/ledger', label: 'Ledger' },
 ];
 
 // --- Utilities ---

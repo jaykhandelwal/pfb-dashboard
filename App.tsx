@@ -20,6 +20,7 @@ import Attendance from './pages/Attendance';
 import Tasks from './pages/Tasks';
 import AppSettings from './pages/AppSettings';
 import StockOrdering from './pages/StockOrdering';
+import Ledger from './pages/Ledger';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
@@ -28,13 +29,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 // Root Redirect Component
 const RootRedirect = () => {
   const { currentUser } = useAuth();
-  
+
   // If user has no preference or legacy preference ('/'), default to dashboard
   // Otherwise respect their choice (e.g. /orders)
-  const target = (!currentUser?.defaultPage || currentUser.defaultPage === '/') 
-    ? '/dashboard' 
+  const target = (!currentUser?.defaultPage || currentUser.defaultPage === '/')
+    ? '/dashboard'
     : currentUser.defaultPage;
-    
+
   return <Navigate to={target} replace />;
 };
 
@@ -46,7 +47,7 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/login" element={<Login />} />
-              
+
               {/* Root Redirector - Redirects to default page */}
               <Route path="/" element={
                 <ProtectedRoute>
@@ -60,7 +61,7 @@ function App() {
                   <Dashboard />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/orders" element={
                 <ProtectedRoute requiredPermission="VIEW_ORDERS">
                   <Orders />
@@ -78,7 +79,7 @@ function App() {
                   <MembershipSettings />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/operations" element={
                 <ProtectedRoute requiredPermission="MANAGE_OPERATIONS">
                   <Operations />
@@ -96,7 +97,7 @@ function App() {
                   <Tasks />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/inventory" element={
                 <ProtectedRoute requiredPermission="MANAGE_INVENTORY">
                   <Inventory />
@@ -108,19 +109,19 @@ function App() {
                   <StockOrdering />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/reconciliation" element={
                 <ProtectedRoute requiredPermission="MANAGE_RECONCILIATION">
                   <Reconciliation />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/wastage" element={
                 <ProtectedRoute requiredPermission="MANAGE_WASTAGE">
                   <Wastage />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/menu" element={
                 <ProtectedRoute requiredPermission="MANAGE_MENU">
                   <MenuManagement />
@@ -138,7 +139,7 @@ function App() {
                   <SkuManagement />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/branches" element={
                 <ProtectedRoute requiredPermission="MANAGE_BRANCHES">
                   <BranchManagement />
@@ -156,13 +157,19 @@ function App() {
                   <AppSettings />
                 </ProtectedRoute>
               } />
-              
+
+              <Route path="/ledger" element={
+                <ProtectedRoute requiredPermission="MANAGE_LEDGER" requiredRole="ADMIN">
+                  <Ledger />
+                </ProtectedRoute>
+              } />
+
               <Route path="/logs" element={
                 <ProtectedRoute requiredPermission="VIEW_LOGS">
                   <Logs />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

@@ -33,34 +33,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initializeAuth = async () => {
       let fetchedUsers: User[] = [];
-      
+
       try {
         if (isSupabaseConfigured()) {
-            // 1. Fetch Users from Supabase
-            const { data, error } = await supabase.from('users').select('*');
-            
-            if (error) throw error;
-            
-            if (data && data.length > 0) {
-              fetchedUsers = data.map(mapUser);
+          // 1. Fetch Users from Supabase
+          const { data, error } = await supabase.from('users').select('*');
+
+          if (error) throw error;
+
+          if (data && data.length > 0) {
+            fetchedUsers = data.map(mapUser);
+          } else {
+            // If DB is empty, seed with Initial Admin (First Run)
+            const { error: seedError } = await supabase.from('users').insert(INITIAL_ADMIN_USER);
+            if (!seedError) {
+              fetchedUsers = [INITIAL_ADMIN_USER];
             } else {
-              // If DB is empty, seed with Initial Admin (First Run)
-              const { error: seedError } = await supabase.from('users').insert(INITIAL_ADMIN_USER);
-              if (!seedError) {
-                 fetchedUsers = [INITIAL_ADMIN_USER];
-              } else {
-                 fetchedUsers = [INITIAL_ADMIN_USER];
-              }
+              fetchedUsers = [INITIAL_ADMIN_USER];
             }
+          }
         } else {
-            console.log("Supabase not configured. Using offline fallback users.");
-            fetchedUsers = [INITIAL_ADMIN_USER];
+          console.log("Supabase not configured. Using offline fallback users.");
+          fetchedUsers = [INITIAL_ADMIN_USER];
         }
       } catch (e) {
         console.warn("Auth Initialization encountered an issue (Using Fallback):", e);
         fetchedUsers = [INITIAL_ADMIN_USER];
       }
-      
+
       setUsers(fetchedUsers);
 
       // 2. Check for Active Session
@@ -73,37 +73,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             persistSession(autoUser);
             delete window.PAKAJA_AUTH_CODE;
           }
-        } 
+        }
         // Priority B: LocalStorage (24h Persistence)
         else {
           const storedSession = localStorage.getItem('pakaja_session');
           if (storedSession) {
-             const { user, timestamp } = JSON.parse(storedSession);
-             const ONE_DAY = 24 * 60 * 60 * 1000;
-             
-             if (Date.now() - timestamp < ONE_DAY && user) {
-                // Restore session from local storage immediately
-                // We trust the local storage user object temporarily even if DB fetch failed
-                
-                // --- PATCH: Ensure admins have MANAGE_TASKS (Legacy Fix) ---
-                if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
-                    user.permissions.push('MANAGE_TASKS');
-                }
-                // -----------------------------------------------------------
+            const { user, timestamp } = JSON.parse(storedSession);
+            const ONE_DAY = 24 * 60 * 60 * 1000;
 
-                setCurrentUser(user);
-                
-                // If we successfully fetched fresh users, try to update the current user with fresh data
-                if (fetchedUsers.length > 0) {
-                    const freshUser = fetchedUsers.find(u => u.id === user.id);
-                    if (freshUser) {
-                        setCurrentUser(freshUser);
-                        persistSession(freshUser); // Update local storage with fresh data
-                    }
+            if (Date.now() - timestamp < ONE_DAY && user) {
+              // Restore session from local storage immediately
+              // We trust the local storage user object temporarily even if DB fetch failed
+
+              // --- PATCH: Ensure admins have MANAGE_TASKS (Legacy Fix) ---
+              if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
+                user.permissions.push('MANAGE_TASKS');
+              }
+              // -----------------------------------------------------------
+
+              setCurrentUser(user);
+
+              // If we successfully fetched fresh users, try to update the current user with fresh data
+              if (fetchedUsers.length > 0) {
+                const freshUser = fetchedUsers.find(u => u.id === user.id);
+                if (freshUser) {
+                  setCurrentUser(freshUser);
+                  persistSession(freshUser); // Update local storage with fresh data
                 }
-             } else {
-                localStorage.removeItem('pakaja_session'); // Expired
-             }
+              }
+            } else {
+              localStorage.removeItem('pakaja_session'); // Expired
+            }
           }
         }
       } catch (e) {
@@ -123,28 +123,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const channel = supabase.channel('auth-users')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload: any) => {
-         const { eventType, new: newRecord, old: oldRecord } = payload;
-         
-         setUsers(prev => {
-            if (eventType === 'INSERT') {
-               const mapped = mapUser(newRecord);
-               if (prev.some(u => u.id === mapped.id)) return prev;
-               return [...prev, mapped];
-            } else if (eventType === 'UPDATE') {
-               const mapped = mapUser(newRecord);
-               
-               // If the current logged in user was updated, reflect changes immediately
-               if (currentUser && currentUser.id === mapped.id) {
-                  setCurrentUser(mapped);
-                  persistSession(mapped);
-               }
-               
-               return prev.map(u => u.id === mapped.id ? mapped : u);
-            } else if (eventType === 'DELETE') {
-               return prev.filter(u => u.id !== oldRecord.id);
+        const { eventType, new: newRecord, old: oldRecord } = payload;
+
+        setUsers(prev => {
+          if (eventType === 'INSERT') {
+            const mapped = mapUser(newRecord);
+            if (prev.some(u => u.id === mapped.id)) return prev;
+            return [...prev, mapped];
+          } else if (eventType === 'UPDATE') {
+            const mapped = mapUser(newRecord);
+
+            // If the current logged in user was updated, reflect changes immediately
+            if (currentUser && currentUser.id === mapped.id) {
+              setCurrentUser(mapped);
+              persistSession(mapped);
             }
-            return prev;
-         });
+
+            return prev.map(u => u.id === mapped.id ? mapped : u);
+          } else if (eventType === 'DELETE') {
+            return prev.filter(u => u.id !== oldRecord.id);
+          }
+          return prev;
+        });
       })
       .subscribe();
 
@@ -170,21 +170,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Mapper
   const mapUser = (u: any): User => {
-     const user: User = {
-        id: u.id,
-        name: u.name,
-        code: u.code,
-        role: u.role,
-        permissions: u.permissions,
-        // Robust mapping for snake_case or camelCase
-        defaultBranchId: u.default_branch_id || u.defaultBranchId, 
-        defaultPage: u.default_page || u.defaultPage
-     };
-     // Runtime patch for admins to get new permissions immediately
-     if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
-         user.permissions.push('MANAGE_TASKS');
-     }
-     return user;
+    const user: User = {
+      id: u.id,
+      name: u.name,
+      code: u.code,
+      role: u.role,
+      permissions: u.permissions,
+      // Robust mapping for snake_case or camelCase
+      defaultBranchId: u.default_branch_id || u.defaultBranchId,
+      defaultPage: u.default_page || u.defaultPage
+    };
+    // Runtime patch for admins to get new permissions immediately
+    if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
+      user.permissions.push('MANAGE_TASKS');
+    }
+    return user;
   };
 
   const persistSession = (user: User) => {
@@ -197,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (code: string) => {
     // Artificial delay for better UX
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     const user = users.find(u => u.code.toLowerCase() === code.toLowerCase());
     if (user) {
       setCurrentUser(user);
@@ -222,45 +222,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: `user-${Date.now()}`,
       ...userData
     };
-    
+
     if (isSupabaseConfigured()) {
-        const { error } = await supabase.from('users').insert({
-            id: newUser.id,
-            name: newUser.name,
-            code: newUser.code,
-            role: newUser.role,
-            permissions: newUser.permissions,
-            default_branch_id: newUser.defaultBranchId,
-            default_page: newUser.defaultPage
-        });
-        if (!error) {
-            setUsers(prev => [...prev, newUser]);
-        }
-    } else {
-        // Offline mode
+      const { error } = await supabase.from('users').insert({
+        id: newUser.id,
+        name: newUser.name,
+        code: newUser.code,
+        role: newUser.role,
+        permissions: newUser.permissions,
+        default_branch_id: newUser.defaultBranchId,
+        default_page: newUser.defaultPage
+      });
+      if (!error) {
         setUsers(prev => [...prev, newUser]);
+      }
+    } else {
+      // Offline mode
+      setUsers(prev => [...prev, newUser]);
     }
   };
 
   const updateUser = async (updatedUser: User) => {
     if (isSupabaseConfigured()) {
-        const { error } = await supabase.from('users').update({
-            name: updatedUser.name,
-            code: updatedUser.code,
-            role: updatedUser.role,
-            permissions: updatedUser.permissions,
-            default_branch_id: updatedUser.defaultBranchId,
-            default_page: updatedUser.defaultPage
-        }).eq('id', updatedUser.id);
+      const { error } = await supabase.from('users').update({
+        name: updatedUser.name,
+        code: updatedUser.code,
+        role: updatedUser.role,
+        permissions: updatedUser.permissions,
+        default_branch_id: updatedUser.defaultBranchId,
+        default_page: updatedUser.defaultPage
+      }).eq('id', updatedUser.id);
 
-        if (!error) {
-            updateLocalState(updatedUser);
-        }
-    } else {
+      if (!error) {
         updateLocalState(updatedUser);
+      }
+    } else {
+      updateLocalState(updatedUser);
     }
   };
-  
+
   const updateLocalState = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     if (currentUser && currentUser.id === updatedUser.id) {
@@ -274,28 +274,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       alert("You cannot delete yourself.");
       return;
     }
-    
+
     if (isSupabaseConfigured()) {
-        const { error } = await supabase.from('users').delete().eq('id', id);
-        if (!error) {
-            setUsers(prev => prev.filter(u => u.id !== id));
-        }
-    } else {
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (!error) {
         setUsers(prev => prev.filter(u => u.id !== id));
+      }
+    } else {
+      setUsers(prev => prev.filter(u => u.id !== id));
     }
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      currentUser, 
-      users, 
+    <AuthContext.Provider value={{
+      currentUser,
+      users,
       isLoading,
-      login, 
-      logout, 
-      hasPermission, 
-      addUser, 
-      updateUser, 
-      deleteUser 
+      login,
+      logout,
+      hasPermission,
+      addUser,
+      updateUser,
+      deleteUser
     }}>
       {children}
     </AuthContext.Provider>
