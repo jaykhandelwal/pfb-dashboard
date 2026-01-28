@@ -1,11 +1,15 @@
-
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar, CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon } from 'lucide-react';
+import {
+    Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar,
+    CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon,
+    ChevronLeft, ChevronRight, ChevronDown
+} from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { LedgerEntry, LedgerEntryType, LedgerCategory } from '../types';
+import { LedgerEntry, LedgerEntryType, LedgerCategory, LedgerCategoryDefinition, LedgerPaymentMethod } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { compressImage } from '../services/imageUtils';
+import { IconRenderer } from '../services/iconLibrary';
 
 const getLocalISOString = (date: Date = new Date()): string => {
     const offset = date.getTimezoneOffset() * 60000;
@@ -13,21 +17,52 @@ const getLocalISOString = (date: Date = new Date()): string => {
     return localTime.toISOString().slice(0, 10);
 };
 
+// IconRenderer is now imported from ../services/iconLibrary
+
 const Ledger: React.FC = () => {
-    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs } = useStore();
-    const { currentUser } = useAuth();
+    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings } = useStore();
+    const { currentUser, users } = useAuth();
+
+    const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
+    const defaultCategory = appSettings.ledger_categories?.find(c => c.isActive);
+    const defaultMethod = appSettings.payment_methods?.find(m => m.isActive);
+
+    // Merge ledger_accounts with system users dynamically
+    const availableAccounts = useMemo(() => {
+        const accountsFromSettings = appSettings.ledger_accounts || [];
+        const merged = [...accountsFromSettings];
+
+        // Add users that are not already in the list
+        users.forEach(user => {
+            const exists = merged.find(a => a.linkedUserId === user.id);
+            if (!exists) {
+                merged.push({
+                    id: `user_${user.id}`,
+                    name: user.name,
+                    type: 'USER' as const,
+                    linkedUserId: user.id,
+                    isActive: true
+                });
+            }
+        });
+
+        return merged;
+    }, [appSettings.ledger_accounts, users]);
 
     // Form state
     const [showForm, setShowForm] = useState(false);
     const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
     const [formData, setFormData] = useState({
-        date: getLocalISOString(),
-        branchId: currentUser?.defaultBranchId || branches[0]?.id || '',
+        date: new Date().toISOString().split('T')[0],
+        branchId: currentUser?.defaultBranchId || '',
         entryType: 'EXPENSE' as LedgerEntryType,
-        category: LedgerCategory.OTHER,
+        category: defaultCategory?.name || '',
+        categoryId: defaultCategory?.id || '',
         amount: '',
         description: '',
-        paymentMethod: 'CASH' as 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER',
+        paymentMethod: defaultMethod?.name || '',
+        paymentMethodId: defaultMethod?.id || '',
+        sourceAccount: defaultAccount,
     });
 
     // Filter state
@@ -40,10 +75,77 @@ const Ledger: React.FC = () => {
     // Logs state
     const [viewingLogsFor, setViewingLogsFor] = useState<string | 'ALL' | null>(null);
 
-    // Bill Upload State
-    const [billFile, setBillFile] = useState<File | null>(null);
-    const [tempBillPreview, setTempBillPreview] = useState<string | null>(null);
+    // Bill Upload State - now supports multiple images
+    const [billFiles, setBillFiles] = useState<File[]>([]);
+    const [tempBillPreviews, setTempBillPreviews] = useState<string[]>([]);
     const [isUploading, setIsUploading] = useState(false);
+
+    // Image Modal State
+    const [imageModalUrls, setImageModalUrls] = useState<string[]>([]);
+    const [imageModalIndex, setImageModalIndex] = useState(0);
+
+    // Custom Select State
+    const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
+    const CustomDropdown = <T extends { id: string, name: string, icon?: string, color?: string }>({
+        label,
+        value,
+        options,
+        onSelect,
+        placeholder
+    }: {
+        label: string,
+        value: string,
+        options: T[],
+        onSelect: (option: T) => void,
+        placeholder: string
+    }) => {
+        const selected = options.find(o => o.id === value);
+        return (
+            <div className="relative">
+                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">{label}</label>
+                <button
+                    type="button"
+                    onClick={() => setOpenDropdown(openDropdown === label ? null : label)}
+                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5 flex items-center justify-between"
+                >
+                    {selected ? (
+                        <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded flex items-center justify-center text-white" style={{ backgroundColor: selected.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
+                                <IconRenderer name={selected.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={12} />
+                            </div>
+                            <span className="font-bold text-sm text-[#403424]">{selected.name}</span>
+                        </div>
+                    ) : <span className="text-[#403424]/40 text-sm">{placeholder}</span>}
+                    <ChevronDown size={16} className={`text-[#403424]/40 transition-transform ${openDropdown === label ? 'rotate-180' : ''}`} />
+                </button>
+
+                {openDropdown === label && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-[#403424]/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                        <div className="p-1">
+                            {options.map(opt => (
+                                <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => { onSelect(opt); setOpenDropdown(null); }}
+                                    className={`w-full px-3 py-2.5 flex items-center gap-3 rounded-lg hover:bg-[#403424]/5 transition-colors text-left ${opt.id === value ? 'bg-[#95a77c]/10' : ''}`}
+                                >
+                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: opt.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
+                                        <IconRenderer name={opt.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={18} />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className={`font-bold text-sm text-[#403424] ${opt.id === value ? 'text-[#95a77c]' : ''}`}>{opt.name}</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{label}</span>
+                                    </div>
+                                    {opt.id === value && <CheckCircle2 size={16} className="ml-auto text-[#95a77c]" />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     React.useEffect(() => {
         if (viewingLogsFor) {
@@ -65,24 +167,26 @@ const Ledger: React.FC = () => {
         });
 
         const income = filtered.filter(e => e.entryType === 'INCOME').reduce((s, e) => s + e.amount, 0);
-        const expenses = filtered.filter(e => e.entryType === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-        const transfers = filtered.filter(e => e.entryType === 'TRANSFER').reduce((s, e) => s + e.amount, 0);
+        const expenses = filtered.filter(e => e.entryType === 'EXPENSE' || e.entryType === 'TRANSFER').reduce((s, e) => s + e.amount, 0);
 
-        return { income, expenses, transfers, net: income - expenses, entries: filtered };
+        return { income, expenses, net: income - expenses, entries: filtered };
     }, [ledgerEntries, filterType, filterStatus, filterDateFrom, filterDateTo]);
 
     const resetForm = () => {
         setFormData({
-            date: getLocalISOString(),
-            branchId: currentUser?.defaultBranchId || branches[0]?.id || '',
+            date: new Date().toISOString().split('T')[0],
+            branchId: currentUser?.defaultBranchId || '',
             entryType: 'EXPENSE',
-            category: LedgerCategory.OTHER,
+            category: defaultCategory?.name || '',
+            categoryId: defaultCategory?.id || '',
             amount: '',
             description: '',
-            paymentMethod: 'CASH',
+            paymentMethod: defaultMethod?.name || '',
+            paymentMethodId: defaultMethod?.id || '',
+            sourceAccount: defaultAccount,
         });
-        setBillFile(null);
-        setTempBillPreview(null);
+        setBillFiles([]);
+        setTempBillPreviews([]);
         setEditingEntry(null);
         setShowForm(false);
     };
@@ -91,15 +195,18 @@ const Ledger: React.FC = () => {
         setEditingEntry(entry);
         setFormData({
             date: entry.date,
-            branchId: entry.branchId,
-            entryType: entry.entryType,
+            branchId: entry.branchId || '',
+            entryType: entry.entryType === 'TRANSFER' ? 'EXPENSE' : entry.entryType,
             category: entry.category,
+            categoryId: entry.categoryId || '',
             amount: entry.amount.toString(),
             description: entry.description,
-            paymentMethod: entry.paymentMethod
+            paymentMethod: entry.paymentMethod,
+            paymentMethodId: entry.paymentMethodId || '',
+            sourceAccount: entry.sourceAccount || 'Company Account'
         });
-        setBillFile(null);
-        setTempBillPreview(entry.billUrl || null);
+        setBillFiles([]);
+        setTempBillPreviews(entry.billUrls || []);
         setShowForm(true);
     };
 
@@ -108,43 +215,48 @@ const Ledger: React.FC = () => {
         if (!formData.amount || !formData.description) return;
 
         setIsUploading(true);
-        let billUrl = editingEntry?.billUrl;
 
-        // Upload Bill if new file selected
-        if (billFile) {
-            try {
-                // Convert File to base64 for upload service
+        // Start with existing URLs (for editing) or empty array
+        let billUrls: string[] = editingEntry?.billUrls || [];
+
+        // Upload all new files
+        if (billFiles.length > 0) {
+            const uploadPromises = billFiles.map(file => new Promise<string | null>((resolve) => {
                 const reader = new FileReader();
-                reader.readAsDataURL(billFile);
-                await new Promise<void>((resolve) => {
-                    reader.onloadend = async () => {
-                        const base64 = reader.result as string;
-                        try {
-                            billUrl = await uploadImageToBunny(base64, 'ledger');
-                            resolve();
-                        } catch (err) {
-                            console.error("Bill upload failed", err);
-                            resolve();
-                        }
-                    };
-                });
-            } catch (error) {
-                console.error("File reading failed", error);
-            }
+                reader.readAsDataURL(file);
+                reader.onloadend = async () => {
+                    const base64 = reader.result as string;
+                    try {
+                        const url = await uploadImageToBunny(base64, 'ledger');
+                        resolve(url);
+                    } catch (err) {
+                        console.error("Bill upload failed", err);
+                        resolve(null);
+                    }
+                };
+            }));
+
+            const uploadedUrls = await Promise.all(uploadPromises);
+            billUrls = [...billUrls, ...uploadedUrls.filter((u): u is string => u !== null)];
         }
 
+        const selectedAccount = appSettings.ledger_accounts?.find(a => a.name === formData.sourceAccount);
         const entryData = {
             date: formData.date,
             timestamp: Date.now(),
-            branchId: formData.branchId,
-            entryType: formData.entryType,
+            branchId: formData.branchId || undefined,
+            entryType: (formData.entryType === 'EXPENSE' && formData.categoryId === 'transfer') ? 'TRANSFER' : formData.entryType,
             category: formData.category,
+            categoryId: formData.categoryId,
             amount: parseFloat(formData.amount),
             description: formData.description.trim(),
             paymentMethod: formData.paymentMethod,
+            paymentMethodId: formData.paymentMethodId,
+            sourceAccount: formData.sourceAccount || 'Company Account',
+            sourceAccountId: selectedAccount?.id,
             createdBy: currentUser?.id || '',
             createdByName: currentUser?.name || 'Unknown',
-            billUrl: billUrl
+            billUrls: billUrls
         };
 
         if (editingEntry) {
@@ -226,7 +338,7 @@ const Ledger: React.FC = () => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
                     <div className="flex items-center gap-2 text-emerald-600 mb-1">
                         <TrendingUp size={16} /> <span className="text-xs font-medium uppercase">Income</span>
@@ -240,12 +352,6 @@ const Ledger: React.FC = () => {
                     <p className="text-xl font-bold text-[#403424]">₹{stats.expenses.toLocaleString()}</p>
                 </div>
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
-                    <div className="flex items-center gap-2 text-blue-600 mb-1">
-                        <ArrowRightLeft size={16} /> <span className="text-xs font-medium uppercase">Transfers</span>
-                    </div>
-                    <p className="text-xl font-bold text-[#403424]">₹{stats.transfers.toLocaleString()}</p>
-                </div>
-                <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
                     <div className="flex items-center gap-2 text-[#403424] mb-1">
                         <span className="text-xs font-medium uppercase">Net Balance</span>
                     </div>
@@ -253,6 +359,35 @@ const Ledger: React.FC = () => {
                         ₹{stats.net.toLocaleString()}
                     </p>
                 </div>
+            </div>
+
+            {/* Quick Filter Tabs */}
+            <div className="flex gap-2">
+                <button
+                    onClick={() => setFilterStatus('ALL')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterStatus === 'ALL'
+                        ? 'bg-[#403424] text-white'
+                        : 'bg-white text-[#403424]/60 border border-[#403424]/10 hover:bg-[#403424]/5'
+                        }`}
+                >
+                    All Entries
+                </button>
+                <button
+                    onClick={() => setFilterStatus('PENDING')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${filterStatus === 'PENDING'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
+                        }`}
+                >
+                    <Clock size={14} />
+                    Pending Approval
+                    {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length > 0 && (
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${filterStatus === 'PENDING' ? 'bg-white/20' : 'bg-amber-100'
+                            }`}>
+                            {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length}
+                        </span>
+                    )}
+                </button>
             </div>
 
             {/* Filters */}
@@ -269,18 +404,6 @@ const Ledger: React.FC = () => {
                         <option value="ALL">All Types</option>
                         <option value="INCOME">Income</option>
                         <option value="EXPENSE">Expense</option>
-                        <option value="TRANSFER">Transfer</option>
-                    </select>
-
-                    <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value as any)}
-                        className="px-3 py-1.5 rounded-lg border border-[#403424]/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
-                    >
-                        <option value="ALL">All Status</option>
-                        <option value="PENDING">Pending</option>
-                        <option value="APPROVED">Approved</option>
-                        <option value="REJECTED">Rejected</option>
                     </select>
 
                     <div className="flex items-center gap-2">
@@ -317,87 +440,146 @@ const Ledger: React.FC = () => {
                         <thead className="bg-[#403424]/5 text-xs uppercase tracking-wider text-[#403424]/60">
                             <tr>
                                 <th className="px-4 py-3 text-left">Date</th>
-                                <th className="px-4 py-3 text-left">Status</th>
-                                <th className="px-4 py-3 text-left">Type</th>
                                 <th className="px-4 py-3 text-left">Category</th>
                                 <th className="px-4 py-3 text-left">Description</th>
                                 <th className="px-4 py-3 text-right">Amount</th>
-                                <th className="px-4 py-3 text-left">Payment</th>
+                                <th className="px-4 py-3 text-center">Bill</th>
                                 <th className="px-4 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[#403424]/5">
                             {stats.entries.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center text-[#403424]/40">
+                                    <td colSpan={6} className="px-4 py-12 text-center text-[#403424]/40">
                                         No ledger entries yet. Click "New Entry" to add one.
                                     </td>
                                 </tr>
                             ) : (
-                                stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => (
-                                    <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] ${entry.status === 'REJECTED' ? 'opacity-60 bg-red-50/30' : ''}`}>
-                                        <td className="px-4 py-3 text-sm flex flex-col">
-                                            <span>{entry.date}</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1.5" title={entry.rejectedReason || ''}>
-                                                {getStatusIcon(entry.status || 'PENDING')}
-                                                <span className={`text-xs font-bold uppercase ${entry.status === 'APPROVED' ? 'text-emerald-600' :
-                                                    entry.status === 'REJECTED' ? 'text-red-600' : 'text-amber-600'
-                                                    }`}>
-                                                    {entry.status || 'PENDING'}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(entry.entryType)}`}>
-                                                {getTypeIcon(entry.entryType)}
-                                                {entry.entryType}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-sm">{entry.category}</td>
-                                        <td className="px-4 py-3 text-sm max-w-xs truncate">
-                                            {entry.description}
-                                            {entry.rejectedReason && <div className="text-[10px] text-red-500 italic mt-0.5">Note: {entry.rejectedReason}</div>}
-                                            <div className="text-[10px] text-slate-400 mt-0.5">By: {entry.createdByName}</div>
-                                        </td>
-                                        <td className={`px-4 py-3 text-sm font-semibold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
-                                            {entry.entryType === 'INCOME' ? '+' : entry.entryType === 'EXPENSE' ? '-' : ''}₹{entry.amount.toLocaleString()}
-                                        </td>
-                                        <td className="px-4 py-3 text-xs text-[#403424]/60">{entry.paymentMethod.replace('_', ' ')}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center justify-center gap-2">
-                                                {/* Auditor Actions */}
-                                                {currentUser?.isLedgerAuditor && (!entry.status || entry.status === 'PENDING') && (
-                                                    <>
-                                                        <button onClick={() => handleApproval(entry.id, 'APPROVED')} className="p-1.5 text-emerald-300 hover:text-emerald-600 transition-colors" title="Approve">
-                                                            <CheckCircle2 size={16} />
-                                                        </button>
-                                                        <button onClick={() => handleApproval(entry.id, 'REJECTED')} className="p-1.5 text-red-300 hover:text-red-600 transition-colors" title="Reject">
-                                                            <XCircle size={16} />
-                                                        </button>
-                                                        <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                                                    </>
-                                                )}
-
-                                                {entry.billUrl && (
-                                                    <button onClick={() => setViewingLogsFor(entry.billUrl!)} className="p-1.5 text-purple-400 hover:text-purple-600 transition-colors" title="View Bill">
-                                                        <ImageIcon size={14} />
+                                stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
+                                    const borderColor = entry.entryType === 'INCOME' ? 'border-l-emerald-500' :
+                                        entry.entryType === 'EXPENSE' ? 'border-l-red-500' : 'border-l-blue-500';
+                                    const rowBg = entry.status === 'REJECTED' ? 'bg-red-50/30 opacity-60' :
+                                        entry.entryType === 'INCOME' ? 'bg-emerald-50/20' :
+                                            entry.entryType === 'TRANSFER' ? 'bg-blue-50/20' : '';
+                                    return (
+                                        <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] border-l-4 ${borderColor} ${rowBg}`}>
+                                            <td className="px-4 py-3 text-sm">
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="font-medium">{entry.date}</span>
+                                                    {entry.branchId ? (
+                                                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}`}>
+                                                            {branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded w-fit border border-amber-100 font-semibold uppercase tracking-wider">
+                                                            General
+                                                        </span>
+                                                    )}
+                                                    {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
+                                                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`Account: ${entry.sourceAccount}`}>
+                                                            {entry.sourceAccount.split(' ')[0]}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-sm">
+                                                <div className="flex items-center gap-3">
+                                                    {(() => {
+                                                        const cat = appSettings.ledger_categories?.find(c => c.id === entry.categoryId || c.name === entry.category);
+                                                        const method = appSettings.payment_methods?.find(m => m.id === entry.paymentMethodId || m.name === entry.paymentMethod);
+                                                        return (
+                                                            <>
+                                                                <div
+                                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
+                                                                    style={{ backgroundColor: cat?.color || '#6366f1' }}
+                                                                >
+                                                                    <IconRenderer name={cat?.icon || 'Package'} size={20} />
+                                                                </div>
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="font-bold truncate">{entry.category}</span>
+                                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                                        <div
+                                                                            className="w-3 h-3 rounded-full shrink-0"
+                                                                            style={{ backgroundColor: method?.color || '#10b981' }}
+                                                                        />
+                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate">
+                                                                            {entry.paymentMethod.replace('_', ' ')}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-sm max-w-xs">
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="truncate">{entry.description}</span>
+                                                        {/* Status Pills - only for non-approved */}
+                                                        {entry.status !== 'APPROVED' && (
+                                                            <span className={`shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${entry.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                                                }`}>
+                                                                {entry.status === 'REJECTED' ? 'Rejected' : 'Pending'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {entry.rejectedReason && <div className="text-[10px] text-red-500 italic">Note: {entry.rejectedReason}</div>}
+                                                    <div className="text-[10px] text-slate-400">By: {entry.createdByName}</div>
+                                                </div>
+                                            </td>
+                                            <td className={`px-4 py-3 text-sm font-bold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
+                                                {entry.entryType === 'INCOME' ? '+' : '-'}₹{entry.amount.toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {entry.billUrls && entry.billUrls.length > 0 ? (
+                                                    <button
+                                                        onClick={() => { setImageModalUrls(entry.billUrls!); setImageModalIndex(0); }}
+                                                        className="relative group"
+                                                    >
+                                                        <img
+                                                            src={entry.billUrls[0]}
+                                                            alt="Bill"
+                                                            className="w-10 h-10 object-cover rounded border border-slate-200 hover:border-purple-400 transition-colors"
+                                                        />
+                                                        {entry.billUrls.length > 1 && (
+                                                            <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                                                                +{entry.billUrls.length - 1}
+                                                            </span>
+                                                        )}
                                                     </button>
+                                                ) : (
+                                                    <span className="text-slate-300">—</span>
                                                 )}
-                                                <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors" title="Edit">
-                                                    <Edit2 size={14} />
-                                                </button>
-                                                <button onClick={() => handleDelete(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-red-500 transition-colors" title="Delete">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                                <button onClick={() => setViewingLogsFor(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-blue-500 transition-colors" title="View Logs">
-                                                    <History size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    {/* Auditor Actions */}
+                                                    {currentUser?.isLedgerAuditor && (!entry.status || entry.status === 'PENDING') && (
+                                                        <>
+                                                            <button onClick={() => handleApproval(entry.id, 'APPROVED')} className="p-1.5 text-emerald-300 hover:text-emerald-600 transition-colors" title="Approve">
+                                                                <CheckCircle2 size={16} />
+                                                            </button>
+                                                            <button onClick={() => handleApproval(entry.id, 'REJECTED')} className="p-1.5 text-red-300 hover:text-red-600 transition-colors" title="Reject">
+                                                                <XCircle size={16} />
+                                                            </button>
+                                                            <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
+                                                        </>
+                                                    )}
+                                                    <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors" title="Edit">
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-red-500 transition-colors" title="Delete">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-blue-500 transition-colors" title="View Logs">
+                                                        <History size={14} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>
@@ -482,7 +664,7 @@ const Ledger: React.FC = () => {
                         <form onSubmit={handleSubmit} className="p-4 space-y-4">
                             {/* Entry Type */}
                             <div className="flex gap-2">
-                                {(['INCOME', 'EXPENSE', 'TRANSFER'] as LedgerEntryType[]).map(type => (
+                                {(['INCOME', 'EXPENSE'] as LedgerEntryType[]).map(type => (
                                     <button
                                         key={type}
                                         type="button"
@@ -513,8 +695,9 @@ const Ledger: React.FC = () => {
                                     <select
                                         value={formData.branchId}
                                         onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
+                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
                                     >
+                                        <option value="">General (No Branch)</option>
                                         {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                                     </select>
                                 </div>
@@ -522,31 +705,35 @@ const Ledger: React.FC = () => {
 
                             {/* Category & Payment */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Category</label>
-                                    <select
-                                        value={formData.category}
-                                        onChange={(e) => setFormData({ ...formData, category: e.target.value as LedgerCategory })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
-                                    >
-                                        {Object.values(LedgerCategory).map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Payment Method</label>
-                                    <select
-                                        value={formData.paymentMethod}
-                                        onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as any })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
-                                    >
-                                        <option value="CASH">Cash</option>
-                                        <option value="UPI">UPI</option>
-                                        <option value="CARD">Card</option>
-                                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                                    </select>
-                                </div>
+                                <CustomDropdown
+                                    label="Category"
+                                    value={formData.categoryId}
+                                    options={(appSettings.ledger_categories || []).filter(c => c.isActive || c.id === formData.categoryId)}
+                                    placeholder="Select Category"
+                                    onSelect={(opt) => setFormData({ ...formData, categoryId: opt.id, category: opt.name })}
+                                />
+
+                                <CustomDropdown
+                                    label="Payment Method"
+                                    value={formData.paymentMethodId}
+                                    options={(appSettings.payment_methods || []).filter(m => m.isActive || m.id === formData.paymentMethodId)}
+                                    placeholder="Select Method"
+                                    onSelect={(opt) => setFormData({ ...formData, paymentMethodId: opt.id, paymentMethod: opt.name })}
+                                />
+                            </div>
+
+                            {/* Payment Account */}
+                            <div className="mt-4">
+                                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Payment Account</label>
+                                <select
+                                    value={formData.sourceAccount}
+                                    onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
+                                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
+                                >
+                                    {availableAccounts.filter(a => a.isActive).map(acc => (
+                                        <option key={acc.id} value={acc.name}>{acc.name}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             {/* Amount */}
@@ -577,35 +764,51 @@ const Ledger: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Bill Photo Upload */}
+                            {/* Bill Photo Upload - Multiple Images */}
                             <div>
                                 <label className="block text-xs font-bold text-[#403424]/60 uppercase tracking-wide mb-1.5">
-                                    Bill / Receipt Photo
+                                    Bill / Receipt Photos
                                 </label>
                                 <div className="border border-dashed border-[#403424]/20 rounded-lg p-4 bg-[#403424]/5 hover:bg-[#403424]/10 transition-colors text-center cursor-pointer relative">
                                     <input
                                         type="file"
                                         accept="image/*"
+                                        multiple
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                                setBillFile(file);
-                                                setTempBillPreview(URL.createObjectURL(file));
+                                            const files: File[] = Array.from(e.target.files || []);
+                                            if (files.length > 0) {
+                                                setBillFiles(prev => [...prev, ...files]);
+                                                setTempBillPreviews(prev => [...prev, ...files.map((f: File) => URL.createObjectURL(f))]);
                                             }
                                         }}
                                     />
-                                    {tempBillPreview ? (
-                                        <div className="relative h-32 mx-auto">
-                                            <img src={tempBillPreview} alt="Bill Preview" className="h-full mx-auto object-contain rounded" />
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity text-white rounded">
-                                                <span className="text-xs font-bold">Change Photo</span>
+                                    {tempBillPreviews.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2 justify-center">
+                                            {tempBillPreviews.map((preview, idx) => (
+                                                <div key={idx} className="relative h-20 w-20">
+                                                    <img src={preview} alt={`Preview ${idx + 1}`} className="h-full w-full object-cover rounded" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setTempBillPreviews(prev => prev.filter((_, i) => i !== idx));
+                                                            setBillFiles(prev => prev.filter((_, i) => i !== idx));
+                                                        }}
+                                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <div className="h-20 w-20 border-2 border-dashed border-[#403424]/20 rounded flex items-center justify-center text-[#403424]/40">
+                                                <Plus size={20} />
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="flex flex-col items-center gap-2 py-2">
                                             <UploadCloud size={24} className="text-[#403424]/40" />
-                                            <span className="text-sm font-medium text-[#403424]/60">Click to upload or take photo</span>
+                                            <span className="text-sm font-medium text-[#403424]/60">Click to upload or take photos</span>
                                         </div>
                                     )}
                                 </div>
@@ -630,17 +833,51 @@ const Ledger: React.FC = () => {
                         </form>
                     </div>
                 </div>
-            )}
-            {/* Image Preview Modal */}
-            {viewingLogsFor && viewingLogsFor.startsWith('http') && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4" onClick={() => setViewingLogsFor(null)}>
-                    <img src={viewingLogsFor} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
-                    <button className="absolute top-4 right-4 text-white hover:text-red-400" onClick={() => setViewingLogsFor(null)}>
+            )
+            }
+            {/* Image Carousel Modal */}
+            {imageModalUrls.length > 0 && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4" onClick={() => setImageModalUrls([])}>
+                    <div className="relative max-w-4xl max-h-[90vh] flex items-center" onClick={e => e.stopPropagation()}>
+                        <img
+                            src={imageModalUrls[imageModalIndex]}
+                            alt={`Bill ${imageModalIndex + 1}`}
+                            className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain"
+                        />
+
+                        {/* Navigation Arrows */}
+                        {imageModalUrls.length > 1 && (
+                            <>
+                                <button
+                                    onClick={() => setImageModalIndex(i => (i - 1 + imageModalUrls.length) % imageModalUrls.length)}
+                                    className="absolute left-0 -translate-x-full mr-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                                >
+                                    <ChevronLeft size={28} />
+                                </button>
+                                <button
+                                    onClick={() => setImageModalIndex(i => (i + 1) % imageModalUrls.length)}
+                                    className="absolute right-0 translate-x-full ml-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                                >
+                                    <ChevronRight size={28} />
+                                </button>
+                            </>
+                        )}
+
+                        {/* Image Counter */}
+                        {imageModalUrls.length > 1 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
+                                {imageModalIndex + 1} / {imageModalUrls.length}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Close Button */}
+                    <button className="absolute top-4 right-4 text-white hover:text-red-400 transition-colors" onClick={() => setImageModalUrls([])}>
                         <X size={32} />
                     </button>
                 </div>
             )}
-        </div>
+        </div >
     );
 };
 

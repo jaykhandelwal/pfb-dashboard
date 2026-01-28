@@ -2,7 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { MenuItem, MenuIngredient } from '../types';
-import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Check, KeyRound, Divide, FileJson, Download, Tag, Copy, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Utensils, IndianRupee, Info, ChefHat, Check, KeyRound, Divide, FileJson, Download, Tag, Copy, ChevronDown, ChevronRight, Settings } from 'lucide-react';
+import LedgerSettings from './LedgerSettings';
 
 // Helper to escape regex characters
 const escapeRegExp = (string: string) => {
@@ -22,6 +23,9 @@ const MenuManagement: React.FC = () => {
    const [showJsonModal, setShowJsonModal] = useState(false);
    const [jsonData, setJsonData] = useState('');
    const [jsonCopied, setJsonCopied] = useState(false);
+
+   // Subpage View State
+   const [viewMode, setViewMode] = useState<'MENU' | 'LEDGER_SETTINGS'>('MENU');
 
    // Local state for ingredients editing
    const [ingredients, setIngredients] = useState<MenuIngredient[]>([]);
@@ -324,7 +328,9 @@ const MenuManagement: React.FC = () => {
       setTimeout(() => setCopiedId(null), 2000);
    };
 
-   return (
+   return viewMode === 'LEDGER_SETTINGS' ? (
+      <LedgerSettings onBack={() => setViewMode('MENU')} />
+   ) : (
       <div className="pb-16 relative">
          <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
@@ -342,6 +348,13 @@ const MenuManagement: React.FC = () => {
                      <FileJson size={18} />
                      <span className="hidden md:inline">Export App JSON</span>
                      <span className="md:hidden">Export</span>
+                  </button>
+                  <button
+                     onClick={() => setViewMode('LEDGER_SETTINGS')}
+                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium border border-slate-300"
+                  >
+                     <Settings size={18} />
+                     <span className="hidden md:inline">Ledger Settings</span>
                   </button>
                   <button
                      onClick={handleAddNew}

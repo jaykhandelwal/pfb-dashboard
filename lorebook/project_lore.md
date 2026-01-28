@@ -64,16 +64,27 @@
 *   *Access Control:* Alphanumeric Access Codes.
 
 ### 3.3. Ledger & Financials (Beta)
-The Ledger feature provides a unified system for tracking non-POS financial transactions.
-*   **Entity:** `LedgerEntry`
-*   **Entry Types:** `INCOME`, `EXPENSE`, `TRANSFER`.
-*   **Categories:** Predefined common business expenses (Rent, Utilities, Salaries, Supplier Payment, etc.).
-*   **Workflow:**
-    1.  Enabled via App Settings (Experimental).
-    2.  Accessible only to **Admin** users with the `MANAGE_LEDGER` permission.
-    3.  Supports basic CRUD operations with real-time sync to Supabase.
-    4.  Visualized via stats cards for real-time balance tracking.
-*   **Access Control**: Strictly restricted to the `ADMIN` role. Even if granted the permission, non-admin users cannot access the route or see the sidebar link. Permission must be manually enabled in User Management (not auto-granted).
+The Ledger feature provides a unified system for tracking non-POS financial transactions with a robust, ID-based architecture for data integrity.
+
+*   **Core Entity:** `LedgerEntry`
+    *   **Structure:** Stores both ID and Name for critical fields (`categoryId`/`category`, `paymentMethodId`/`paymentMethod`, `sourceAccountId`/`sourceAccount`) to ensure historical accuracy even if names change.
+    *   **Entry Types:** `INCOME`, `EXPENSE`, `TRANSFER`.
+    *   **Evidence:** Supports photo uploads for bills/receipts (stored in BunnyCDN).
+
+*   **Configuration Entities (Ledger Settings):**
+    *   **Categories:** ID-based definitions (e.g., Rent, Utilities). Supports inline renaming and active/inactive toggling. Special `transfer` category ID used for internal logic.
+    *   **Payment Methods:** ID-based methods (Cash, UPI, Card). Fully editable.
+    *   **Payment Accounts (`LedgerAccount`):** Represents the source/destination of funds.
+        *   *Types:* `USER` (Auto-synced from System Users) and `CUSTOM` (e.g., "Petty Cash", "Owner's Personal").
+        *   *Sync Logic:* System users are automatically merged. If a user is deleted, their account is marked "Disconnected" to preserve history.
+
+*   **Audit & Logs:**
+    *   Immutable `LedgerLog` recorded for EVERY action (Create, Update, Delete, Approve, Reject).
+    *   **Snapshots:** Stores the *entire* `LedgerEntry` object at the time of action, ensuring a complete audit trail even for deleted items.
+
+*   **Access Control:**
+    *   Restricted to `ADMIN` role with specific `MANAGE_LEDGER` permission.
+    *   "Ledger Auditor" role (future scope) for approving staff transactions.
 
 ---
 
@@ -135,7 +146,7 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 *   **Purpose:** High-performance storage for evidence photos (Wastage/Attendance).
 *   **Structure:**
     *   Zone: `pakaja`
-    *   Folders: `/wastage`, `/attendance`
+    *   Folders: `/wastage`, `/attendance`, `/ledger`
 
 ### 6.2. Google Gemini
 *   **Model:** `gemini-1.5-flash` (implied by typical usage, code says `gemini-pro` or similar - check generic usage).

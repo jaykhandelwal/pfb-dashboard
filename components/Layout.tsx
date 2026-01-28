@@ -117,6 +117,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     children: [
       { path: '/menu', label: 'Menu & Pricing', icon: <Utensils size={18} />, permission: 'MANAGE_MENU' },
       { path: '/menu-categories', label: 'Menu Categories', icon: <Tag size={18} />, permission: 'MANAGE_MENU' },
+      { path: '/ledger-settings', label: 'Ledger Settings', icon: <BookOpen size={18} />, permission: 'MANAGE_LEDGER' },
       { path: '/skus', label: 'Raw SKUs', icon: <Package size={18} />, permission: 'MANAGE_SKUS' },
       { path: '/branches', label: 'Branches', icon: <Store size={18} />, permission: 'MANAGE_BRANCHES' },
       { path: '/users', label: 'User Management', icon: <Users size={18} />, permission: 'MANAGE_USERS' },

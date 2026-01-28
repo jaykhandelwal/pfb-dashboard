@@ -258,6 +258,30 @@ export interface StorageUnit {
   isActive: boolean;
 }
 
+export interface LedgerCategoryDefinition {
+  id: string;
+  name: string;
+  isActive: boolean;
+  color?: string;
+  icon?: string;
+}
+
+export interface LedgerPaymentMethod {
+  id: string;
+  name: string;
+  isActive: boolean;
+  color?: string;
+  icon?: string;
+}
+
+export interface LedgerAccount {
+  id: string;
+  name: string;
+  type: 'USER' | 'CUSTOM';
+  linkedUserId?: string;
+  isActive: boolean;
+}
+
 export interface AppSettings {
   require_customer_phone: boolean;
   require_customer_name: boolean;
@@ -269,6 +293,9 @@ export interface AppSettings {
   enable_debug_logging: boolean;
   stock_ordering_litres_per_packet: number | string;
   deep_freezer_categories: string[];
+  ledger_categories?: LedgerCategoryDefinition[];
+  payment_methods?: LedgerPaymentMethod[];
+  ledger_accounts?: LedgerAccount[];
   [key: string]: any;
 }
 
@@ -290,6 +317,7 @@ export enum LedgerCategory {
   REPAIRS = 'Repairs',
   MARKETING = 'Marketing',
   TRANSPORT = 'Transport',
+  TRANSFER = 'Transfer',
   OTHER = 'Other',
 }
 
@@ -297,18 +325,22 @@ export interface LedgerEntry {
   id: string;
   date: string;
   timestamp: number;
-  branchId: string;
+  branchId?: string;
   entryType: LedgerEntryType;
-  category: LedgerCategory;
+  category: string;
+  categoryId?: string;
   amount: number;
   description: string;
-  paymentMethod: 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER';
+  paymentMethod: string;
+  paymentMethodId?: string;
   createdBy: string;
   createdByName: string;
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
   approvedBy?: string;
   rejectedReason?: string;
-  billUrl?: string;
+  sourceAccount?: string;
+  sourceAccountId?: string;
+  billUrls?: string[];
 }
 
 export interface LedgerLog {

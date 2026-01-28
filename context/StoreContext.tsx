@@ -5,7 +5,8 @@ import {
     MembershipRule, Coupon, Transaction, Order, Todo,
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
-    TransactionType, LedgerEntry, LedgerLog
+    TransactionType, LedgerEntry, LedgerLog, LedgerCategory, LedgerAccount,
+    LedgerCategoryDefinition, LedgerPaymentMethod
 } from '../types';
 import {
     INITIAL_SKUS, INITIAL_BRANCHES, INITIAL_MENU_ITEMS,
@@ -288,21 +289,34 @@ const mapStorageUnitToDB = (u: StorageUnit) => ({
     name: u.name,
     capacity_litres: u.capacityLitres,
     type: u.type,
-    is_active: u.isActive
 });
 
-// --- LEDGER MAPPERS (BETA) ---
 const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
-    ...data,
+    id: data.id,
+    date: data.date,
+    timestamp: data.timestamp,
     branchId: data.branch_id || data.branchId,
     entryType: data.entry_type || data.entryType,
+    category: data.category,
+    categoryId: data.category_id || data.categoryId,
+    amount: data.amount,
+    description: data.description,
     paymentMethod: data.payment_method || data.paymentMethod,
+    paymentMethodId: data.payment_method_id || data.paymentMethodId,
     createdBy: data.created_by || data.createdBy,
     createdByName: data.created_by_name || data.createdByName,
     status: data.status || 'PENDING',
     approvedBy: data.approved_by || data.approvedBy,
     rejectedReason: data.rejected_reason || data.rejectedReason,
-    billUrl: data.bill_url || data.billUrl
+    sourceAccount: data.source_account || data.sourceAccount,
+    sourceAccountId: data.source_account_id || data.sourceAccountId,
+    billUrls: (() => {
+        // Handle backward compatibility: bill_url (string) -> billUrls (array)
+        const urls = data.bill_urls || data.billUrls;
+        if (Array.isArray(urls)) return urls;
+        const legacyUrl = data.bill_url || data.billUrl;
+        return legacyUrl ? [legacyUrl] : [];
+    })()
 });
 
 const mapLedgerEntryToDB = (e: LedgerEntry) => ({
@@ -312,15 +326,19 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     branch_id: e.branchId,
     entry_type: e.entryType,
     category: e.category,
+    category_id: e.categoryId,
     amount: e.amount,
     description: e.description,
     payment_method: e.paymentMethod,
+    payment_method_id: e.paymentMethodId,
     created_by: e.createdBy,
     created_by_name: e.createdByName,
     status: e.status,
     approved_by: e.approvedBy,
     rejected_reason: e.rejectedReason,
-    bill_url: e.billUrl
+    source_account: e.sourceAccount,
+    source_account_id: e.sourceAccountId,
+    bill_urls: e.billUrls || []
 });
 
 
@@ -457,9 +475,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         enable_whatsapp_webhook: false,
         whatsapp_webhook_url: '',
         debug_whatsapp_webhook: false,
+
         enable_debug_logging: false,
         stock_ordering_litres_per_packet: 2.3,
-        deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT]
+        deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
+        ledger_categories: Object.values(LedgerCategory).map(cat => ({ id: cat.toLowerCase().replace(/\s+/g, '_'), name: cat, isActive: true })),
+        payment_methods: ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER'].map(m => ({ id: m.toLowerCase(), name: m, isActive: true })),
+        ledger_accounts: [{ id: 'company_account', name: 'Company Account', type: 'CUSTOM', isActive: true }]
     });
     const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
     const [ledgerLogs, setLedgerLogs] = useState<LedgerLog[]>([]);

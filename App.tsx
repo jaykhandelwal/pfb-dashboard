@@ -21,6 +21,7 @@ import Tasks from './pages/Tasks';
 import AppSettings from './pages/AppSettings';
 import StockOrdering from './pages/StockOrdering';
 import Ledger from './pages/Ledger';
+import LedgerSettings from './pages/LedgerSettings';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
@@ -161,6 +162,12 @@ function App() {
               <Route path="/ledger" element={
                 <ProtectedRoute requiredPermission="MANAGE_LEDGER" requiredRole="ADMIN">
                   <Ledger />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/ledger-settings" element={
+                <ProtectedRoute requiredPermission="MANAGE_LEDGER" requiredRole="ADMIN">
+                  <LedgerSettings />
                 </ProtectedRoute>
               } />
 
