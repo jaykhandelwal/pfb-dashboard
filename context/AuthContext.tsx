@@ -178,7 +178,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       permissions: u.permissions,
       // Robust mapping for snake_case or camelCase
       defaultBranchId: u.default_branch_id || u.defaultBranchId,
-      defaultPage: u.default_page || u.defaultPage
+      defaultPage: u.default_page || u.defaultPage,
+      isLedgerAuditor: u.is_ledger_auditor || u.isLedgerAuditor || false
     };
     // Runtime patch for admins to get new permissions immediately
     if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
@@ -231,7 +232,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: newUser.role,
         permissions: newUser.permissions,
         default_branch_id: newUser.defaultBranchId,
-        default_page: newUser.defaultPage
+        default_page: newUser.defaultPage,
+        is_ledger_auditor: newUser.isLedgerAuditor
       });
       if (!error) {
         setUsers(prev => [...prev, newUser]);
@@ -250,7 +252,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: updatedUser.role,
         permissions: updatedUser.permissions,
         default_branch_id: updatedUser.defaultBranchId,
-        default_page: updatedUser.defaultPage
+        default_page: updatedUser.defaultPage,
+        is_ledger_auditor: updatedUser.isLedgerAuditor
       }).eq('id', updatedUser.id);
 
       if (!error) {

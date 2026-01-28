@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar, CheckCircle2, XCircle, Clock, History, FileText } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { LedgerEntry, LedgerEntryType, LedgerCategory } from '../types';
@@ -12,7 +12,7 @@ const getLocalISOString = (date: Date = new Date()): string => {
 };
 
 const Ledger: React.FC = () => {
-    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry } = useStore();
+    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs } = useStore();
     const { currentUser } = useAuth();
 
     // Form state
@@ -30,13 +30,28 @@ const Ledger: React.FC = () => {
 
     // Filter state
     const [filterType, setFilterType] = useState<LedgerEntryType | 'ALL'>('ALL');
+    const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
     const [filterDateFrom, setFilterDateFrom] = useState('');
+
     const [filterDateTo, setFilterDateTo] = useState('');
+
+    // Logs state
+    const [viewingLogsFor, setViewingLogsFor] = useState<string | 'ALL' | null>(null);
+
+    React.useEffect(() => {
+        if (viewingLogsFor) {
+            // Fetch logs when viewer opens
+            // If ALL, fetch some recent, if ID, fetch for ID
+            const entryId = viewingLogsFor === 'ALL' ? undefined : viewingLogsFor;
+            fetchLedgerLogs(entryId);
+        }
+    }, [viewingLogsFor]);
 
     // Derived stats
     const stats = useMemo(() => {
         const filtered = ledgerEntries.filter(e => {
             if (filterType !== 'ALL' && e.entryType !== filterType) return false;
+            if (filterStatus !== 'ALL' && (e.status || 'PENDING') !== filterStatus) return false;
             if (filterDateFrom && e.date < filterDateFrom) return false;
             if (filterDateTo && e.date > filterDateTo) return false;
             return true;
@@ -47,7 +62,7 @@ const Ledger: React.FC = () => {
         const transfers = filtered.filter(e => e.entryType === 'TRANSFER').reduce((s, e) => s + e.amount, 0);
 
         return { income, expenses, transfers, net: income - expenses, entries: filtered };
-    }, [ledgerEntries, filterType, filterDateFrom, filterDateTo]);
+    }, [ledgerEntries, filterType, filterStatus, filterDateFrom, filterDateTo]);
 
     const resetForm = () => {
         setFormData({
@@ -109,6 +124,16 @@ const Ledger: React.FC = () => {
         }
     };
 
+    const handleApproval = async (id: string, status: 'APPROVED' | 'REJECTED') => {
+        let reason = undefined;
+        if (status === 'REJECTED') {
+            const input = prompt("Enter reason for rejection:");
+            if (input === null) return; // Cancelled
+            reason = input || "No reason provided";
+        }
+        await updateLedgerEntryStatus(id, status, reason);
+    };
+
     const getTypeColor = (type: LedgerEntryType) => {
         switch (type) {
             case 'INCOME': return 'text-emerald-600 bg-emerald-50';
@@ -125,6 +150,14 @@ const Ledger: React.FC = () => {
         }
     };
 
+    const getStatusIcon = (status?: string) => {
+        switch (status) {
+            case 'APPROVED': return <CheckCircle2 size={14} className="text-emerald-500" />;
+            case 'REJECTED': return <XCircle size={14} className="text-red-500" />;
+            default: return <Clock size={14} className="text-amber-500" />;
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -134,12 +167,21 @@ const Ledger: React.FC = () => {
                     <p className="text-sm text-[#403424]/60">Track income, expenses, and transfers</p>
                     <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Beta</span>
                 </div>
-                <button
-                    onClick={() => setShowForm(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-[#95a77c] text-white rounded-lg hover:bg-[#7d8f68] transition-colors shadow-md"
-                >
-                    <Plus size={18} /> New Entry
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setViewingLogsFor('ALL')}
+                        className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                        title="View All Audit Logs"
+                    >
+                        <FileText size={18} /> <span className="hidden md:inline">Audit Logs</span>
+                    </button>
+                    <button
+                        onClick={() => setShowForm(true)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-[#95a77c] text-white rounded-lg hover:bg-[#7d8f68] transition-colors shadow-md"
+                    >
+                        <Plus size={18} /> New Entry
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
@@ -188,6 +230,18 @@ const Ledger: React.FC = () => {
                         <option value="EXPENSE">Expense</option>
                         <option value="TRANSFER">Transfer</option>
                     </select>
+
+                    <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value as any)}
+                        className="px-3 py-1.5 rounded-lg border border-[#403424]/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
+                    >
+                        <option value="ALL">All Status</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="APPROVED">Approved</option>
+                        <option value="REJECTED">Rejected</option>
+                    </select>
+
                     <div className="flex items-center gap-2">
                         <Calendar size={14} className="text-[#403424]/40" />
                         <input
@@ -204,9 +258,9 @@ const Ledger: React.FC = () => {
                             className="px-2 py-1.5 rounded-lg border border-[#403424]/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
                         />
                     </div>
-                    {(filterType !== 'ALL' || filterDateFrom || filterDateTo) && (
+                    {(filterType !== 'ALL' || filterStatus !== 'ALL' || filterDateFrom || filterDateTo) && (
                         <button
-                            onClick={() => { setFilterType('ALL'); setFilterDateFrom(''); setFilterDateTo(''); }}
+                            onClick={() => { setFilterType('ALL'); setFilterStatus('ALL'); setFilterDateFrom(''); setFilterDateTo(''); }}
                             className="text-xs text-[#403424]/60 hover:text-[#403424] underline"
                         >
                             Clear Filters
@@ -222,6 +276,7 @@ const Ledger: React.FC = () => {
                         <thead className="bg-[#403424]/5 text-xs uppercase tracking-wider text-[#403424]/60">
                             <tr>
                                 <th className="px-4 py-3 text-left">Date</th>
+                                <th className="px-4 py-3 text-left">Status</th>
                                 <th className="px-4 py-3 text-left">Type</th>
                                 <th className="px-4 py-3 text-left">Category</th>
                                 <th className="px-4 py-3 text-left">Description</th>
@@ -239,8 +294,20 @@ const Ledger: React.FC = () => {
                                 </tr>
                             ) : (
                                 stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => (
-                                    <tr key={entry.id} className="hover:bg-[#403424]/[0.02]">
-                                        <td className="px-4 py-3 text-sm">{entry.date}</td>
+                                    <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] ${entry.status === 'REJECTED' ? 'opacity-60 bg-red-50/30' : ''}`}>
+                                        <td className="px-4 py-3 text-sm flex flex-col">
+                                            <span>{entry.date}</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-1.5" title={entry.rejectedReason || ''}>
+                                                {getStatusIcon(entry.status || 'PENDING')}
+                                                <span className={`text-xs font-bold uppercase ${entry.status === 'APPROVED' ? 'text-emerald-600' :
+                                                    entry.status === 'REJECTED' ? 'text-red-600' : 'text-amber-600'
+                                                    }`}>
+                                                    {entry.status || 'PENDING'}
+                                                </span>
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-3">
                                             <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(entry.entryType)}`}>
                                                 {getTypeIcon(entry.entryType)}
@@ -248,18 +315,38 @@ const Ledger: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-sm">{entry.category}</td>
-                                        <td className="px-4 py-3 text-sm max-w-xs truncate">{entry.description}</td>
+                                        <td className="px-4 py-3 text-sm max-w-xs truncate">
+                                            {entry.description}
+                                            {entry.rejectedReason && <div className="text-[10px] text-red-500 italic mt-0.5">Note: {entry.rejectedReason}</div>}
+                                            <div className="text-[10px] text-slate-400 mt-0.5">By: {entry.createdByName}</div>
+                                        </td>
                                         <td className={`px-4 py-3 text-sm font-semibold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
                                             {entry.entryType === 'INCOME' ? '+' : entry.entryType === 'EXPENSE' ? '-' : ''}₹{entry.amount.toLocaleString()}
                                         </td>
                                         <td className="px-4 py-3 text-xs text-[#403424]/60">{entry.paymentMethod.replace('_', ' ')}</td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-center gap-2">
-                                                <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors">
+                                                {/* Auditor Actions */}
+                                                {currentUser?.isLedgerAuditor && (!entry.status || entry.status === 'PENDING') && (
+                                                    <>
+                                                        <button onClick={() => handleApproval(entry.id, 'APPROVED')} className="p-1.5 text-emerald-300 hover:text-emerald-600 transition-colors" title="Approve">
+                                                            <CheckCircle2 size={16} />
+                                                        </button>
+                                                        <button onClick={() => handleApproval(entry.id, 'REJECTED')} className="p-1.5 text-red-300 hover:text-red-600 transition-colors" title="Reject">
+                                                            <XCircle size={16} />
+                                                        </button>
+                                                        <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                                                    </>
+                                                )}
+
+                                                <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors" title="Edit">
                                                     <Edit2 size={14} />
                                                 </button>
-                                                <button onClick={() => handleDelete(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-red-500 transition-colors">
+                                                <button onClick={() => handleDelete(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-red-500 transition-colors" title="Delete">
                                                     <Trash2 size={14} />
+                                                </button>
+                                                <button onClick={() => setViewingLogsFor(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-blue-500 transition-colors" title="View Logs">
+                                                    <History size={14} />
                                                 </button>
                                             </div>
                                         </td>
@@ -270,6 +357,69 @@ const Ledger: React.FC = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Logs Modal */}
+            {viewingLogsFor && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                        <div className="flex items-center justify-between p-4 border-b border-[#403424]/10">
+                            <h2 className="text-lg font-bold text-[#403424]">
+                                {viewingLogsFor === 'ALL' ? 'Global Ledger Audit Logs' : 'Entry Audit History'}
+                            </h2>
+                            <button onClick={() => setViewingLogsFor(null)} className="p-1 text-[#403424]/40 hover:text-[#403424]">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-0">
+                            <table className="w-full">
+                                <thead className="bg-[#403424]/5 text-xs uppercase tracking-wider text-[#403424]/60 sticky top-0">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left">Date</th>
+                                        <th className="px-4 py-3 text-left">Action</th>
+                                        <th className="px-4 py-3 text-left">Performed By</th>
+                                        <th className="px-4 py-3 text-left">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#403424]/5">
+                                    {(ledgerLogs || []).length === 0 ? (
+                                        <tr><td colSpan={4} className="p-8 text-center text-slate-400">No logs found.</td></tr>
+                                    ) : (
+                                        ledgerLogs.map(log => (
+                                            <tr key={log.id} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3 text-sm">
+                                                    <div>{log.date}</div>
+                                                    <div className="text-xs text-slate-400">{new Date(log.timestamp).toLocaleTimeString()}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${log.action === 'CREATE' ? 'bg-emerald-100 text-emerald-700' :
+                                                        log.action === 'DELETE' ? 'bg-red-100 text-red-700' :
+                                                            log.action === 'APPROVE' ? 'bg-blue-100 text-blue-700' :
+                                                                'bg-amber-100 text-amber-700'
+                                                        }`}>
+                                                        {log.action}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm">
+                                                    {log.performedByName}
+                                                    {currentUser?.id === log.performedBy && <span className="ml-1 text-[10px] text-slate-400">(You)</span>}
+                                                </td>
+                                                <td className="px-4 py-3 text-xs font-mono text-slate-600 max-w-md">
+                                                    {/* Simple diff or snapshot summary */}
+                                                    {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category}`}
+                                                    {log.action === 'UPDATE' && `Updated entry. Amount: ${log.snapshot.amount}, Status: ${log.snapshot.status}`}
+                                                    {log.action === 'DELETE' && `Deleted entry of ${log.snapshot.amount}`}
+                                                    {log.action === 'APPROVE' && `Approved entry. Approver: ${log.snapshot.approvedBy}`}
+                                                    {log.action === 'REJECT' && `Rejected. Reason: ${log.snapshot.rejectedReason}`}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add/Edit Modal */}
             {showForm && (
@@ -292,8 +442,8 @@ const Ledger: React.FC = () => {
                                         type="button"
                                         onClick={() => setFormData({ ...formData, entryType: type })}
                                         className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.entryType === type
-                                                ? getTypeColor(type) + ' ring-2 ring-offset-1 ring-current'
-                                                : 'bg-[#403424]/5 text-[#403424]/60 hover:bg-[#403424]/10'
+                                            ? getTypeColor(type) + ' ring-2 ring-offset-1 ring-current'
+                                            : 'bg-[#403424]/5 text-[#403424]/60 hover:bg-[#403424]/10'
                                             }`}
                                     >
                                         {type}

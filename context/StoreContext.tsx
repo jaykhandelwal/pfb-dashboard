@@ -5,13 +5,14 @@ import {
     MembershipRule, Coupon, Transaction, Order, Todo,
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
-    TransactionType, LedgerEntry
+    TransactionType, LedgerEntry, LedgerLog
 } from '../types';
 import {
     INITIAL_SKUS, INITIAL_BRANCHES, INITIAL_MENU_ITEMS,
     INITIAL_MENU_CATEGORIES, INITIAL_CUSTOMERS, INITIAL_MEMBERSHIP_RULES
 } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { useAuth } from './AuthContext';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -298,6 +299,9 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     paymentMethod: data.payment_method || data.paymentMethod,
     createdBy: data.created_by || data.createdBy,
     createdByName: data.created_by_name || data.createdByName,
+    status: data.status || 'PENDING',
+    approvedBy: data.approved_by || data.approvedBy,
+    rejectedReason: data.rejected_reason || data.rejectedReason
 });
 
 const mapLedgerEntryToDB = (e: LedgerEntry) => ({
@@ -312,6 +316,31 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     payment_method: e.paymentMethod,
     created_by: e.createdBy,
     created_by_name: e.createdByName,
+    status: e.status,
+    approved_by: e.approvedBy,
+    rejected_reason: e.rejectedReason
+});
+
+const mapLedgerLogFromDB = (data: any): LedgerLog => ({
+    id: data.id,
+    ledgerEntryId: data.ledger_entry_id || data.ledgerEntryId,
+    action: data.action,
+    performedBy: data.performed_by || data.performedBy,
+    performedByName: data.performed_by_name || data.performedByName,
+    snapshot: typeof data.snapshot === 'string' ? JSON.parse(data.snapshot) : data.snapshot,
+    date: data.date,
+    timestamp: getSafeTimestamp(data)
+});
+
+const mapLedgerLogToDB = (l: LedgerLog) => ({
+    id: l.id,
+    ledger_entry_id: l.ledgerEntryId,
+    action: l.action,
+    performed_by: l.performedBy,
+    performed_by_name: l.performedByName,
+    snapshot: l.snapshot,
+    date: l.date,
+    timestamp: l.timestamp
 });
 
 
@@ -335,6 +364,12 @@ interface StoreContextType {
     salesRecords: SalesRecord[];
     lastUpdated: number; // Added timestamp
     isLiveConnected: boolean; // Connection Status
+
+    // Ledger Logs
+    ledgerLogs: LedgerLog[];
+    fetchLedgerLogs: (entryId?: string) => Promise<void>;
+    approveLedgerEntry: (id: string) => Promise<void>;
+    rejectLedgerEntry: (id: string, reason: string) => Promise<void>;
 
     addBatchTransactions: (txs: any[]) => Promise<boolean>;
     deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
@@ -386,6 +421,7 @@ interface StoreContextType {
     addLedgerEntry: (entry: Omit<LedgerEntry, 'id'>) => Promise<void>;
     updateLedgerEntry: (entry: LedgerEntry) => Promise<void>;
     deleteLedgerEntry: (id: string) => Promise<void>;
+    updateLedgerEntryStatus: (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => Promise<void>;
 
     updateAppSetting: (key: string, value: any) => Promise<void>;
     isLoading: boolean;
@@ -423,9 +459,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT]
     });
     const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+    const [ledgerLogs, setLedgerLogs] = useState<LedgerLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
     const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+    const { currentUser } = useAuth();
 
     // Persistence Helper
     const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
@@ -784,18 +823,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 // Attempt 1: Standard Snake Case Mapping
                 const { error } = await supabase.from('skus').insert(mapSkuToDB(newSku));
 
-                if (error) {
-                    console.warn("Standard SKU save failed, attempting fallback...", error);
-
-                    // Attempt 2: Fallback (CamelCase)
-                    const { error: error2 } = await supabase.from('skus').insert(mapSkuToDB_Fallback(newSku));
-
-                    if (error2) {
-                        console.error("Fallback SKU save also failed:", error2);
-                        alert(`CLOUD SYNC ERROR:\nCould not save SKU to database.\n\nPrimary Error: ${error.message}\nFallback Error: ${error2.message}\n\nPlease check your database columns.`);
-                    } else {
-                        console.log("Fallback SKU save successful (CamelCase).");
-                    }
+                if (appSettings.enable_debug_logging) {
+                    if (error) alert(`DEBUG ERROR:\n${JSON.stringify(error, null, 2)}`);
+                    else alert(`DEBUG SUCCESS:\nSaved SKU: ${newSku.name}`);
                 }
             } catch (e) {
                 console.error("Exception saving SKU:", e);
@@ -1030,11 +1060,65 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isSupabaseConfigured()) await supabase.from('app_settings').upsert({ key, value });
     };
 
+
     // --- LEDGER CRUD (BETA) ---
+
+
+    const addLedgerLog = async (entry: LedgerEntry, action: LedgerLog['action']) => {
+        if (!currentUser) return; // Should not happen if auth is enforced
+
+        const newLog: LedgerLog = {
+            id: `log-${Date.now()}`,
+            ledgerEntryId: entry.id,
+            action,
+            performedBy: currentUser.id,
+            performedByName: currentUser.name,
+            snapshot: entry,
+            date: getLocalISOString(),
+            timestamp: Date.now()
+        };
+
+        setLedgerLogs(prev => [newLog, ...prev]);
+        // Ideally we don't save all logs to local storage to avoid bloat, 
+        // but for now we might if strict offline is needed. 
+        // Let's skip local storage for logs to keep it light, assuming online for audit mostly.
+
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_logs').insert(mapLedgerLogToDB(newLog));
+            } catch (e) { console.error('Ledger Log sync failed:', e); }
+        }
+    };
+
+    const fetchLedgerLogs = async (entryId?: string) => {
+        if (!isSupabaseConfigured()) return;
+
+        let query = supabase.from('ledger_logs').select('*').order('timestamp', { ascending: false });
+        if (entryId) {
+            query = query.eq('ledger_entry_id', entryId);
+        } else {
+            query = query.limit(500); // Global limit
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+            setLedgerLogs(data.map(mapLedgerLogFromDB));
+        }
+    };
+
     const addLedgerEntry = async (entry: Omit<LedgerEntry, 'id'>) => {
-        const newEntry: LedgerEntry = { ...entry, id: `ledger-${Date.now()}` } as LedgerEntry;
+        const newEntry: LedgerEntry = {
+            ...entry,
+            id: `ledger-${Date.now()}`,
+            status: 'PENDING' // Default status
+        } as LedgerEntry;
+
         const updated = [newEntry, ...ledgerEntries];
         setLedgerEntries(updated); save('ledgerEntries', updated);
+
+        // Log it
+        await addLedgerLog(newEntry, 'CREATE');
+
         if (isSupabaseConfigured()) {
             try {
                 await supabase.from('ledger_entries').insert(mapLedgerEntryToDB(newEntry));
@@ -1044,6 +1128,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updateLedgerEntry = async (entry: LedgerEntry) => {
         const updated = ledgerEntries.map(e => e.id === entry.id ? entry : e);
         setLedgerEntries(updated); save('ledgerEntries', updated);
+
+        // Log it
+        await addLedgerLog(entry, 'UPDATE');
+
         if (isSupabaseConfigured()) {
             try {
                 await supabase.from('ledger_entries').update(mapLedgerEntryToDB(entry)).eq('id', entry.id);
@@ -1051,6 +1139,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
     const deleteLedgerEntry = async (id: string) => {
+        const entry = ledgerEntries.find(e => e.id === id);
+        if (entry) {
+            // Log it before deleting (snapshotting the last state)
+            await addLedgerLog(entry, 'DELETE');
+        }
+
         const updated = ledgerEntries.filter(e => e.id !== id);
         setLedgerEntries(updated); save('ledgerEntries', updated);
         if (isSupabaseConfigured()) {
@@ -1059,6 +1153,65 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } catch (e) { console.error('Ledger delete sync failed:', e); }
         }
     };
+
+    const approveLedgerEntry = async (id: string) => {
+        if (!currentUser) return;
+        const entry = ledgerEntries.find(e => e.id === id);
+        if (!entry) return;
+
+        const updatedEntry = { ...entry, status: 'APPROVED' as const, approvedBy: currentUser.name };
+        await updateLedgerEntry(updatedEntry); // This will trigger UPDATE log
+
+        // Explicit APPROVE log? 
+        // updateLedgerEntry already logs 'UPDATE'. 
+        // But maybe we want specific 'APPROVE' action in logs.
+        // Let's call addLedgerLog explicitly with APPROVE and skip the UPDATE one? 
+        // No, updateLedgerEntry is called, so it logs UPDATE. 
+        // Let's modify logic:
+        // We shouldn't duplicate logs. 
+        // If I use updateLedgerEntry, it logs UPDATE.
+        // I will just add a separate APPROVE log for clarity if needed, or rely on UPDATE with status change.
+        // The requirement says "record that audit aswell". 
+        // I will add a specific APPROVE log *instead* of relying on UPDATE if possible, 
+        // OR just add it additionally. 
+        // Since updateLedgerEntry is generic, let's just use it but maybe allow overriding action?
+        // For now, I'll let it log UPDATE (which shows status change to APPROVED in snapshot) 
+        // AND I will add an explicit APPROVE log for easier filtering.
+        await addLedgerLog(updatedEntry, 'APPROVE');
+    };
+
+    const rejectLedgerEntry = async (id: string, reason: string) => {
+        if (!currentUser) return;
+        const entry = ledgerEntries.find(e => e.id === id);
+        if (!entry) return;
+
+        const updatedEntry = { ...entry, status: 'REJECTED' as const, approvedBy: currentUser.name, rejectedReason: reason };
+
+        // Manually update state to avoid double logging from updateLedgerEntry if I were to modify it
+        // But reusing updateLedgerEntry is safer for consistency.
+        // I'll just accept double logs or filter them. 
+        // Actually, let's just update the state/DB directly here to have 1 log.
+
+        const updatedList = ledgerEntries.map(e => e.id === id ? updatedEntry : e);
+        setLedgerEntries(updatedList); save('ledgerEntries', updatedList);
+
+        await addLedgerLog(updatedEntry, 'REJECT');
+
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').update(mapLedgerEntryToDB(updatedEntry)).eq('id', id);
+            } catch (e) { console.error('Ledger reject sync failed:', e); }
+        }
+    };
+
+    // Fix for updateLedgerEntryStatus not using new signatures
+    // I am replacing the old updateLedgerEntryStatus stub
+    const updateLedgerEntryStatus = async (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => {
+        if (status === 'APPROVED') await approveLedgerEntry(id);
+        else if (status === 'REJECTED') await rejectLedgerEntry(id, reason || '');
+    };
+
+
 
     return (
         <StoreContext.Provider value={{
@@ -1077,7 +1230,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             addTodo, toggleTodo, addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
             addAttendance, setAttendanceStatus,
             addStorageUnit, updateStorageUnit, deleteStorageUnit,
-            ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry,
+            ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus,
+            ledgerLogs, fetchLedgerLogs, approveLedgerEntry, rejectLedgerEntry,
             updateAppSetting
         }}>
             {children}

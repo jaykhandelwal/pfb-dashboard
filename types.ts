@@ -29,6 +29,7 @@ export interface User {
   permissions: Permission[];
   defaultBranchId?: string;
   defaultPage?: string;
+  isLedgerAuditor?: boolean;
 }
 
 export interface Branch {
@@ -304,5 +305,19 @@ export interface LedgerEntry {
   paymentMethod: 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER';
   createdBy: string;
   createdByName: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
+  rejectedReason?: string;
+}
+
+export interface LedgerLog {
+  id: string;
+  ledgerEntryId: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT';
+  performedBy: string;
+  performedByName: string;
+  snapshot: LedgerEntry;
+  date: string;
+  timestamp: number;
 }
 

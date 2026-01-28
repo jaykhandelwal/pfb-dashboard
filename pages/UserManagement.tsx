@@ -15,12 +15,12 @@ const UserManagement: React.FC = () => {
   const { attendanceRecords, branches, attendanceOverrides, setAttendanceStatus } = useStore();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Partial<User>>({});
-  
+
   // Attendance View Modal State
   const [viewingAttendanceFor, setViewingAttendanceFor] = useState<User | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  
+
   // Day Action Modal
   const [selectedDayAction, setSelectedDayAction] = useState<{ date: string, formattedDate: string } | null>(null);
 
@@ -62,7 +62,7 @@ const UserManagement: React.FC = () => {
       const newPerms = hasPerm
         ? currentPerms.filter(p => p !== permission)
         : [...currentPerms, permission];
-      
+
       return { ...prev, permissions: newPerms };
     });
   };
@@ -80,16 +80,16 @@ const UserManagement: React.FC = () => {
   };
 
   const openAttendanceModal = (user: User) => {
-      setViewingAttendanceFor(user);
-      setViewDate(new Date()); // Reset to current month when opening
+    setViewingAttendanceFor(user);
+    setViewDate(new Date()); // Reset to current month when opening
   };
 
   const changeMonth = (delta: number) => {
-      setViewDate(prev => {
-          const newDate = new Date(prev);
-          newDate.setMonth(newDate.getMonth() + delta);
-          return newDate;
-      });
+    setViewDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() + delta);
+      return newDate;
+    });
   };
 
   // --- Attendance Logic ---
@@ -104,163 +104,163 @@ const UserManagement: React.FC = () => {
     // Filter records for this user & selected month
     const monthlyRecords = attendanceRecords
       .filter(r => {
-         const d = new Date(r.date);
-         return r.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        const d = new Date(r.date);
+        return r.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       })
       .sort((a, b) => b.timestamp - a.timestamp); // Sort newest first
-      
+
     // Filter overrides for this user & selected month
     const monthlyOverrides = attendanceOverrides.filter(o => {
-        const d = new Date(o.date);
-        return o.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      const d = new Date(o.date);
+      return o.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
     const presentCount = monthlyRecords.length;
-    
+
     // Calculated Penalty/Absent Count
     // Logic: Iterate days up to today. 
     // If override exists: add penalty based on type.
     // If no override and no check-in: add 1 penalty.
-    
+
     const today = new Date();
     let totalDeductibleDays = 0;
-    
+
     // Limit calculation loop
     let daysToCalculate = daysInMonth;
     if (currentYear === today.getFullYear() && currentMonth === today.getMonth()) {
-        daysToCalculate = today.getDate();
+      daysToCalculate = today.getDate();
     } else if (currentYear > today.getFullYear() || (currentYear === today.getFullYear() && currentMonth > today.getMonth())) {
-        daysToCalculate = 0; // Future month
+      daysToCalculate = 0; // Future month
     }
 
     for (let i = 1; i <= daysToCalculate; i++) {
-        const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
-        
-        // Check for override first
-        const override = monthlyOverrides.find(o => o.date === dateStr);
-        const record = monthlyRecords.find(r => r.date === dateStr);
+      const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
 
-        if (override) {
-            if (override.type === 'ABSENT') totalDeductibleDays += 1;
-            else if (override.type === 'PENALTY_2_DAYS') totalDeductibleDays += 2;
-            // HOLIDAY adds 0
-        } else {
-            // No override. If no record, count as absent (1 day)
-            // But if it is TODAY and no record yet, maybe don't count? 
-            // Standard logic: If today has passed without checkin, it's absent. 
-            // For live view, counting today as absent before day ends might be harsh, but let's stick to simple logic.
-            if (!record) {
-                // If it's today, only count if it's late? For simplicity, we count past days.
-                if (dateStr !== today.toISOString().slice(0, 10)) {
-                    totalDeductibleDays += 1;
-                }
-            }
+      // Check for override first
+      const override = monthlyOverrides.find(o => o.date === dateStr);
+      const record = monthlyRecords.find(r => r.date === dateStr);
+
+      if (override) {
+        if (override.type === 'ABSENT') totalDeductibleDays += 1;
+        else if (override.type === 'PENALTY_2_DAYS') totalDeductibleDays += 2;
+        // HOLIDAY adds 0
+      } else {
+        // No override. If no record, count as absent (1 day)
+        // But if it is TODAY and no record yet, maybe don't count? 
+        // Standard logic: If today has passed without checkin, it's absent. 
+        // For live view, counting today as absent before day ends might be harsh, but let's stick to simple logic.
+        if (!record) {
+          // If it's today, only count if it's late? For simplicity, we count past days.
+          if (dateStr !== today.toISOString().slice(0, 10)) {
+            totalDeductibleDays += 1;
+          }
         }
+      }
     }
 
     // Avg Check-in Time
     let avgTimeStr = '--:--';
     if (presentCount > 0) {
-       const totalMinutes = monthlyRecords.reduce((acc, r) => {
-          const d = new Date(r.timestamp);
-          return acc + (d.getHours() * 60) + d.getMinutes();
-       }, 0);
-       const avgTotalMinutes = Math.floor(totalMinutes / presentCount);
-       const hours = Math.floor(avgTotalMinutes / 60);
-       const mins = avgTotalMinutes % 60;
-       const ampm = hours >= 12 ? 'PM' : 'AM';
-       const formattedHours = hours % 12 || 12;
-       avgTimeStr = `${formattedHours}:${mins.toString().padStart(2, '0')} ${ampm}`;
+      const totalMinutes = monthlyRecords.reduce((acc, r) => {
+        const d = new Date(r.timestamp);
+        return acc + (d.getHours() * 60) + d.getMinutes();
+      }, 0);
+      const avgTotalMinutes = Math.floor(totalMinutes / presentCount);
+      const hours = Math.floor(avgTotalMinutes / 60);
+      const mins = avgTotalMinutes % 60;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const formattedHours = hours % 12 || 12;
+      avgTimeStr = `${formattedHours}:${mins.toString().padStart(2, '0')} ${ampm}`;
     }
 
     return {
-       presentCount,
-       totalDeductibleDays,
-       avgTimeStr,
-       monthlyRecords,
-       monthlyOverrides,
-       monthLabel: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
-       daysInMonth,
-       startDayOfWeek,
-       currentMonthIndex: currentMonth,
-       currentYear
+      presentCount,
+      totalDeductibleDays,
+      avgTimeStr,
+      monthlyRecords,
+      monthlyOverrides,
+      monthLabel: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
+      daysInMonth,
+      startDayOfWeek,
+      currentMonthIndex: currentMonth,
+      currentYear
     };
 
   }, [viewingAttendanceFor, attendanceRecords, attendanceOverrides, viewDate]);
 
   const handleDayClick = (day: number) => {
-      if (!attendanceStats) return;
-      const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-      const dateObj = new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, day);
-      
-      setSelectedDayAction({
-          date: dateStr,
-          formattedDate: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-      });
+    if (!attendanceStats) return;
+    const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const dateObj = new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, day);
+
+    setSelectedDayAction({
+      date: dateStr,
+      formattedDate: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    });
   };
 
   const applyStatus = async (type: AttendanceOverrideType | null) => {
-      if (!viewingAttendanceFor || !selectedDayAction) return;
-      await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type);
-      setSelectedDayAction(null);
+    if (!viewingAttendanceFor || !selectedDayAction) return;
+    await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type);
+    setSelectedDayAction(null);
   };
 
   // Helper to render calendar grid
   const renderCalendar = () => {
-     if (!attendanceStats) return null;
-     const days = [];
-     
-     // Empty slots for days before the 1st
-     for (let i = 0; i < attendanceStats.startDayOfWeek; i++) {
-         days.push(<div key={`empty-${i}`} className="aspect-square"></div>);
-     }
+    if (!attendanceStats) return null;
+    const days = [];
 
-     const today = new Date();
-     const isCurrentMonth = today.getMonth() === attendanceStats.currentMonthIndex && today.getFullYear() === attendanceStats.currentYear;
+    // Empty slots for days before the 1st
+    for (let i = 0; i < attendanceStats.startDayOfWeek; i++) {
+      days.push(<div key={`empty-${i}`} className="aspect-square"></div>);
+    }
 
-     for (let i = 1; i <= attendanceStats.daysInMonth; i++) {
-        const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
-        const record = attendanceStats.monthlyRecords.find(r => r.date === dateStr);
-        const override = attendanceStats.monthlyOverrides.find(o => o.date === dateStr);
-        
-        const isToday = isCurrentMonth && i === today.getDate();
-        const isFuture = isCurrentMonth && i > today.getDate() || (today < new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, i));
-        
-        let bgClass = 'bg-slate-50 border-slate-100 text-slate-300'; // Default future
-        let content = <span className="text-sm">{i}</span>;
+    const today = new Date();
+    const isCurrentMonth = today.getMonth() === attendanceStats.currentMonthIndex && today.getFullYear() === attendanceStats.currentYear;
 
-        if (override) {
-            // Admin Override Logic
-            if (override.type === 'HOLIDAY') {
-                bgClass = 'bg-amber-100 border-amber-200 text-amber-700 font-bold';
-            } else if (override.type === 'ABSENT') {
-                bgClass = 'bg-red-100 border-red-200 text-red-700 font-bold';
-            } else if (override.type === 'PENALTY_2_DAYS') {
-                bgClass = 'bg-purple-100 border-purple-200 text-purple-700 font-bold ring-1 ring-purple-300';
-            }
-        } else if (record) {
-            // Present
-            bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
-        } else if (!isFuture) {
-            // Absent (Default)
-             bgClass = 'bg-red-50 border-red-100 text-red-300';
+    for (let i = 1; i <= attendanceStats.daysInMonth; i++) {
+      const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
+      const record = attendanceStats.monthlyRecords.find(r => r.date === dateStr);
+      const override = attendanceStats.monthlyOverrides.find(o => o.date === dateStr);
+
+      const isToday = isCurrentMonth && i === today.getDate();
+      const isFuture = isCurrentMonth && i > today.getDate() || (today < new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, i));
+
+      let bgClass = 'bg-slate-50 border-slate-100 text-slate-300'; // Default future
+      let content = <span className="text-sm">{i}</span>;
+
+      if (override) {
+        // Admin Override Logic
+        if (override.type === 'HOLIDAY') {
+          bgClass = 'bg-amber-100 border-amber-200 text-amber-700 font-bold';
+        } else if (override.type === 'ABSENT') {
+          bgClass = 'bg-red-100 border-red-200 text-red-700 font-bold';
+        } else if (override.type === 'PENALTY_2_DAYS') {
+          bgClass = 'bg-purple-100 border-purple-200 text-purple-700 font-bold ring-1 ring-purple-300';
         }
+      } else if (record) {
+        // Present
+        bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
+      } else if (!isFuture) {
+        // Absent (Default)
+        bgClass = 'bg-red-50 border-red-100 text-red-300';
+      }
 
-        if (isToday && !record && !override) {
-             bgClass = 'bg-blue-50 border-blue-200 text-blue-500 ring-1 ring-blue-300';
-        }
+      if (isToday && !record && !override) {
+        bgClass = 'bg-blue-50 border-blue-200 text-blue-500 ring-1 ring-blue-300';
+      }
 
-        days.push(
-           <button 
-             key={i} 
-             onClick={() => handleDayClick(i)}
-             className={`aspect-square rounded-lg flex items-center justify-center border transition-all hover:brightness-95 active:scale-95 ${bgClass}`}
-           >
-              {content}
-           </button>
-        );
-     }
-     return days;
+      days.push(
+        <button
+          key={i}
+          onClick={() => handleDayClick(i)}
+          className={`aspect-square rounded-lg flex items-center justify-center border transition-all hover:brightness-95 active:scale-95 ${bgClass}`}
+        >
+          {content}
+        </button>
+      );
+    }
+    return days;
   };
 
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || 'Unknown';
@@ -269,13 +269,13 @@ const UserManagement: React.FC = () => {
     <div className="pb-16 relative">
       <div className="mb-6 flex justify-between items-center">
         <div>
-           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-             <Users className="text-slate-600" /> User Management
-           </h2>
-           <p className="text-slate-500 text-sm md:text-base">Manage staff access and permissions.</p>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="text-slate-600" /> User Management
+          </h2>
+          <p className="text-slate-500 text-sm md:text-base">Manage staff access and permissions.</p>
         </div>
         {!isEditing && (
-          <button 
+          <button
             onClick={handleAddNew}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm font-medium"
           >
@@ -296,29 +296,29 @@ const UserManagement: React.FC = () => {
               <X size={20} />
             </button>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={selectedUser.name || ''}
-                  onChange={e => setSelectedUser({...selectedUser, name: e.target.value})}
+                  onChange={e => setSelectedUser({ ...selectedUser, name: e.target.value })}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   placeholder="e.g. John Doe"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Access Code</label>
                 <div className="relative">
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     value={selectedUser.code || ''}
-                    onChange={e => setSelectedUser({...selectedUser, code: e.target.value})}
+                    onChange={e => setSelectedUser({ ...selectedUser, code: e.target.value })}
                     className="w-full border border-slate-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
                     placeholder="e.g. admin123"
                   />
@@ -329,91 +329,110 @@ const UserManagement: React.FC = () => {
 
               {/* Default Branch Selection */}
               <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                     <Store size={14} /> Default Branch / Location
-                  </label>
-                  <select 
-                     value={selectedUser.defaultBranchId || ''}
-                     onChange={e => setSelectedUser({...selectedUser, defaultBranchId: e.target.value})}
-                     className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
-                  >
-                     <option value="">No Default (User selects manually)</option>
-                     {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                     ))}
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">Pre-selects this location when the user takes attendance.</p>
+                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                  <Store size={14} /> Default Branch / Location
+                </label>
+                <select
+                  value={selectedUser.defaultBranchId || ''}
+                  onChange={e => setSelectedUser({ ...selectedUser, defaultBranchId: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                >
+                  <option value="">No Default (User selects manually)</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Pre-selects this location when the user takes attendance.</p>
               </div>
 
               {/* Default Page Selection */}
+              {/* Default Page Selection */}
               <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                     <LayoutDashboard size={14} /> Default Landing Page
+                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
+                  <LayoutDashboard size={14} /> Default Landing Page
+                </label>
+                <select
+                  value={selectedUser.defaultPage || '/dashboard'}
+                  onChange={e => setSelectedUser({ ...selectedUser, defaultPage: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                >
+                  {APP_PAGES.map(page => (
+                    <option key={page.path} value={page.path}>{page.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Where to redirect this user after login.</p>
+              </div>
+
+              {/* Ledger Auditor Toggle */}
+              <div className="md:col-span-2 bg-amber-50 rounded-lg p-3 border border-amber-200 flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-bold text-amber-900 flex items-center gap-2">
+                    <Shield size={16} /> Ledger Auditor
                   </label>
-                  <select 
-                     value={selectedUser.defaultPage || '/dashboard'}
-                     onChange={e => setSelectedUser({...selectedUser, defaultPage: e.target.value})}
-                     className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
-                  >
-                     {APP_PAGES.map(page => (
-                        <option key={page.path} value={page.path}>{page.label}</option>
-                     ))}
-                  </select>
-                  <p className="text-xs text-slate-500 mt-1">Where to redirect this user after login.</p>
+                  <p className="text-xs text-amber-700">Grant permission to approve/reject pending ledger transactions.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={selectedUser.isLedgerAuditor || false}
+                    onChange={e => setSelectedUser({ ...selectedUser, isLedgerAuditor: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
               </div>
             </div>
 
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
               <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">Role & Permissions</label>
-              
+
               {/* Role Presets */}
               <div className="flex gap-2 mb-6">
                 {(['ADMIN', 'MANAGER', 'STAFF'] as Role[]).map(role => (
-                   <button
-                     key={role}
-                     type="button"
-                     onClick={() => handleRoleChange(role)}
-                     className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all border ${
-                       selectedUser.role === role
-                         ? 'bg-slate-800 text-white border-slate-800 shadow-md'
-                         : 'bg-white text-slate-600 border-slate-300 hover:bg-white hover:border-slate-400'
-                     }`}
-                   >
-                     {role}
-                   </button>
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => handleRoleChange(role)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all border ${selectedUser.role === role
+                        ? 'bg-slate-800 text-white border-slate-800 shadow-md'
+                        : 'bg-white text-slate-600 border-slate-300 hover:bg-white hover:border-slate-400'
+                      }`}
+                  >
+                    {role}
+                  </button>
                 ))}
               </div>
 
               {/* Granular Permissions */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                 {ALL_PERMISSIONS.map(perm => {
-                   const isChecked = selectedUser.permissions?.includes(perm.id);
-                   return (
-                     <label key={perm.id} className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-                       <input 
-                         type="checkbox"
-                         checked={isChecked}
-                         onChange={() => togglePermission(perm.id)}
-                         className="w-5 h-5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-                       />
-                       <span className={`text-sm ${isChecked ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
-                         {perm.label}
-                       </span>
-                     </label>
-                   );
-                 })}
+                {ALL_PERMISSIONS.map(perm => {
+                  const isChecked = selectedUser.permissions?.includes(perm.id);
+                  return (
+                    <label key={perm.id} className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => togglePermission(perm.id)}
+                        className="w-5 h-5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                      />
+                      <span className={`text-sm ${isChecked ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                        {perm.label}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsEditing(false)}
                 className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 type="submit"
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
               >
@@ -422,7 +441,7 @@ const UserManagement: React.FC = () => {
               </button>
             </div>
           </form>
-        </div>
+        </div >
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -450,13 +469,12 @@ const UserManagement: React.FC = () => {
                     </div>
                   </td>
                   <td className="hidden md:table-cell p-4">
-                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                       user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
-                       user.role === 'MANAGER' ? 'bg-blue-100 text-blue-800' :
-                       'bg-slate-100 text-slate-700'
-                     }`}>
-                       {user.role}
-                     </span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
+                      user.role === 'MANAGER' ? 'bg-blue-100 text-blue-800' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                      {user.role}
+                    </span>
                   </td>
                   <td className="hidden sm:table-cell p-4">
                     <div className="flex flex-wrap gap-1">
@@ -478,16 +496,16 @@ const UserManagement: React.FC = () => {
                         className="p-2 md:p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                         title="View Attendance"
                       >
-                         <CalendarDays size={18} className="md:w-4 md:h-4" />
+                        <CalendarDays size={18} className="md:w-4 md:h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleEdit(user)}
                         className="p-2 md:p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                         title="Edit"
                       >
                         <Edit2 size={18} className="md:w-4 md:h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete(user.id)}
                         disabled={currentUser?.id === user.id}
                         className="p-2 md:p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
@@ -505,207 +523,213 @@ const UserManagement: React.FC = () => {
       </div>
 
       {/* --- ATTENDANCE MODAL --- */}
-      {viewingAttendanceFor && attendanceStats && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      {
+        viewingAttendanceFor && attendanceStats && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
-               {/* Modal Header */}
-               <div className="p-5 border-b border-slate-100 flex justify-between items-center rounded-t-xl bg-slate-50">
-                  <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
-                        {viewingAttendanceFor.name.charAt(0).toUpperCase()}
-                     </div>
-                     <div>
-                        <h3 className="text-lg font-bold text-slate-800">{viewingAttendanceFor.name}</h3>
-                        <p className="text-xs text-slate-500">Attendance Report</p>
-                     </div>
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center rounded-t-xl bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
+                    {viewingAttendanceFor.name.charAt(0).toUpperCase()}
                   </div>
-                  <button onClick={() => setViewingAttendanceFor(null)} className="text-slate-400 hover:text-slate-600">
-                     <X size={24} />
-                  </button>
-               </div>
-               
-               <div className="flex-1 overflow-y-auto p-5">
-                  {/* Month Navigation */}
-                  <div className="flex items-center justify-between mb-4 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                     <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white rounded-md transition-colors text-slate-500 hover:text-indigo-600">
-                        <ChevronLeft size={20} />
-                     </button>
-                     <h4 className="font-bold text-slate-700">{attendanceStats.monthLabel}</h4>
-                     <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white rounded-md transition-colors text-slate-500 hover:text-indigo-600">
-                        <ChevronRight size={20} />
-                     </button>
-                  </div>
-
-                  {/* Stats Grid */}
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                     <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-lg text-center">
-                        <div className="flex items-center justify-center text-emerald-600 mb-1"><Check size={16} /></div>
-                        <div className="text-lg font-bold text-emerald-700 leading-none">{attendanceStats.presentCount}</div>
-                        <div className="text-[10px] text-emerald-600 uppercase font-semibold mt-1">Present</div>
-                     </div>
-                     <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-center">
-                        <div className="flex items-center justify-center text-red-500 mb-1"><XCircle size={16} /></div>
-                        <div className="text-lg font-bold text-red-700 leading-none">{attendanceStats.totalDeductibleDays}</div>
-                        <div className="text-[10px] text-red-600 uppercase font-semibold mt-1">Deductible</div>
-                     </div>
-                     <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-center">
-                        <div className="flex items-center justify-center text-blue-500 mb-1"><Clock size={16} /></div>
-                        <div className="text-sm font-bold text-blue-700 leading-none mt-1">{attendanceStats.avgTimeStr}</div>
-                        <div className="text-[10px] text-blue-600 uppercase font-semibold mt-1">Avg Check-in</div>
-                     </div>
-                  </div>
-
-                  {/* Calendar Grid */}
-                  <div className="mb-6">
-                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center justify-between">
-                         Calendar View
-                         <span className="text-[10px] font-normal text-slate-400 normal-case">Tap date to edit</span>
-                     </h4>
-                     <div className="grid grid-cols-7 gap-1">
-                        {['S','M','T','W','T','F','S'].map((d, i) => (
-                           <div key={i} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>
-                        ))}
-                        {renderCalendar()}
-                     </div>
-                     <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
-                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Present</div>
-                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Holiday</div>
-                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Absent (1)</div>
-                        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Penalty (2)</div>
-                     </div>
-                  </div>
-
-                  {/* Recent History List with Locations */}
                   <div>
-                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Check-in History</h4>
-                     {attendanceStats.monthlyRecords.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic text-center py-2">No records found for this month.</p>
-                     ) : (
-                        <div className="space-y-2">
-                           {attendanceStats.monthlyRecords.map(record => (
-                              <div key={record.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
-                                 <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0">
-                                       <Check size={14} />
-                                    </div>
-                                    <div>
-                                       <div className="font-bold text-slate-700">{record.date}</div>
-                                       <div className="text-xs text-slate-500 flex items-center gap-1">
-                                          <Store size={10} /> {getBranchName(record.branchId)}
-                                       </div>
-                                       {record.imageUrl && (
-                                          <button 
-                                            onClick={() => setPreviewImage(record.imageUrl)}
-                                            className="text-[10px] flex items-center gap-1 text-blue-600 hover:text-blue-800 mt-1 font-medium transition-colors"
-                                          >
-                                             <ImageIcon size={12} /> View Photo
-                                          </button>
-                                       )}
-                                    </div>
-                                 </div>
-                                 <div className="text-right font-mono font-medium text-slate-600">
-                                    {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
+                    <h3 className="text-lg font-bold text-slate-800">{viewingAttendanceFor.name}</h3>
+                    <p className="text-xs text-slate-500">Attendance Report</p>
                   </div>
-               </div>
+                </div>
+                <button onClick={() => setViewingAttendanceFor(null)} className="text-slate-400 hover:text-slate-600">
+                  <X size={24} />
+                </button>
+              </div>
 
-               <div className="p-4 border-t border-slate-100 bg-white rounded-b-xl flex justify-end">
-                  <button 
-                     onClick={() => setViewingAttendanceFor(null)}
-                     className="px-6 py-2 rounded-lg bg-slate-800 text-white font-medium hover:bg-slate-700 transition-colors text-sm"
-                  >
-                     Close
+              <div className="flex-1 overflow-y-auto p-5">
+                {/* Month Navigation */}
+                <div className="flex items-center justify-between mb-4 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white rounded-md transition-colors text-slate-500 hover:text-indigo-600">
+                    <ChevronLeft size={20} />
                   </button>
-               </div>
+                  <h4 className="font-bold text-slate-700">{attendanceStats.monthLabel}</h4>
+                  <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white rounded-md transition-colors text-slate-500 hover:text-indigo-600">
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-lg text-center">
+                    <div className="flex items-center justify-center text-emerald-600 mb-1"><Check size={16} /></div>
+                    <div className="text-lg font-bold text-emerald-700 leading-none">{attendanceStats.presentCount}</div>
+                    <div className="text-[10px] text-emerald-600 uppercase font-semibold mt-1">Present</div>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 p-3 rounded-lg text-center">
+                    <div className="flex items-center justify-center text-red-500 mb-1"><XCircle size={16} /></div>
+                    <div className="text-lg font-bold text-red-700 leading-none">{attendanceStats.totalDeductibleDays}</div>
+                    <div className="text-[10px] text-red-600 uppercase font-semibold mt-1">Deductible</div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-center">
+                    <div className="flex items-center justify-center text-blue-500 mb-1"><Clock size={16} /></div>
+                    <div className="text-sm font-bold text-blue-700 leading-none mt-1">{attendanceStats.avgTimeStr}</div>
+                    <div className="text-[10px] text-blue-600 uppercase font-semibold mt-1">Avg Check-in</div>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="mb-6">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center justify-between">
+                    Calendar View
+                    <span className="text-[10px] font-normal text-slate-400 normal-case">Tap date to edit</span>
+                  </h4>
+                  <div className="grid grid-cols-7 gap-1">
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                      <div key={i} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>
+                    ))}
+                    {renderCalendar()}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Present</div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Holiday</div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Absent (1)</div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Penalty (2)</div>
+                  </div>
+                </div>
+
+                {/* Recent History List with Locations */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Check-in History</h4>
+                  {attendanceStats.monthlyRecords.length === 0 ? (
+                    <p className="text-sm text-slate-400 italic text-center py-2">No records found for this month.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {attendanceStats.monthlyRecords.map(record => (
+                        <div key={record.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                              <Check size={14} />
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-700">{record.date}</div>
+                              <div className="text-xs text-slate-500 flex items-center gap-1">
+                                <Store size={10} /> {getBranchName(record.branchId)}
+                              </div>
+                              {record.imageUrl && (
+                                <button
+                                  onClick={() => setPreviewImage(record.imageUrl)}
+                                  className="text-[10px] flex items-center gap-1 text-blue-600 hover:text-blue-800 mt-1 font-medium transition-colors"
+                                >
+                                  <ImageIcon size={12} /> View Photo
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right font-mono font-medium text-slate-600">
+                            {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 bg-white rounded-b-xl flex justify-end">
+                <button
+                  onClick={() => setViewingAttendanceFor(null)}
+                  className="px-6 py-2 rounded-lg bg-slate-800 text-white font-medium hover:bg-slate-700 transition-colors text-sm"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-         </div>
-      )}
+          </div>
+        )
+      }
 
       {/* --- DAY ACTION MODAL --- */}
-      {selectedDayAction && (
+      {
+        selectedDayAction && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                      <div>
-                          <h3 className="font-bold text-slate-800">Set Status</h3>
-                          <p className="text-xs text-slate-500">{selectedDayAction.formattedDate}</p>
-                      </div>
-                      <button onClick={() => setSelectedDayAction(null)}><X size={20} className="text-slate-400" /></button>
-                  </div>
-                  <div className="p-4 space-y-2">
-                      <button 
-                          onClick={() => applyStatus('HOLIDAY')}
-                          className="w-full p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-bold flex items-center gap-3 hover:bg-amber-100 transition-colors"
-                      >
-                          <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center text-amber-700"><Palmtree size={16}/></div>
-                          <div>
-                              <div className="text-sm">Mark as Holiday/Leave</div>
-                              <div className="text-[10px] opacity-70 font-normal">No salary deduction (0 Days)</div>
-                          </div>
-                      </button>
-
-                      <button 
-                          onClick={() => applyStatus('ABSENT')}
-                          className="w-full p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 font-bold flex items-center gap-3 hover:bg-red-100 transition-colors"
-                      >
-                          <div className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center text-red-700"><AlertCircle size={16}/></div>
-                          <div>
-                              <div className="text-sm">Mark Absent (Standard)</div>
-                              <div className="text-[10px] opacity-70 font-normal">Salary deduction for 1 Day</div>
-                          </div>
-                      </button>
-
-                      <button 
-                          onClick={() => applyStatus('PENALTY_2_DAYS')}
-                          className="w-full p-3 rounded-lg border border-purple-200 bg-purple-50 text-purple-800 font-bold flex items-center gap-3 hover:bg-purple-100 transition-colors"
-                      >
-                          <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700"><AlertTriangle size={16}/></div>
-                          <div>
-                              <div className="text-sm">Mark Penalty</div>
-                              <div className="text-[10px] opacity-70 font-normal">Salary deduction for 2 Days</div>
-                          </div>
-                      </button>
-
-                      <div className="border-t border-slate-100 my-2"></div>
-
-                      <button 
-                          onClick={() => applyStatus(null)}
-                          className="w-full p-3 rounded-lg border border-slate-200 bg-white text-slate-600 font-medium flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
-                      >
-                          Clear Status / Reset
-                      </button>
-                  </div>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800">Set Status</h3>
+                  <p className="text-xs text-slate-500">{selectedDayAction.formattedDate}</p>
+                </div>
+                <button onClick={() => setSelectedDayAction(null)}><X size={20} className="text-slate-400" /></button>
               </div>
+              <div className="p-4 space-y-2">
+                <button
+                  onClick={() => applyStatus('HOLIDAY')}
+                  className="w-full p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-bold flex items-center gap-3 hover:bg-amber-100 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center text-amber-700"><Palmtree size={16} /></div>
+                  <div>
+                    <div className="text-sm">Mark as Holiday/Leave</div>
+                    <div className="text-[10px] opacity-70 font-normal">No salary deduction (0 Days)</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => applyStatus('ABSENT')}
+                  className="w-full p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 font-bold flex items-center gap-3 hover:bg-red-100 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center text-red-700"><AlertCircle size={16} /></div>
+                  <div>
+                    <div className="text-sm">Mark Absent (Standard)</div>
+                    <div className="text-[10px] opacity-70 font-normal">Salary deduction for 1 Day</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => applyStatus('PENALTY_2_DAYS')}
+                  className="w-full p-3 rounded-lg border border-purple-200 bg-purple-50 text-purple-800 font-bold flex items-center gap-3 hover:bg-purple-100 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700"><AlertTriangle size={16} /></div>
+                  <div>
+                    <div className="text-sm">Mark Penalty</div>
+                    <div className="text-[10px] opacity-70 font-normal">Salary deduction for 2 Days</div>
+                  </div>
+                </button>
+
+                <div className="border-t border-slate-100 my-2"></div>
+
+                <button
+                  onClick={() => applyStatus(null)}
+                  className="w-full p-3 rounded-lg border border-slate-200 bg-white text-slate-600 font-medium flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
+                >
+                  Clear Status / Reset
+                </button>
+              </div>
+            </div>
           </div>
-      )}
+        )
+      }
 
       {/* --- PHOTO PREVIEW OVERLAY --- */}
-      {previewImage && (
-        <div 
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setPreviewImage(null)}
-        >
-           <div className="relative max-w-lg w-full flex flex-col items-center">
-              <button 
+      {
+        previewImage && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in"
+            onClick={() => setPreviewImage(null)}
+          >
+            <div className="relative max-w-lg w-full flex flex-col items-center">
+              <button
                 onClick={() => setPreviewImage(null)}
                 className="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors p-2"
               >
                 <X size={32} />
               </button>
-              <img 
-                src={previewImage} 
-                alt="Attendance Proof" 
+              <img
+                src={previewImage}
+                alt="Attendance Proof"
                 className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-white/10"
-                onClick={(e) => e.stopPropagation()} 
+                onClick={(e) => e.stopPropagation()}
               />
-           </div>
-        </div>
-      )}
-    </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };
 
