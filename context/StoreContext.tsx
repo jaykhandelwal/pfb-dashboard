@@ -301,7 +301,8 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     createdByName: data.created_by_name || data.createdByName,
     status: data.status || 'PENDING',
     approvedBy: data.approved_by || data.approvedBy,
-    rejectedReason: data.rejected_reason || data.rejectedReason
+    rejectedReason: data.rejected_reason || data.rejectedReason,
+    billUrl: data.bill_url || data.billUrl
 });
 
 const mapLedgerEntryToDB = (e: LedgerEntry) => ({
@@ -318,8 +319,10 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     created_by_name: e.createdByName,
     status: e.status,
     approved_by: e.approvedBy,
-    rejected_reason: e.rejectedReason
+    rejected_reason: e.rejectedReason,
+    bill_url: e.billUrl
 });
+
 
 const mapLedgerLogFromDB = (data: any): LedgerLog => ({
     id: data.id,

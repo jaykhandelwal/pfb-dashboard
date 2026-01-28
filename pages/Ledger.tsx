@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar, CheckCircle2, XCircle, Clock, History, FileText } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar, CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { LedgerEntry, LedgerEntryType, LedgerCategory } from '../types';
+import { uploadImageToBunny } from '../services/bunnyStorage';
+import { compressImage } from '../services/imageUtils';
 
 const getLocalISOString = (date: Date = new Date()): string => {
     const offset = date.getTimezoneOffset() * 60000;
@@ -37,6 +39,11 @@ const Ledger: React.FC = () => {
 
     // Logs state
     const [viewingLogsFor, setViewingLogsFor] = useState<string | 'ALL' | null>(null);
+
+    // Bill Upload State
+    const [billFile, setBillFile] = useState<File | null>(null);
+    const [tempBillPreview, setTempBillPreview] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     React.useEffect(() => {
         if (viewingLogsFor) {
@@ -74,13 +81,57 @@ const Ledger: React.FC = () => {
             description: '',
             paymentMethod: 'CASH',
         });
+        setBillFile(null);
+        setTempBillPreview(null);
         setEditingEntry(null);
         setShowForm(false);
+    };
+
+    const handleEdit = (entry: LedgerEntry) => {
+        setEditingEntry(entry);
+        setFormData({
+            date: entry.date,
+            branchId: entry.branchId,
+            entryType: entry.entryType,
+            category: entry.category,
+            amount: entry.amount.toString(),
+            description: entry.description,
+            paymentMethod: entry.paymentMethod
+        });
+        setBillFile(null);
+        setTempBillPreview(entry.billUrl || null);
+        setShowForm(true);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.amount || !formData.description) return;
+
+        setIsUploading(true);
+        let billUrl = editingEntry?.billUrl;
+
+        // Upload Bill if new file selected
+        if (billFile) {
+            try {
+                // Convert File to base64 for upload service
+                const reader = new FileReader();
+                reader.readAsDataURL(billFile);
+                await new Promise<void>((resolve) => {
+                    reader.onloadend = async () => {
+                        const base64 = reader.result as string;
+                        try {
+                            billUrl = await uploadImageToBunny(base64, 'ledger');
+                            resolve();
+                        } catch (err) {
+                            console.error("Bill upload failed", err);
+                            resolve();
+                        }
+                    };
+                });
+            } catch (error) {
+                console.error("File reading failed", error);
+            }
+        }
 
         const entryData = {
             date: formData.date,
@@ -93,6 +144,7 @@ const Ledger: React.FC = () => {
             paymentMethod: formData.paymentMethod,
             createdBy: currentUser?.id || '',
             createdByName: currentUser?.name || 'Unknown',
+            billUrl: billUrl
         };
 
         if (editingEntry) {
@@ -101,22 +153,11 @@ const Ledger: React.FC = () => {
             await addLedgerEntry(entryData);
         }
 
+        setIsUploading(false);
         resetForm();
     };
 
-    const handleEdit = (entry: LedgerEntry) => {
-        setFormData({
-            date: entry.date,
-            branchId: entry.branchId,
-            entryType: entry.entryType,
-            category: entry.category,
-            amount: entry.amount.toString(),
-            description: entry.description,
-            paymentMethod: entry.paymentMethod,
-        });
-        setEditingEntry(entry);
-        setShowForm(true);
-    };
+
 
     const handleDelete = async (id: string) => {
         if (confirm('Are you sure you want to delete this entry?')) {
@@ -339,6 +380,11 @@ const Ledger: React.FC = () => {
                                                     </>
                                                 )}
 
+                                                {entry.billUrl && (
+                                                    <button onClick={() => setViewingLogsFor(entry.billUrl!)} className="p-1.5 text-purple-400 hover:text-purple-600 transition-colors" title="View Bill">
+                                                        <ImageIcon size={14} />
+                                                    </button>
+                                                )}
                                                 <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors" title="Edit">
                                                     <Edit2 size={14} />
                                                 </button>
@@ -531,6 +577,40 @@ const Ledger: React.FC = () => {
                                 />
                             </div>
 
+                            {/* Bill Photo Upload */}
+                            <div>
+                                <label className="block text-xs font-bold text-[#403424]/60 uppercase tracking-wide mb-1.5">
+                                    Bill / Receipt Photo
+                                </label>
+                                <div className="border border-dashed border-[#403424]/20 rounded-lg p-4 bg-[#403424]/5 hover:bg-[#403424]/10 transition-colors text-center cursor-pointer relative">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setBillFile(file);
+                                                setTempBillPreview(URL.createObjectURL(file));
+                                            }
+                                        }}
+                                    />
+                                    {tempBillPreview ? (
+                                        <div className="relative h-32 mx-auto">
+                                            <img src={tempBillPreview} alt="Bill Preview" className="h-full mx-auto object-contain rounded" />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity text-white rounded">
+                                                <span className="text-xs font-bold">Change Photo</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-2 py-2">
+                                            <UploadCloud size={24} className="text-[#403424]/40" />
+                                            <span className="text-sm font-medium text-[#403424]/60">Click to upload or take photo</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Actions */}
                             <div className="flex gap-3 pt-2">
                                 <button
@@ -549,6 +629,15 @@ const Ledger: React.FC = () => {
                             </div>
                         </form>
                     </div>
+                </div>
+            )}
+            {/* Image Preview Modal */}
+            {viewingLogsFor && viewingLogsFor.startsWith('http') && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4" onClick={() => setViewingLogsFor(null)}>
+                    <img src={viewingLogsFor} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+                    <button className="absolute top-4 right-4 text-white hover:text-red-400" onClick={() => setViewingLogsFor(null)}>
+                        <X size={32} />
+                    </button>
                 </div>
             )}
         </div>

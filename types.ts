@@ -308,6 +308,7 @@ export interface LedgerEntry {
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
   approvedBy?: string;
   rejectedReason?: string;
+  billUrl?: string;
 }
 
 export interface LedgerLog {
