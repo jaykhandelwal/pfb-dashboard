@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw } from 'lucide-react';
-import { triggerCoolifyDeployment, getLatestDeploymentStatus } from '../services/coolifyService';
+import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 
 const AppSettings: React.FC = () => {
    const { branches, appSettings, updateAppSetting, isLoading } = useStore();
@@ -19,7 +19,7 @@ const AppSettings: React.FC = () => {
    const [coolifyTag, setCoolifyTag] = useState(appSettings.coolify_deployment_tag_or_uuid || '');
    const [showToken, setShowToken] = useState(false);
    const [isDeploying, setIsDeploying] = useState(false);
-   const [latestDeployment, setLatestDeployment] = useState<any>(null);
+   const [recentDeployments, setRecentDeployments] = useState<any[]>([]);
    const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
    const handleToggle = async (key: string) => {
@@ -70,8 +70,8 @@ const AppSettings: React.FC = () => {
 
       setIsCheckingStatus(true);
       try {
-         const status = await getLatestDeploymentStatus(coolifyUrl, coolifyToken, coolifyTag);
-         setLatestDeployment(status);
+         const deployments = await getRecentDeployments(coolifyUrl, coolifyToken, coolifyTag);
+         setRecentDeployments(deployments);
       } catch (error) {
          console.error('Status check failed:', error);
       } finally {
@@ -454,32 +454,47 @@ const AppSettings: React.FC = () => {
                                  )}
                               </button>
 
-                              {latestDeployment && (
-                                 <div className="text-right">
-                                    <div className="flex items-center gap-2 justify-end mb-1">
-                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Latest Status</span>
-                                       <button
-                                          onClick={checkStatus}
-                                          disabled={isCheckingStatus}
-                                          className="p-1 hover:bg-slate-100 rounded text-slate-400 transition-colors"
-                                       >
-                                          <RefreshCw size={12} className={isCheckingStatus ? 'animate-spin' : ''} />
-                                       </button>
-                                    </div>
-                                    <div className={`text-sm font-bold px-3 py-1 rounded-full border ${latestDeployment.status === 'finished' || latestDeployment.status === 'success'
-                                       ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                       : latestDeployment.status === 'failed' || latestDeployment.status === 'error'
-                                          ? 'bg-red-50 text-red-600 border-red-100'
-                                          : 'bg-amber-50 text-amber-600 border-amber-100'
-                                       }`}>
-                                       {latestDeployment.status?.toUpperCase() || 'UNKNOWN'}
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-1">
-                                       {new Date(latestDeployment.created_at).toLocaleString()}
-                                    </p>
-                                 </div>
-                              )}
+                              <button
+                                 onClick={checkStatus}
+                                 disabled={isCheckingStatus || !coolifyUrl || !coolifyToken || !coolifyTag}
+                                 className="flex items-center gap-2 text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                              >
+                                 <RefreshCw size={16} className={isCheckingStatus ? 'animate-spin' : ''} />
+                                 Check Status
+                              </button>
                            </div>
+
+                           {/* Deployment History */}
+                           {recentDeployments.length > 0 && (
+                              <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+                                 <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Deployments</h4>
+                                 </div>
+                                 <div className="divide-y divide-slate-100">
+                                    {recentDeployments.map((deployment, index) => (
+                                       <div key={deployment.id || index} className="flex items-center justify-between px-4 py-3">
+                                          <div className="flex items-center gap-3">
+                                             <div className={`w-2.5 h-2.5 rounded-full ${deployment.status === 'finished' || deployment.status === 'success'
+                                                   ? 'bg-emerald-500'
+                                                   : deployment.status === 'failed' || deployment.status === 'error'
+                                                      ? 'bg-red-500'
+                                                      : deployment.status === 'in_progress' || deployment.status === 'queued'
+                                                         ? 'bg-amber-500 animate-pulse'
+                                                         : 'bg-slate-400'
+                                                }`}></div>
+                                             <span className="text-sm font-medium text-slate-700">
+                                                {deployment.status?.toUpperCase() || 'UNKNOWN'}
+                                             </span>
+                                          </div>
+                                          <span className="text-xs text-slate-400">
+                                             {new Date(deployment.created_at).toLocaleString()}
+                                          </span>
+                                       </div>
+                                    ))}
+                                 </div>
+                              </div>
+                           )}
+
                            <p className="text-[10px] text-slate-400 text-center">
                               Using Coolify API v1. Deployment progress can be tracked in your Coolify dashboard.
                            </p>

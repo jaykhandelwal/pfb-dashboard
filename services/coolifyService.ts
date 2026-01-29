@@ -33,17 +33,17 @@ export const triggerCoolifyDeployment = async (
     return response.json();
 };
 
-export const getLatestDeploymentStatus = async (
+export const getRecentDeployments = async (
     instanceUrl: string,
     apiToken: string,
     uuid: string
-) => {
+): Promise<any[]> => {
     if (!instanceUrl || !apiToken || !uuid) {
         throw new Error('Missing Coolify configuration');
     }
 
     const baseUrl = instanceUrl.replace(/\/$/, '');
-    const url = `${baseUrl}/api/v1/deployments?uuid=${uuid}&take=1`;
+    const url = `${baseUrl}/api/v1/applications/${uuid}/deployments?take=3`;
 
     const response = await fetch(url, {
         method: 'GET',
@@ -58,5 +58,5 @@ export const getLatestDeploymentStatus = async (
     }
 
     const deployments = await response.json();
-    return deployments[0] || null;
+    return Array.isArray(deployments) ? deployments : [];
 };
