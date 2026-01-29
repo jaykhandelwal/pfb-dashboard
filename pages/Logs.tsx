@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType } from '../types';
-import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive, Clock, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive, Clock, ChevronDown, ChevronRight, AlertTriangle, ArrowUpDown } from 'lucide-react';
 
 interface GroupedTransaction {
   id: string;
@@ -21,18 +21,6 @@ interface GroupedTransaction {
   deletedBy?: string;
 }
 
-interface DateBranchGroup {
-  key: string;
-  date: string;
-  branchId: string;
-  branchName: string;
-  hasCheckOut: boolean;
-  hasReturn: boolean;
-  checkOuts: GroupedTransaction[];
-  returns: GroupedTransaction[];
-  status: 'complete' | 'missing_return' | 'only_return';
-}
-
 const Logs: React.FC = () => {
   const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch } = useStore();
   const { currentUser } = useAuth();
@@ -43,6 +31,7 @@ const Logs: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [dataScope, setDataScope] = useState<'ACTIVE' | 'DELETED'>('ACTIVE');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [sortMode, setSortMode] = useState<'FOR_DATE' | 'LOGGED_ON'>('FOR_DATE');
 
   // Check if current user is Admin
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -108,125 +97,66 @@ const Logs: React.FC = () => {
       }
     });
 
-    // Convert to array and sort
+    // Convert to array and sort based on current sort mode
+    // For deleted transactions, always use LOGGED_ON sorting
+    const effectiveSortMode = dataScope === 'DELETED' ? 'LOGGED_ON' : sortMode;
+
     return Object.values(groups).sort((a, b) => {
-      // 1. Sort by Operational Date (Descending: Newest dates first)
-      const dateComparison = b.date.localeCompare(a.date);
-      if (dateComparison !== 0) return dateComparison;
-
-      // 2. Sort by Creation Time (Descending: Newest entry within that day first)
-      return b.timestamp - a.timestamp;
+      if (effectiveSortMode === 'LOGGED_ON') {
+        // Sort by timestamp (logged on date) descending
+        return b.timestamp - a.timestamp;
+      } else {
+        // Sort by Operational Date (for date) descending, then by timestamp
+        const dateComparison = b.date.localeCompare(a.date);
+        if (dateComparison !== 0) return dateComparison;
+        return b.timestamp - a.timestamp;
+      }
     });
-  }, [sourceTransactions, skus, branches, filterType]);
+  }, [sourceTransactions, skus, branches, filterType, sortMode, dataScope]);
 
-  // Group by Date + Branch for checkout/return matching
-  const dateBranchGroups = useMemo(() => {
-    const showGrouping = filterType === 'ALL' || filterType === TransactionType.CHECK_OUT || filterType === TransactionType.CHECK_IN;
-    if (!showGrouping) return null;
+  // Create a lookup map for checkout/return status by date+branch
+  // Used to determine if a checkout is missing its return
+  const transactionStatusMap = useMemo(() => {
+    const statusMap: Record<string, 'complete' | 'missing_return' | 'only_return'> = {};
 
-    const groups: Record<string, DateBranchGroup> = {};
+    // Build a map of date+branch -> { hasCheckOut, hasReturn }
+    const presenceMap: Record<string, { hasCheckOut: boolean; hasReturn: boolean }> = {};
 
     groupedTransactions.forEach(t => {
-      // Only group CHECK_OUT and CHECK_IN
       if (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.CHECK_IN) return;
 
       const key = `${t.date}-${t.branchId}`;
-
-      if (!groups[key]) {
-        groups[key] = {
-          key,
-          date: t.date,
-          branchId: t.branchId,
-          branchName: getBranchName(t.branchId),
-          hasCheckOut: false,
-          hasReturn: false,
-          checkOuts: [],
-          returns: [],
-          status: 'missing_return'
-        };
+      if (!presenceMap[key]) {
+        presenceMap[key] = { hasCheckOut: false, hasReturn: false };
       }
 
       if (t.type === TransactionType.CHECK_OUT) {
-        groups[key].hasCheckOut = true;
-        groups[key].checkOuts.push(t);
+        presenceMap[key].hasCheckOut = true;
       } else if (t.type === TransactionType.CHECK_IN) {
-        groups[key].hasReturn = true;
-        groups[key].returns.push(t);
+        presenceMap[key].hasReturn = true;
       }
     });
 
-    // Update status for each group
-    Object.values(groups).forEach(g => {
-      if (g.hasCheckOut && g.hasReturn) {
-        g.status = 'complete';
-      } else if (g.hasCheckOut && !g.hasReturn) {
-        g.status = 'missing_return';
+    // Convert presence to status
+    Object.entries(presenceMap).forEach(([key, presence]) => {
+      if (presence.hasCheckOut && presence.hasReturn) {
+        statusMap[key] = 'complete';
+      } else if (presence.hasCheckOut && !presence.hasReturn) {
+        statusMap[key] = 'missing_return';
       } else {
-        g.status = 'only_return';
+        statusMap[key] = 'only_return';
       }
     });
 
-    // Sort by date descending
-    return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
-  }, [groupedTransactions, filterType]);
+    return statusMap;
+  }, [groupedTransactions]);
 
-  // Get transactions that are not checkout/return (for mixed view)
-  const otherTransactions = useMemo(() => {
-    if (filterType !== 'ALL') return [];
-
-    // Group non-checkout/return transactions separately
-    const groups: Record<string, GroupedTransaction> = {};
-
-    sourceTransactions.forEach(t => {
-      // Only include non-checkout/return types
-      if (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.CHECK_IN) return;
-
-      const branchId = t.branchId;
-      const key = t.batchId || `${t.timestamp}-${branchId}-${t.type}`;
-
-      if (!groups[key]) {
-        groups[key] = {
-          id: key,
-          batchId: t.batchId,
-          date: t.date,
-          timestamp: t.timestamp,
-          branchId: branchId,
-          type: t.type,
-          items: [],
-          totalQty: 0,
-          hasImages: false,
-          imageUrls: [],
-          userName: t.userName,
-          deletedAt: (t as any).deletedAt,
-          deletedBy: (t as any).deletedBy
-        };
-      }
-
-      groups[key].items.push({
-        skuName: getSkuName(t.skuId),
-        qty: t.quantityPieces
-      });
-      groups[key].totalQty += t.quantityPieces;
-
-      if (t.imageUrls && t.imageUrls.length > 0) {
-        groups[key].hasImages = true;
-        t.imageUrls.forEach(url => {
-          if (!groups[key].imageUrls.includes(url)) {
-            groups[key].imageUrls.push(url);
-          }
-        });
-      } else if ((t as any).imageUrl) {
-        groups[key].hasImages = true;
-        groups[key].imageUrls.push((t as any).imageUrl);
-      }
-    });
-
-    return Object.values(groups).sort((a, b) => {
-      const dateComparison = b.date.localeCompare(a.date);
-      if (dateComparison !== 0) return dateComparison;
-      return b.timestamp - a.timestamp;
-    });
-  }, [sourceTransactions, skus, filterType]);
+  // Helper to get status for a transaction (for checkout/return highlighting)
+  const getTransactionStatus = (t: GroupedTransaction): 'complete' | 'missing_return' | 'only_return' | null => {
+    if (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.CHECK_IN) return null;
+    const key = `${t.date}-${t.branchId}`;
+    return transactionStatusMap[key] || null;
+  };
 
   // Specific data for Gallery View (Only Wastage with Images)
   const wastageGalleryItems = useMemo(() => {
@@ -432,9 +362,6 @@ const Logs: React.FC = () => {
     );
   };
 
-  // Check if we should show the grouped view
-  const showGroupedView = dateBranchGroups && dateBranchGroups.length > 0 && (filterType === 'ALL' || filterType === TransactionType.CHECK_OUT || filterType === TransactionType.CHECK_IN);
-
   return (
     <div className="pb-10 relative">
       <div className="mb-6 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
@@ -526,6 +453,29 @@ const Logs: React.FC = () => {
             </div>
           )}
 
+          {/* Sort Mode Toggle - Only for active, list view */}
+          {viewMode === 'LIST' && dataScope === 'ACTIVE' && (
+            <>
+              <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block"></div>
+              <div className="flex bg-slate-200 p-1 rounded-lg">
+                <button
+                  onClick={() => setSortMode('FOR_DATE')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${sortMode === 'FOR_DATE' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                  <Calendar size={14} /> For Date
+                </button>
+                <button
+                  onClick={() => setSortMode('LOGGED_ON')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${sortMode === 'LOGGED_ON' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                  <Clock size={14} /> Logged On
+                </button>
+              </div>
+            </>
+          )}
+
           {/* Expand/Collapse All */}
           {viewMode === 'LIST' && groupedTransactions.length > 0 && (
             <div className="flex gap-1">
@@ -553,20 +503,12 @@ const Logs: React.FC = () => {
         </div>
       )}
 
-      {/* Legend for grouped view */}
-      {filterType === 'ALL' && dataScope === 'ACTIVE' && (
+      {/* Legend for grouped view - Only show when using FOR_DATE mode and active */}
+      {sortMode === 'FOR_DATE' && dataScope === 'ACTIVE' && viewMode === 'LIST' && (
         <div className="mb-4 flex flex-wrap gap-4 text-xs">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-emerald-100 border-2 border-emerald-500"></div>
-            <span className="text-slate-600">Checkout + Return Complete</span>
-          </div>
-          <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-red-100 border-2 border-red-400"></div>
-            <span className="text-slate-600">Return Missing</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-amber-100 border-2 border-amber-400"></div>
-            <span className="text-slate-600">Return Only (No Checkout)</span>
+            <span className="text-slate-600">Return Missing (Checkout without Return)</span>
           </div>
         </div>
       )}
@@ -587,196 +529,8 @@ const Logs: React.FC = () => {
                 </button>
               )}
             </div>
-          ) : filterType === 'ALL' ? (
-            // Mixed view: Show grouped checkout/returns at top, then other transactions
-            <div className="divide-y divide-slate-200">
-              {/* Grouped Checkout/Return Section */}
-              {dateBranchGroups && dateBranchGroups.length > 0 && (
-                <>
-                  {dateBranchGroups.map(group => {
-                    const isComplete = group.status === 'complete';
-                    const isMissingReturn = group.status === 'missing_return';
-
-                    return (
-                      <div key={group.key} className={`${isMissingReturn ? 'bg-red-50/30' : isComplete ? 'bg-emerald-50/20' : 'bg-amber-50/30'}`}>
-                        {/* Group Header */}
-                        <div className={`px-4 py-3 border-l-4 ${isMissingReturn ? 'border-l-red-400 bg-red-50' : isComplete ? 'border-l-emerald-500 bg-emerald-50/50' : 'border-l-amber-400 bg-amber-50'}`}>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                <Calendar size={14} className="text-slate-400" />
-                                <span className="font-bold text-slate-800">
-                                  {new Date(group.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                                </span>
-                              </div>
-                              <span className="text-slate-300">•</span>
-                              <div className="flex items-center gap-2">
-                                <Store size={14} className="text-slate-400" />
-                                <span className="font-semibold text-slate-700">{group.branchName}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {isComplete ? (
-                                <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
-                                  <CheckCircle2 size={12} />
-                                  Complete
-                                </span>
-                              ) : isMissingReturn ? (
-                                <span className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-100 px-2 py-1 rounded-full">
-                                  <AlertTriangle size={12} />
-                                  Return Missing
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
-                                  <AlertTriangle size={12} />
-                                  Return Only
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Transactions Table for this group */}
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50/70 border-b border-slate-100 text-slate-500 text-xs uppercase font-semibold">
-                              <tr>
-                                <th className="p-3 w-40">Date & Time</th>
-                                <th className="p-3 w-24">User</th>
-                                <th className="p-3 w-32">Type</th>
-                                {dataScope === 'DELETED' && <th className="p-3 w-32 text-red-600">Deleted By</th>}
-                                <th className="p-3 w-36">Branch</th>
-                                <th className="p-3">Items</th>
-                                <th className="p-3 text-right w-20">Total</th>
-                                {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-3 text-center w-14"></th>}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.checkOuts.map(t => renderTransactionRow(t, group.status))}
-                              {group.returns.map(t => renderTransactionRow(t, group.status))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* Other transactions (Wastage, Restock, etc.) */}
-              {otherTransactions.length > 0 && (
-                <div>
-                  <div className="px-4 py-3 bg-slate-100 border-l-4 border-l-slate-400">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-700">Other Transactions</span>
-                      <span className="text-xs text-slate-500">(Wastage, Stock In, Adjustments)</span>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-50/70 border-b border-slate-100 text-slate-500 text-xs uppercase font-semibold">
-                        <tr>
-                          <th className="p-3 w-40">Date & Time</th>
-                          <th className="p-3 w-24">User</th>
-                          <th className="p-3 w-32">Type</th>
-                          {dataScope === 'DELETED' && <th className="p-3 w-32 text-red-600">Deleted By</th>}
-                          <th className="p-3 w-36">Branch</th>
-                          <th className="p-3">Items</th>
-                          <th className="p-3 text-right w-20">Total</th>
-                          {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-3 text-center w-14"></th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {otherTransactions.map(t => renderTransactionRow(t))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state if nothing at all */}
-              {(!dateBranchGroups || dateBranchGroups.length === 0) && otherTransactions.length === 0 && (
-                <div className="p-12 text-center flex flex-col items-center justify-center text-slate-400">
-                  <Filter size={48} className="mb-4 text-slate-200" />
-                  <p>No transactions found.</p>
-                </div>
-              )}
-            </div>
-          ) : showGroupedView ? (
-            // Grouped View for CHECK_OUT or CHECK_IN filter only
-            <div className="divide-y divide-slate-200">
-              {dateBranchGroups?.map(group => {
-                const isComplete = group.status === 'complete';
-                const isMissingReturn = group.status === 'missing_return';
-
-                return (
-                  <div key={group.key} className={`${isMissingReturn ? 'bg-red-50/30' : isComplete ? 'bg-emerald-50/20' : 'bg-amber-50/30'}`}>
-                    {/* Group Header */}
-                    <div className={`px-4 py-3 border-l-4 ${isMissingReturn ? 'border-l-red-400 bg-red-50' : isComplete ? 'border-l-emerald-500 bg-emerald-50/50' : 'border-l-amber-400 bg-amber-50'}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <Calendar size={14} className="text-slate-400" />
-                            <span className="font-bold text-slate-800">
-                              {new Date(group.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                            </span>
-                          </div>
-                          <span className="text-slate-300">•</span>
-                          <div className="flex items-center gap-2">
-                            <Store size={14} className="text-slate-400" />
-                            <span className="font-semibold text-slate-700">{group.branchName}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {isComplete ? (
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">
-                              <CheckCircle2 size={12} />
-                              Complete
-                            </span>
-                          ) : isMissingReturn ? (
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-100 px-2 py-1 rounded-full">
-                              <AlertTriangle size={12} />
-                              Return Missing
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
-                              <AlertTriangle size={12} />
-                              Return Only
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Transactions Table for this group */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50/70 border-b border-slate-100 text-slate-500 text-xs uppercase font-semibold">
-                          <tr>
-                            <th className="p-3 w-40">Date & Time</th>
-                            <th className="p-3 w-24">User</th>
-                            <th className="p-3 w-32">Type</th>
-                            {dataScope === 'DELETED' && <th className="p-3 w-32 text-red-600">Deleted By</th>}
-                            <th className="p-3 w-36">Branch</th>
-                            <th className="p-3">Items</th>
-                            <th className="p-3 text-right w-20">Total</th>
-                            {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-3 text-center w-14"></th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.checkOuts.map(t => renderTransactionRow(t, group.status))}
-                          {group.returns.map(t => renderTransactionRow(t, group.status))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           ) : (
-            // Standard flat list view (for filtered types like Wastage, Restock, etc.)
+            // Unified flat table view - all transactions sorted together
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase font-semibold">
@@ -785,14 +539,18 @@ const Logs: React.FC = () => {
                     <th className="p-3 w-24">User</th>
                     <th className="p-3 w-32">Type</th>
                     {dataScope === 'DELETED' && <th className="p-3 w-32 text-red-600">Deleted By</th>}
-                    <th className="p-3 w-36">Source/Dest</th>
-                    <th className="p-3">Items Summary</th>
+                    <th className="p-3 w-36">Branch</th>
+                    <th className="p-3">Items</th>
                     <th className="p-3 text-right w-20">Total</th>
                     {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-3 text-center w-14"></th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {groupedTransactions.map(group => renderTransactionRow(group))}
+                  {groupedTransactions.map(group => {
+                    // Get status for checkout/return transactions (for highlighting)
+                    const status = getTransactionStatus(group);
+                    return renderTransactionRow(group, status);
+                  })}
                 </tbody>
               </table>
             </div>
