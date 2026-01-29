@@ -173,10 +173,60 @@ const Logs: React.FC = () => {
   // Get transactions that are not checkout/return (for mixed view)
   const otherTransactions = useMemo(() => {
     if (filterType !== 'ALL') return [];
-    return groupedTransactions.filter(t =>
-      t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.CHECK_IN
-    );
-  }, [groupedTransactions, filterType]);
+
+    // Group non-checkout/return transactions separately
+    const groups: Record<string, GroupedTransaction> = {};
+
+    sourceTransactions.forEach(t => {
+      // Only include non-checkout/return types
+      if (t.type === TransactionType.CHECK_OUT || t.type === TransactionType.CHECK_IN) return;
+
+      const branchId = t.branchId;
+      const key = t.batchId || `${t.timestamp}-${branchId}-${t.type}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          id: key,
+          batchId: t.batchId,
+          date: t.date,
+          timestamp: t.timestamp,
+          branchId: branchId,
+          type: t.type,
+          items: [],
+          totalQty: 0,
+          hasImages: false,
+          imageUrls: [],
+          userName: t.userName,
+          deletedAt: (t as any).deletedAt,
+          deletedBy: (t as any).deletedBy
+        };
+      }
+
+      groups[key].items.push({
+        skuName: getSkuName(t.skuId),
+        qty: t.quantityPieces
+      });
+      groups[key].totalQty += t.quantityPieces;
+
+      if (t.imageUrls && t.imageUrls.length > 0) {
+        groups[key].hasImages = true;
+        t.imageUrls.forEach(url => {
+          if (!groups[key].imageUrls.includes(url)) {
+            groups[key].imageUrls.push(url);
+          }
+        });
+      } else if ((t as any).imageUrl) {
+        groups[key].hasImages = true;
+        groups[key].imageUrls.push((t as any).imageUrl);
+      }
+    });
+
+    return Object.values(groups).sort((a, b) => {
+      const dateComparison = b.date.localeCompare(a.date);
+      if (dateComparison !== 0) return dateComparison;
+      return b.timestamp - a.timestamp;
+    });
+  }, [sourceTransactions, skus, filterType]);
 
   // Specific data for Gallery View (Only Wastage with Images)
   const wastageGalleryItems = useMemo(() => {
@@ -266,24 +316,30 @@ const Logs: React.FC = () => {
         className={`transition-colors border-b border-slate-100 ${rowBgClass}`}
       >
         {/* Expand Toggle + Date Column */}
-        <td className="p-3 whitespace-nowrap align-middle">
-          <div className="flex items-center gap-2">
+        <td className="p-3 whitespace-nowrap align-top">
+          <div className="flex items-start gap-2">
             <button
               onClick={() => toggleExpand(group.id)}
-              className="p-1 hover:bg-slate-200 rounded transition-colors"
+              className="p-1 hover:bg-slate-200 rounded transition-colors mt-1"
             >
               {isExpanded ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-400" />}
             </button>
             <div className="flex flex-col">
-              <span className="font-semibold text-slate-800 text-sm">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">For Date</span>
+              <span className="font-bold text-slate-800 text-sm">
                 {new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
               </span>
-              {isExpanded && (
-                <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                  <Clock size={8} />
+
+              <div className="flex flex-col mt-2 pt-2 border-t border-slate-100">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide flex items-center gap-1">
+                  <Clock size={8} /> Logged On
+                </span>
+                <span className="text-xs text-slate-500">
+                  {new Date(group.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  <span className="text-slate-300 mx-1">|</span>
                   {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
-              )}
+              </div>
             </div>
           </div>
         </td>
