@@ -43,7 +43,8 @@ export const getRecentDeployments = async (
     }
 
     const baseUrl = instanceUrl.replace(/\/$/, '');
-    const url = `${baseUrl}/api/v1/applications/${uuid}/deployments?take=3`;
+    // Using generic deployments endpoint with uuid query filter as the application-specific endpoint (path-based) returned 404
+    const url = `${baseUrl}/api/v1/deployments?uuid=${uuid}&take=3`;
 
     const response = await fetch(url, {
         method: 'GET',
