@@ -182,8 +182,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLedgerAuditor: u.is_ledger_auditor || u.isLedgerAuditor || false
     };
     // Runtime patch for admins to get new permissions immediately
-    if (user.role === 'ADMIN' && !user.permissions.includes('MANAGE_TASKS')) {
-      user.permissions.push('MANAGE_TASKS');
+    if (user.role === 'ADMIN') {
+      const essentialPermissions: Permission[] = ['MANAGE_TASKS', 'MANAGE_LEDGER', 'MANAGE_MEMBERSHIP'];
+      essentialPermissions.forEach(p => {
+        if (!user.permissions.includes(p)) {
+          user.permissions.push(p);
+        }
+      });
     }
     return user;
   };
@@ -235,7 +240,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         default_page: newUser.defaultPage,
         is_ledger_auditor: newUser.isLedgerAuditor
       });
-      if (!error) {
+      if (error) {
+        console.error("Error adding user to Supabase:", error);
+        alert("Failed to add user to database. Please check console.");
+      } else {
         setUsers(prev => [...prev, newUser]);
       }
     } else {
@@ -256,7 +264,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         is_ledger_auditor: updatedUser.isLedgerAuditor
       }).eq('id', updatedUser.id);
 
-      if (!error) {
+      if (error) {
+        console.error("Error updating user in Supabase:", error);
+        alert("Failed to save user changes to database. Please check console.");
+      } else {
         updateLocalState(updatedUser);
       }
     } else {
@@ -280,7 +291,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (isSupabaseConfigured()) {
       const { error } = await supabase.from('users').delete().eq('id', id);
-      if (!error) {
+      if (error) {
+        console.error("Error deleting user from Supabase:", error);
+        alert("Failed to delete user from database.");
+      } else {
         setUsers(prev => prev.filter(u => u.id !== id));
       }
     } else {

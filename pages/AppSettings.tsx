@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff } from 'lucide-react';
-import { triggerCoolifyDeployment } from '../services/coolifyService';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { triggerCoolifyDeployment, getLatestDeploymentStatus } from '../services/coolifyService';
 
 const AppSettings: React.FC = () => {
-   const { appSettings, updateAppSetting, isLoading } = useStore();
+   const { branches, appSettings, updateAppSetting, isLoading } = useStore();
    const { currentUser } = useAuth();
 
    // Local state to manage loading status per toggle to avoid race conditions
@@ -19,6 +19,8 @@ const AppSettings: React.FC = () => {
    const [coolifyTag, setCoolifyTag] = useState(appSettings.coolify_deployment_tag_or_uuid || '');
    const [showToken, setShowToken] = useState(false);
    const [isDeploying, setIsDeploying] = useState(false);
+   const [latestDeployment, setLatestDeployment] = useState<any>(null);
+   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
    const handleToggle = async (key: string) => {
       // Prevent double clicks
@@ -62,6 +64,26 @@ const AppSettings: React.FC = () => {
       setToastMsg('Setting saved successfully!');
       setTimeout(() => setToastMsg(''), 3000);
    };
+
+   const checkStatus = async () => {
+      if (!coolifyUrl || !coolifyToken || !coolifyTag) return;
+
+      setIsCheckingStatus(true);
+      try {
+         const status = await getLatestDeploymentStatus(coolifyUrl, coolifyToken, coolifyTag);
+         setLatestDeployment(status);
+      } catch (error) {
+         console.error('Status check failed:', error);
+      } finally {
+         setIsCheckingStatus(false);
+      }
+   };
+
+   useEffect(() => {
+      if (coolifyUrl && coolifyToken && coolifyTag) {
+         checkStatus();
+      }
+   }, []);
 
    const handleDeploy = async () => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
@@ -411,26 +433,54 @@ const AppSettings: React.FC = () => {
                            )}
                         </div>
 
-                        {/* Deploy Button */}
-                        <div className="pt-2">
-                           <button
-                              onClick={handleDeploy}
-                              disabled={isDeploying || !coolifyUrl || !coolifyToken || !coolifyTag}
-                              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 disabled:grayscale"
-                           >
-                              {isDeploying ? (
-                                 <>
-                                    <Loader2 size={20} className="animate-spin" />
-                                    Triggering Deployment...
-                                 </>
-                              ) : (
-                                 <>
-                                    <Zap size={20} />
-                                    Deploy Application Now
-                                 </>
+                        {/* Deploy Button & Status */}
+                        <div className="pt-4 space-y-4">
+                           <div className="flex items-center justify-between">
+                              <button
+                                 onClick={handleDeploy}
+                                 disabled={isDeploying || !coolifyUrl || !coolifyToken || !coolifyTag}
+                                 className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50 disabled:grayscale"
+                              >
+                                 {isDeploying ? (
+                                    <>
+                                       <Loader2 size={20} className="animate-spin" />
+                                       Deploying...
+                                    </>
+                                 ) : (
+                                    <>
+                                       <Zap size={20} />
+                                       Deploy Application Now
+                                    </>
+                                 )}
+                              </button>
+
+                              {latestDeployment && (
+                                 <div className="text-right">
+                                    <div className="flex items-center gap-2 justify-end mb-1">
+                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Latest Status</span>
+                                       <button
+                                          onClick={checkStatus}
+                                          disabled={isCheckingStatus}
+                                          className="p-1 hover:bg-slate-100 rounded text-slate-400 transition-colors"
+                                       >
+                                          <RefreshCw size={12} className={isCheckingStatus ? 'animate-spin' : ''} />
+                                       </button>
+                                    </div>
+                                    <div className={`text-sm font-bold px-3 py-1 rounded-full border ${latestDeployment.status === 'finished' || latestDeployment.status === 'success'
+                                       ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                       : latestDeployment.status === 'failed' || latestDeployment.status === 'error'
+                                          ? 'bg-red-50 text-red-600 border-red-100'
+                                          : 'bg-amber-50 text-amber-600 border-amber-100'
+                                       }`}>
+                                       {latestDeployment.status?.toUpperCase() || 'UNKNOWN'}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">
+                                       {new Date(latestDeployment.created_at).toLocaleString()}
+                                    </p>
+                                 </div>
                               )}
-                           </button>
-                           <p className="text-[10px] text-slate-400 mt-3 text-center">
+                           </div>
+                           <p className="text-[10px] text-slate-400 text-center">
                               Using Coolify API v1. Deployment progress can be tracked in your Coolify dashboard.
                            </p>
                         </div>
@@ -569,7 +619,6 @@ const AppSettings: React.FC = () => {
                   <strong>Note:</strong> Changes made here are saved to the cloud immediately and will reflect on all devices running the app (including Android POS) in real-time.
                </div>
             </div>
-
          </div>
 
          {/* Success Toast */}
