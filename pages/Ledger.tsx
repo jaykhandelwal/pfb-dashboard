@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
-    Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, ArrowRightLeft, Filter, Calendar,
+    Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, RotateCcw, Filter, Calendar,
     CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon,
     ChevronLeft, ChevronRight, ChevronDown
 } from 'lucide-react';
@@ -167,9 +167,10 @@ const Ledger: React.FC = () => {
         });
 
         const income = filtered.filter(e => e.entryType === 'INCOME').reduce((s, e) => s + e.amount, 0);
-        const expenses = filtered.filter(e => e.entryType === 'EXPENSE' || e.entryType === 'TRANSFER').reduce((s, e) => s + e.amount, 0);
+        const expenses = filtered.filter(e => e.entryType === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+        const reimbursements = filtered.filter(e => e.entryType === 'REIMBURSEMENT').reduce((s, e) => s + e.amount, 0);
 
-        return { income, expenses, net: income - expenses, entries: filtered };
+        return { income, expenses, reimbursements, net: income + reimbursements - expenses, entries: filtered };
     }, [ledgerEntries, filterType, filterStatus, filterDateFrom, filterDateTo]);
 
     const resetForm = () => {
@@ -196,7 +197,7 @@ const Ledger: React.FC = () => {
         setFormData({
             date: entry.date,
             branchId: entry.branchId || '',
-            entryType: entry.entryType === 'TRANSFER' ? 'EXPENSE' : entry.entryType,
+            entryType: entry.entryType,
             category: entry.category,
             categoryId: entry.categoryId || '',
             amount: entry.amount.toString(),
@@ -245,7 +246,7 @@ const Ledger: React.FC = () => {
             date: formData.date,
             timestamp: Date.now(),
             branchId: formData.branchId || undefined,
-            entryType: (formData.entryType === 'EXPENSE' && formData.categoryId === 'transfer') ? 'TRANSFER' : formData.entryType,
+            entryType: formData.entryType,
             category: formData.category,
             categoryId: formData.categoryId,
             amount: parseFloat(formData.amount),
@@ -291,7 +292,7 @@ const Ledger: React.FC = () => {
         switch (type) {
             case 'INCOME': return 'text-emerald-600 bg-emerald-50';
             case 'EXPENSE': return 'text-red-600 bg-red-50';
-            case 'TRANSFER': return 'text-blue-600 bg-blue-50';
+            case 'REIMBURSEMENT': return 'text-purple-600 bg-purple-50';
         }
     };
 
@@ -299,7 +300,7 @@ const Ledger: React.FC = () => {
         switch (type) {
             case 'INCOME': return <TrendingUp size={16} />;
             case 'EXPENSE': return <TrendingDown size={16} />;
-            case 'TRANSFER': return <ArrowRightLeft size={16} />;
+            case 'REIMBURSEMENT': return <RotateCcw size={16} />;
         }
     };
 
@@ -317,7 +318,7 @@ const Ledger: React.FC = () => {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-[#403424]">Ledger</h1>
-                    <p className="text-sm text-[#403424]/60">Track income, expenses, and transfers</p>
+                    <p className="text-sm text-[#403424]/60">Track income, expenses, and reimbursements</p>
                     <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Beta</span>
                 </div>
                 <div className="flex gap-2">
@@ -457,10 +458,10 @@ const Ledger: React.FC = () => {
                             ) : (
                                 stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
                                     const borderColor = entry.entryType === 'INCOME' ? 'border-l-emerald-500' :
-                                        entry.entryType === 'EXPENSE' ? 'border-l-red-500' : 'border-l-blue-500';
+                                        entry.entryType === 'EXPENSE' ? 'border-l-red-500' : 'border-l-purple-500';
                                     const rowBg = entry.status === 'REJECTED' ? 'bg-red-50/30 opacity-60' :
                                         entry.entryType === 'INCOME' ? 'bg-emerald-50/20' :
-                                            entry.entryType === 'TRANSFER' ? 'bg-blue-50/20' : '';
+                                            entry.entryType === 'REIMBURSEMENT' ? 'bg-purple-50/20' : '';
                                     return (
                                         <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] border-l-4 ${borderColor} ${rowBg}`}>
                                             <td className="px-4 py-3 text-sm">
@@ -662,21 +663,34 @@ const Ledger: React.FC = () => {
                             </button>
                         </div>
                         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-                            {/* Entry Type */}
-                            <div className="flex gap-2">
-                                {(['INCOME', 'EXPENSE'] as LedgerEntryType[]).map(type => (
+                            {/* Hidden Type Selector - Subtle & Discrete */}
+                            <div className="flex justify-end -mb-2 relative z-20">
+                                <div className="relative">
                                     <button
-                                        key={type}
                                         type="button"
-                                        onClick={() => setFormData({ ...formData, entryType: type })}
-                                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.entryType === type
-                                            ? getTypeColor(type) + ' ring-2 ring-offset-1 ring-current'
-                                            : 'bg-[#403424]/5 text-[#403424]/60 hover:bg-[#403424]/10'
-                                            }`}
+                                        onClick={() => setOpenDropdown(openDropdown === 'TYPE_SELECTOR' ? null : 'TYPE_SELECTOR')}
+                                        className="text-[10px] font-bold text-[#403424]/40 hover:text-[#403424]/80 uppercase tracking-widest flex items-center gap-1.5 transition-colors"
                                     >
-                                        {type}
+                                        Recording as <span className={`${getTypeColor(formData.entryType)} px-1.5 py-0.5 rounded shadow-sm border border-current/20`}>{formData.entryType}</span>
                                     </button>
-                                ))}
+
+                                    {openDropdown === 'TYPE_SELECTOR' && (
+                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-[#403424]/10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                            {(['INCOME', 'EXPENSE', 'REIMBURSEMENT'] as LedgerEntryType[]).map(type => (
+                                                <button
+                                                    key={type}
+                                                    type="button"
+                                                    onClick={() => { setFormData({ ...formData, entryType: type }); setOpenDropdown(null); }}
+                                                    className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors flex items-center gap-3 border-b border-[#403424]/5 last:border-0 hover:bg-[#403424]/5 ${formData.entryType === type ? getTypeColor(type) : 'text-[#403424]/60'
+                                                        }`}
+                                                >
+                                                    {getTypeIcon(type)}
+                                                    {type}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Date & Branch */}

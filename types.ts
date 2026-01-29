@@ -307,7 +307,7 @@ export interface RewardResult {
 
 // --- LEDGER (BETA) ---
 
-export type LedgerEntryType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+export type LedgerEntryType = 'INCOME' | 'EXPENSE' | 'REIMBURSEMENT';
 
 export enum LedgerCategory {
   RENT = 'Rent',
@@ -317,7 +317,7 @@ export enum LedgerCategory {
   REPAIRS = 'Repairs',
   MARKETING = 'Marketing',
   TRANSPORT = 'Transport',
-  TRANSFER = 'Transfer',
+  REIMBURSEMENT = 'Reimbursement',
   OTHER = 'Other',
 }
 

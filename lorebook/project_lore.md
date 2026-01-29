@@ -68,11 +68,11 @@ The Ledger feature provides a unified system for tracking non-POS financial tran
 
 *   **Core Entity:** `LedgerEntry`
     *   **Structure:** Stores both ID and Name for critical fields (`categoryId`/`category`, `paymentMethodId`/`paymentMethod`, `sourceAccountId`/`sourceAccount`) to ensure historical accuracy even if names change.
-    *   **Entry Types:** `INCOME`, `EXPENSE`, `TRANSFER`.
+    *   **Entry Types:** `INCOME`, `EXPENSE`, `REIMBURSEMENT`.
     *   **Evidence:** Supports photo uploads for bills/receipts (stored in BunnyCDN).
 
 *   **Configuration Entities (Ledger Settings):**
-    *   **Categories:** ID-based definitions (e.g., Rent, Utilities). Supports inline renaming and active/inactive toggling. Special `transfer` category ID used for internal logic.
+    *   **Categories:** ID-based definitions (e.g., Rent, Utilities). Supports inline renaming and active/inactive toggling.
     *   **Payment Methods:** ID-based methods (Cash, UPI, Card). Fully editable.
     *   **Payment Accounts (`LedgerAccount`):** Represents the source/destination of funds.
         *   *Types:* `USER` (Auto-synced from System Users) and `CUSTOM` (e.g., "Petty Cash", "Owner's Personal").

@@ -301,7 +301,7 @@ const AppSettings: React.FC = () => {
                                  Ledger
                               </h4>
                               <p className="text-sm text-slate-500">
-                                 Track income, expenses, and transfers across branches.
+                                 Track income, expenses, and reimbursements across branches.
                               </p>
                            </div>
                         </div>
