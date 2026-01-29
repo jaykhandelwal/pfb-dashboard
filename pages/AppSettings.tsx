@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff } from 'lucide-react';
+import { triggerCoolifyDeployment } from '../services/coolifyService';
 
 const AppSettings: React.FC = () => {
    const { appSettings, updateAppSetting, isLoading } = useStore();
@@ -13,6 +14,11 @@ const AppSettings: React.FC = () => {
    const [toastMsg, setToastMsg] = useState('');
    // Local state for input fields (to debounce or handle blur save)
    const [webhookUrl, setWebhookUrl] = useState(appSettings.whatsapp_webhook_url || '');
+   const [coolifyUrl, setCoolifyUrl] = useState(appSettings.coolify_instance_url || '');
+   const [coolifyToken, setCoolifyToken] = useState(appSettings.coolify_api_token || '');
+   const [coolifyTag, setCoolifyTag] = useState(appSettings.coolify_deployment_tag_or_uuid || '');
+   const [showToken, setShowToken] = useState(false);
+   const [isDeploying, setIsDeploying] = useState(false);
 
    const handleToggle = async (key: string) => {
       // Prevent double clicks
@@ -28,7 +34,14 @@ const AppSettings: React.FC = () => {
       setSavingKeys(prev => [...prev, key]);
 
       const currentValue = appSettings[key];
-      await updateAppSetting(key, !currentValue);
+      let newValue: any = !currentValue;
+
+      // Special handling for the target type toggle
+      if (key === 'coolify_target_type') {
+         newValue = currentValue === 'tag' ? 'uuid' : 'tag';
+      }
+
+      await updateAppSetting(key, newValue);
 
       // Remove from saving list
       setSavingKeys(prev => prev.filter(k => k !== key));
@@ -46,8 +59,34 @@ const AppSettings: React.FC = () => {
       setSavingKeys(prev => prev.filter(k => k !== key));
 
       // Show success toast
-      setToastMsg('URL saved successfully!');
+      setToastMsg('Setting saved successfully!');
       setTimeout(() => setToastMsg(''), 3000);
+   };
+
+   const handleDeploy = async () => {
+      if (!coolifyUrl || !coolifyToken || !coolifyTag) {
+         setToastMsg('Please fill all Coolify settings first.');
+         setTimeout(() => setToastMsg(''), 3000);
+         return;
+      }
+
+      setIsDeploying(true);
+      try {
+         await triggerCoolifyDeployment(
+            coolifyUrl,
+            coolifyToken,
+            coolifyTag,
+            appSettings.coolify_target_type || 'tag',
+            appSettings.coolify_force_build || false
+         );
+         setToastMsg('Deployment triggered successfully!');
+      } catch (error: any) {
+         console.error('Deployment failed:', error);
+         alert(`Deployment failed: ${error.message}`);
+      } finally {
+         setIsDeploying(false);
+         setTimeout(() => setToastMsg(''), 3000);
+      }
    };
 
    if (isLoading) {
@@ -135,6 +174,7 @@ const AppSettings: React.FC = () => {
                            </label>
                         )}
                      </div>
+
                   </div>
                </div>
             </section>
@@ -245,6 +285,160 @@ const AppSettings: React.FC = () => {
                </section>
             )}
 
+            {/* Section 2.5: Server & Deployment (Coolify) */}
+            {currentUser?.role === 'ADMIN' && (
+               <section>
+                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1 flex items-center gap-2">
+                     <Server size={14} className="text-indigo-500" /> Server & Deployment
+                  </h3>
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                     <div className="p-6 border-b border-slate-100 bg-indigo-50">
+                        <div className="flex justify-between items-center">
+                           <div>
+                              <h3 className="font-bold text-indigo-900">Coolify API Integration</h3>
+                              <p className="text-xs text-indigo-700">
+                                 Trigger deployments directly from this dashboard.
+                              </p>
+                           </div>
+                           <div className="bg-white/50 px-2 py-1 rounded text-[10px] font-bold text-indigo-800 border border-indigo-100">
+                              ADMIN ONLY
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="p-6 space-y-6">
+                        {/* Instance URL */}
+                        <div className="space-y-2">
+                           <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                              <Globe size={12} /> Coolify Instance URL
+                           </label>
+                           <div className="flex gap-2">
+                              <input
+                                 type="url"
+                                 value={coolifyUrl}
+                                 onChange={(e) => setCoolifyUrl(e.target.value)}
+                                 placeholder="https://coolify.example.com"
+                                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-slate-600"
+                              />
+                              <button
+                                 onClick={() => handleTextSave('coolify_instance_url', coolifyUrl)}
+                                 disabled={savingKeys.includes('coolify_instance_url')}
+                                 className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50 min-w-[70px]"
+                              >
+                                 {savingKeys.includes('coolify_instance_url') ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Save'}
+                              </button>
+                           </div>
+                        </div>
+
+                        {/* API Token */}
+                        <div className="space-y-2">
+                           <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                              <Key size={12} /> API Token
+                           </label>
+                           <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                 <input
+                                    type={showToken ? "text" : "password"}
+                                    value={coolifyToken}
+                                    onChange={(e) => setCoolifyToken(e.target.value)}
+                                    placeholder="your-coolify-api-token"
+                                    className="w-full border border-slate-300 rounded-lg pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-slate-600"
+                                 />
+                                 <button
+                                    type="button"
+                                    onClick={() => setShowToken(!showToken)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                 >
+                                    {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                                 </button>
+                              </div>
+                              <button
+                                 onClick={() => handleTextSave('coolify_api_token', coolifyToken)}
+                                 disabled={savingKeys.includes('coolify_api_token')}
+                                 className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50 min-w-[70px]"
+                              >
+                                 {savingKeys.includes('coolify_api_token') ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Save'}
+                              </button>
+                           </div>
+                        </div>
+
+                        {/* Tag or UUID */}
+                        <div className="space-y-2">
+                           <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                              <Tag size={12} /> Deployment Tag or UUID
+                           </label>
+                           <div className="flex gap-2">
+                              <input
+                                 type="text"
+                                 value={coolifyTag}
+                                 onChange={(e) => setCoolifyTag(e.target.value)}
+                                 placeholder="e.g. pfb-prod or uuid-string"
+                                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-slate-600"
+                              />
+                              <button
+                                 onClick={() => handleTextSave('coolify_deployment_tag_or_uuid', coolifyTag)}
+                                 disabled={savingKeys.includes('coolify_deployment_tag_or_uuid')}
+                                 className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50 min-w-[70px]"
+                              >
+                                 {savingKeys.includes('coolify_deployment_tag_or_uuid') ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Save'}
+                              </button>
+                           </div>
+                        </div>
+
+                        {/* Force Build Toggle */}
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+                           <div className="flex gap-3 items-center">
+                              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                                 <Zap size={20} />
+                              </div>
+                              <div>
+                                 <h4 className="font-bold text-slate-700">Force Rebuild</h4>
+                                 <p className="text-xs text-slate-500">Ignore cache and rebuild all layers.</p>
+                              </div>
+                           </div>
+                           {savingKeys.includes('coolify_force_build') ? (
+                              <Loader2 size={24} className="text-indigo-600 animate-spin" />
+                           ) : (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={appSettings.coolify_force_build || false}
+                                    onChange={() => handleToggle('coolify_force_build')}
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                              </label>
+                           )}
+                        </div>
+
+                        {/* Deploy Button */}
+                        <div className="pt-2">
+                           <button
+                              onClick={handleDeploy}
+                              disabled={isDeploying || !coolifyUrl || !coolifyToken || !coolifyTag}
+                              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 disabled:grayscale"
+                           >
+                              {isDeploying ? (
+                                 <>
+                                    <Loader2 size={20} className="animate-spin" />
+                                    Triggering Deployment...
+                                 </>
+                              ) : (
+                                 <>
+                                    <Zap size={20} />
+                                    Deploy Application Now
+                                 </>
+                              )}
+                           </button>
+                           <p className="text-[10px] text-slate-400 mt-3 text-center">
+                              Using Coolify API v1. Deployment progress can be tracked in your Coolify dashboard.
+                           </p>
+                        </div>
+                     </div>
+                  </div>
+               </section>
+            )}
+
             {/* Section 3: Beta Features */}
             <section>
                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1 flex items-center gap-2">
@@ -323,6 +517,51 @@ const AppSettings: React.FC = () => {
                   </div>
                </div>
             </section>
+
+            {/* Section 4: Debug & Troubleshooting (Admin Only) */}
+            {currentUser?.role === 'ADMIN' && (
+               <section>
+                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1 flex items-center gap-2">
+                     <Bug size={14} className="text-red-500" /> Debug & Troubleshooting
+                  </h3>
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                     <div className="p-6 border-b border-slate-100 bg-red-50">
+                        <h3 className="font-bold text-red-900">Advanced Debugging</h3>
+                        <p className="text-xs text-red-700">Tools for auditing system calculations and logs.</p>
+                     </div>
+
+                     <div className="divide-y divide-slate-100">
+                        {/* Setting 1: Inventory Debug */}
+                        <div className="p-6 flex items-center justify-between">
+                           <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                                 <Bug size={20} />
+                              </div>
+                              <div>
+                                 <h4 className="font-bold text-slate-700">Inventory Debug Mode</h4>
+                                 <p className="text-sm text-slate-500">
+                                    Show detailed stock calculation breakdowns in the Deep Freezer Inventory page.
+                                 </p>
+                              </div>
+                           </div>
+                           {savingKeys.includes('enable_debug_inventory') ? (
+                              <Loader2 size={24} className="text-red-600 animate-spin" />
+                           ) : (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={appSettings.enable_debug_inventory || false}
+                                    onChange={() => handleToggle('enable_debug_inventory')}
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                              </label>
+                           )}
+                        </div>
+                     </div>
+                  </div>
+               </section>
+            )}
 
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
                <Info className="text-blue-600 shrink-0 mt-0.5" size={20} />

@@ -291,11 +291,17 @@ export interface AppSettings {
   whatsapp_webhook_url: string;
   debug_whatsapp_webhook: boolean;
   enable_debug_logging: boolean;
+  enable_debug_inventory: boolean;
   stock_ordering_litres_per_packet: number | string;
   deep_freezer_categories: string[];
   ledger_categories?: LedgerCategoryDefinition[];
   payment_methods?: LedgerPaymentMethod[];
   ledger_accounts?: LedgerAccount[];
+  coolify_api_token?: string;
+  coolify_instance_url?: string;
+  coolify_deployment_tag_or_uuid?: string;
+  coolify_target_type?: 'tag' | 'uuid';
+  coolify_force_build?: boolean;
   [key: string]: any;
 }
 

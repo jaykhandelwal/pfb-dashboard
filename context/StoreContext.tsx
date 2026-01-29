@@ -485,11 +485,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         debug_whatsapp_webhook: false,
 
         enable_debug_logging: false,
+        enable_debug_inventory: false,
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
         ledger_categories: Object.values(LedgerCategory).map(cat => ({ id: cat.toLowerCase().replace(/\s+/g, '_'), name: cat, isActive: true })),
         payment_methods: ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER'].map(m => ({ id: m.toLowerCase(), name: m, isActive: true })),
-        ledger_accounts: [{ id: 'company_account', name: 'Company Account', type: 'CUSTOM', isActive: true }]
+        ledger_accounts: [{ id: 'company_account', name: 'Company Account', type: 'CUSTOM', isActive: true }],
+        coolify_api_token: '',
+        coolify_instance_url: '',
+        coolify_deployment_tag_or_uuid: '',
+        coolify_target_type: 'tag',
+        coolify_force_build: false
     });
     const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
     const [ledgerLogs, setLedgerLogs] = useState<LedgerLog[]>([]);
