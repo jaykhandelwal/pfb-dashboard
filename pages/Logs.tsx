@@ -34,7 +34,7 @@ interface DateBranchGroup {
 }
 
 const Logs: React.FC = () => {
-  const { transactions, deletedTransactions, skus, branches, resetData, deleteTransactionBatch } = useStore();
+  const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch } = useStore();
   const { currentUser } = useAuth();
 
   const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
@@ -487,15 +487,6 @@ const Logs: React.FC = () => {
               </button>
             </div>
           )}
-
-          {transactions.length > 0 && dataScope === 'ACTIVE' && isAdmin && (
-            <button
-              onClick={() => { if (window.confirm('Clear all data?')) resetData() }}
-              className="text-red-600 hover:text-red-700 text-sm font-medium px-3 py-2 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              Reset All
-            </button>
-          )}
         </div>
       </div>
 
@@ -507,7 +498,7 @@ const Logs: React.FC = () => {
       )}
 
       {/* Legend for grouped view */}
-      {showGroupedView && dataScope === 'ACTIVE' && (
+      {filterType === 'ALL' && dataScope === 'ACTIVE' && (
         <div className="mb-4 flex flex-wrap gap-4 text-xs">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-emerald-100 border-2 border-emerald-500"></div>
