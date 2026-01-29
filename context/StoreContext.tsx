@@ -310,6 +310,10 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     rejectedReason: data.rejected_reason || data.rejectedReason,
     sourceAccount: data.source_account || data.sourceAccount,
     sourceAccountId: data.source_account_id || data.sourceAccountId,
+    destinationAccount: data.destination_account || data.destinationAccount,
+    destinationAccountId: data.destination_account_id || data.destinationAccountId,
+    reimbursementStatus: data.reimbursement_status || data.reimbursementStatus || 'N/A',
+    linkedExpenseIds: data.linked_expense_ids || data.linkedExpenseIds || [],
     billUrls: (() => {
         // Handle backward compatibility: bill_url (string) -> billUrls (array)
         const urls = data.bill_urls || data.billUrls;
@@ -338,6 +342,10 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     rejected_reason: e.rejectedReason,
     source_account: e.sourceAccount,
     source_account_id: e.sourceAccountId,
+    destination_account: e.destinationAccount,
+    destination_account_id: e.destinationAccountId,
+    reimbursement_status: e.reimbursementStatus || 'N/A',
+    linked_expense_ids: e.linkedExpenseIds || [],
     bill_urls: e.billUrls || []
 });
 

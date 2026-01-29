@@ -340,6 +340,10 @@ export interface LedgerEntry {
   rejectedReason?: string;
   sourceAccount?: string;
   sourceAccountId?: string;
+  destinationAccount?: string;
+  destinationAccountId?: string;
+  reimbursementStatus?: 'PENDING' | 'REIMBURSED' | 'N/A';
+  linkedExpenseIds?: string[];
   billUrls?: string[];
 }
 

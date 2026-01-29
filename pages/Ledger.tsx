@@ -63,6 +63,8 @@ const Ledger: React.FC = () => {
         paymentMethod: defaultMethod?.name || '',
         paymentMethodId: defaultMethod?.id || '',
         sourceAccount: defaultAccount,
+        destinationAccount: '',
+        destinationAccountId: '',
     });
 
     // Filter state
@@ -173,6 +175,40 @@ const Ledger: React.FC = () => {
         return { income, expenses, reimbursements, net: income + reimbursements - expenses, entries: filtered };
     }, [ledgerEntries, filterType, filterStatus, filterDateFrom, filterDateTo]);
 
+    // Calculate user balances: (Expenses paid by user) - (Reimbursements received by user)
+    const userBalances = useMemo(() => {
+        const balances: Record<string, { name: string, expensesPaid: number, reimbursementsReceived: number }> = {};
+
+        ledgerEntries.forEach(entry => {
+            // Count EXPENSES where a user paid (sourceAccount is a user, not Company Account)
+            if (entry.entryType === 'EXPENSE' &&
+                entry.sourceAccount &&
+                entry.sourceAccount !== 'Company Account') {
+                const userName = entry.sourceAccount;
+                if (!balances[userName]) {
+                    balances[userName] = { name: userName, expensesPaid: 0, reimbursementsReceived: 0 };
+                }
+                balances[userName].expensesPaid += entry.amount;
+            }
+
+            // Count REIMBURSEMENTS where user is the destination (received money back)
+            if (entry.entryType === 'REIMBURSEMENT' &&
+                entry.destinationAccount &&
+                entry.destinationAccount !== 'Company Account') {
+                const userName = entry.destinationAccount;
+                if (!balances[userName]) {
+                    balances[userName] = { name: userName, expensesPaid: 0, reimbursementsReceived: 0 };
+                }
+                balances[userName].reimbursementsReceived += entry.amount;
+            }
+        });
+
+        // Return only users with a positive remaining balance (still owed money)
+        return Object.values(balances)
+            .map(b => ({ ...b, remaining: b.expensesPaid - b.reimbursementsReceived }))
+            .filter(b => b.remaining > 0);
+    }, [ledgerEntries]);
+
     const resetForm = () => {
         setFormData({
             date: new Date().toISOString().split('T')[0],
@@ -204,7 +240,9 @@ const Ledger: React.FC = () => {
             description: entry.description,
             paymentMethod: entry.paymentMethod,
             paymentMethodId: entry.paymentMethodId || '',
-            sourceAccount: entry.sourceAccount || 'Company Account'
+            sourceAccount: entry.sourceAccount || 'Company Account',
+            destinationAccount: entry.destinationAccount || '',
+            destinationAccountId: entry.destinationAccountId || '',
         });
         setBillFiles([]);
         setTempBillPreviews(entry.billUrls || []);
@@ -255,6 +293,8 @@ const Ledger: React.FC = () => {
             paymentMethodId: formData.paymentMethodId,
             sourceAccount: formData.sourceAccount || 'Company Account',
             sourceAccountId: selectedAccount?.id,
+            destinationAccount: formData.entryType === 'REIMBURSEMENT' ? formData.destinationAccount : undefined,
+            destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? (appSettings.ledger_accounts?.find(a => a.name === formData.destinationAccount)?.id || availableAccounts.find(a => a.name === formData.destinationAccount)?.id) : undefined,
             createdBy: currentUser?.id || '',
             createdByName: currentUser?.name || 'Unknown',
             billUrls: billUrls
@@ -361,6 +401,33 @@ const Ledger: React.FC = () => {
                     </p>
                 </div>
             </div>
+
+            {/* User Balances - Pending Reimbursements */}
+            {userBalances.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 shadow-sm border border-purple-100">
+                    <div className="flex items-center gap-2 text-purple-700 mb-3">
+                        <RotateCcw size={16} />
+                        <span className="text-xs font-bold uppercase tracking-wider">Pending Reimbursements</span>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                        {userBalances.map(balance => (
+                            <div key={balance.name} className="bg-white rounded-lg px-3 py-2 shadow-sm border border-purple-200 flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0">
+                                    {balance.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-500 truncate">{balance.name}</p>
+                                    <p className="font-bold text-purple-700">₹{balance.remaining.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">owed</span></p>
+                                </div>
+                                <div className="text-right text-[10px] text-slate-400">
+                                    <div>Paid: ₹{balance.expensesPaid.toLocaleString()}</div>
+                                    <div>Returned: ₹{balance.reimbursementsReceived.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Quick Filter Tabs */}
             <div className="flex gap-2">
@@ -477,9 +544,19 @@ const Ledger: React.FC = () => {
                                                         </span>
                                                     )}
                                                     {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
-                                                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`Account: ${entry.sourceAccount}`}>
-                                                            {entry.sourceAccount.split(' ')[0]}
-                                                        </span>
+                                                        <div className="flex items-center gap-1 mt-0.5">
+                                                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`From: ${entry.sourceAccount}`}>
+                                                                {entry.sourceAccount.split(' ')[0]}
+                                                            </span>
+                                                            {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
+                                                                <>
+                                                                    <span className="text-[10px] text-slate-400">→</span>
+                                                                    <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded w-fit border border-purple-100 font-semibold truncate max-w-[100px]" title={`To: ${entry.destinationAccount}`}>
+                                                                        {entry.destinationAccount.split(' ')[0]}
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
                                             </td>
@@ -526,7 +603,9 @@ const Ledger: React.FC = () => {
                                                         )}
                                                     </div>
                                                     {entry.rejectedReason && <div className="text-[10px] text-red-500 italic">Note: {entry.rejectedReason}</div>}
-                                                    <div className="text-[10px] text-slate-400">By: {entry.createdByName}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] text-slate-400">By: {entry.createdByName}</span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className={`px-4 py-3 text-sm font-bold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
@@ -634,7 +713,7 @@ const Ledger: React.FC = () => {
                                                 </td>
                                                 <td className="px-4 py-3 text-xs font-mono text-slate-600 max-w-md">
                                                     {/* Simple diff or snapshot summary */}
-                                                    {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category}`}
+                                                    {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category} ${log.snapshot.entryType === 'REIMBURSEMENT' && log.snapshot.destinationAccount ? `(Transfer: ${log.snapshot.sourceAccount?.split(' ')[0]} -> ${log.snapshot.destinationAccount?.split(' ')[0]})` : ''}`}
                                                     {log.action === 'UPDATE' && `Updated entry. Amount: ${log.snapshot.amount}, Status: ${log.snapshot.status}`}
                                                     {log.action === 'DELETE' && `Deleted entry of ${log.snapshot.amount}`}
                                                     {log.action === 'APPROVE' && `Approved entry. Approver: ${log.snapshot.approvedBy}`}
@@ -736,18 +815,40 @@ const Ledger: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Payment Account */}
-                            <div className="mt-4">
-                                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Payment Account</label>
-                                <select
-                                    value={formData.sourceAccount}
-                                    onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
-                                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
-                                >
-                                    {availableAccounts.filter(a => a.isActive).map(acc => (
-                                        <option key={acc.id} value={acc.name}>{acc.name}</option>
-                                    ))}
-                                </select>
+                            {/* Accounts - From/To for Reimbursement */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
+                                        {formData.entryType === 'REIMBURSEMENT' ? 'From Account' : 'Payment Account'}
+                                    </label>
+                                    <select
+                                        value={formData.sourceAccount}
+                                        onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
+                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
+                                    >
+                                        {availableAccounts.filter(a => a.isActive).map(acc => (
+                                            <option key={acc.id} value={acc.name}>{acc.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {formData.entryType === 'REIMBURSEMENT' && (
+                                    <div>
+                                        <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
+                                            To Account (Payee)
+                                        </label>
+                                        <select
+                                            value={formData.destinationAccount}
+                                            onChange={(e) => setFormData({ ...formData, destinationAccount: e.target.value })}
+                                            className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
+                                            required={formData.entryType === 'REIMBURSEMENT'}
+                                        >
+                                            <option value="">Select Account</option>
+                                            {availableAccounts.filter(a => a.isActive && a.name !== formData.sourceAccount).map(acc => (
+                                                <option key={acc.id} value={acc.name}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Amount */}

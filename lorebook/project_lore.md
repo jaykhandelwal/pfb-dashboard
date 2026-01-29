@@ -67,24 +67,32 @@
 The Ledger feature provides a unified system for tracking non-POS financial transactions with a robust, ID-based architecture for data integrity.
 
 *   **Core Entity:** `LedgerEntry`
-    *   **Structure:** Stores both ID and Name for critical fields (`categoryId`/`category`, `paymentMethodId`/`paymentMethod`, `sourceAccountId`/`sourceAccount`) to ensure historical accuracy even if names change.
-    *   **Entry Types:** `INCOME`, `EXPENSE`, `REIMBURSEMENT`.
+    *   **Structure:** Stores both ID and Name for critical fields (`categoryId`/`category`, `paymentMethodId`/`paymentMethod`, `sourceAccountId`/`sourceAccount`).
+    *   **Entry Types:**
+        *   `INCOME`: Money coming in (e.g., Catering Advance).
+        *   `EXPENSE`: Money going out (e.g., Rent, Vegetables).
+        *   `REIMBURSEMENT`: Internal transfers or paying back users. Requires `sourceAccount` (From) and `destinationAccount` (To).
     *   **Evidence:** Supports photo uploads for bills/receipts (stored in BunnyCDN).
+
+*   **User Expense & Balance Tracking:**
+    *   **Logic:** The system tracks how much is owed to users who pay for expenses out-of-pocket.
+    *   **Formula:** `Net Owed = (Total Expenses Paid by User) - (Total Reimbursements Received by User)`.
+    *   **No Granular Linking:** Reimbursements are not linked to specific expenses; they simply reduce the user's aggregate "Owed" balance.
 
 *   **Configuration Entities (Ledger Settings):**
     *   **Categories:** ID-based definitions (e.g., Rent, Utilities). Supports inline renaming and active/inactive toggling.
     *   **Payment Methods:** ID-based methods (Cash, UPI, Card). Fully editable.
     *   **Payment Accounts (`LedgerAccount`):** Represents the source/destination of funds.
-        *   *Types:* `USER` (Auto-synced from System Users) and `CUSTOM` (e.g., "Petty Cash", "Owner's Personal").
-        *   *Sync Logic:* System users are automatically merged. If a user is deleted, their account is marked "Disconnected" to preserve history.
+        *   *Types:* `USER` (Auto-synced from System Users) and `CUSTOM` (e.g., "Company Account", "Safe").
+        *   *Sync Logic:* System users are automatically merged.
 
 *   **Audit & Logs:**
     *   Immutable `LedgerLog` recorded for EVERY action (Create, Update, Delete, Approve, Reject).
-    *   **Snapshots:** Stores the *entire* `LedgerEntry` object at the time of action, ensuring a complete audit trail even for deleted items.
+    *   **Snapshots:** Stores the *entire* `LedgerEntry` object at the time of action.
 
 *   **Access Control:**
     *   Restricted to `ADMIN` role with specific `MANAGE_LEDGER` permission.
-    *   "Ledger Auditor" role (future scope) for approving staff transactions.
+    *   "Ledger Auditor" role for approving staff transactions.
 
 ---
 
