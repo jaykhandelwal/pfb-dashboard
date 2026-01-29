@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -41,6 +41,32 @@ const RootRedirect = () => {
 };
 
 function App() {
+  useEffect(() => {
+    // Prevent mouse wheel from changing number input values
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'number' && document.activeElement === target) {
+        e.preventDefault();
+      }
+    };
+
+    // On mobile, blur the active number input when starting a scroll gesture
+    const handleTouchMove = () => {
+      const activeElement = document.activeElement as HTMLElement;
+      if (activeElement && activeElement.tagName === 'INPUT' && (activeElement as HTMLInputElement).type === 'number') {
+        activeElement.blur();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <StoreProvider>
