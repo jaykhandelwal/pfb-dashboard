@@ -454,6 +454,7 @@ interface StoreContextType {
     addBulkLedgerEntries: (entries: BulkLedgerImportEntry[]) => Promise<BulkImportResult>;
 
     updateAppSetting: (key: string, value: any) => Promise<void>;
+    fetchCustomerOrders: (customerId: string) => Promise<Order[]>;
     isLoading: boolean;
 }
 
@@ -1100,6 +1101,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isSupabaseConfigured()) await supabase.from('app_settings').upsert({ key, value });
     };
 
+    const fetchCustomerOrders = async (customerId: string): Promise<Order[]> => {
+        if (!isSupabaseConfigured()) {
+            return orders.filter(o => o.customerId === customerId);
+        }
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('customer_id', customerId)
+                .order('timestamp', { ascending: false });
+
+            if (error) throw error;
+            return data ? data.map(mapOrderFromDB) : [];
+        } catch (e) {
+            console.error("Error fetching customer orders:", e);
+            return [];
+        }
+    };
+
 
     // --- LEDGER CRUD (BETA) ---
 
@@ -1373,7 +1393,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             addStorageUnit, updateStorageUnit, deleteStorageUnit,
             ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, addBulkLedgerEntries,
             ledgerLogs, fetchLedgerLogs, approveLedgerEntry, rejectLedgerEntry,
-            updateAppSetting
+            updateAppSetting, fetchCustomerOrders
         }}>
             {children}
         </StoreContext.Provider>
