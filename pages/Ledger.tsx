@@ -2,11 +2,11 @@ import React, { useState, useMemo } from 'react';
 import {
     Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, RotateCcw, Filter, Calendar,
     CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon,
-    ChevronLeft, ChevronRight, ChevronDown, Users
+    ChevronLeft, ChevronRight, ChevronDown, Users, Download, AlertCircle, FileUp, Copy, Check
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { LedgerEntry, LedgerEntryType, LedgerCategory, LedgerCategoryDefinition, LedgerPaymentMethod } from '../types';
+import { LedgerEntry, LedgerEntryType, LedgerCategory, LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { compressImage } from '../services/imageUtils';
 import { IconRenderer } from '../services/iconLibrary';
@@ -20,7 +20,7 @@ const getLocalISOString = (date: Date = new Date()): string => {
 // IconRenderer is now imported from ../services/iconLibrary
 
 const Ledger: React.FC = () => {
-    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings } = useStore();
+    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
     const { currentUser, users } = useAuth();
 
     const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
@@ -88,6 +88,16 @@ const Ledger: React.FC = () => {
 
     // Custom Select State
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
+    // Import Modal State
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importMode, setImportMode] = useState<'CSV' | 'JSON'>('CSV');
+    const [importText, setImportText] = useState('');
+    const [parsedEntries, setParsedEntries] = useState<BulkLedgerImportEntry[]>([]);
+    const [parseErrors, setParseErrors] = useState<string[]>([]);
+    const [importResult, setImportResult] = useState<BulkImportResult | null>(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [copiedSample, setCopiedSample] = useState(false);
 
     const CustomDropdown = <T extends { id: string, name: string, icon?: string, color?: string }>({
         label,
@@ -377,6 +387,19 @@ const Ledger: React.FC = () => {
                         title="View All Audit Logs"
                     >
                         <FileText size={18} /> <span className="hidden md:inline">Audit Logs</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowImportModal(true);
+                            setImportText('');
+                            setParsedEntries([]);
+                            setParseErrors([]);
+                            setImportResult(null);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2.5 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 transition-colors"
+                        title="Import Transactions"
+                    >
+                        <FileUp size={18} /> <span className="hidden md:inline">Import</span>
                     </button>
                     <button
                         onClick={() => setShowForm(true)}
@@ -1003,6 +1026,256 @@ const Ledger: React.FC = () => {
                     <button className="absolute top-4 right-4 text-white hover:text-red-400 transition-colors" onClick={() => setImageModalUrls([])}>
                         <X size={32} />
                     </button>
+                </div>
+            )}
+
+            {/* Import Modal */}
+            {showImportModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                        <div className="flex items-center justify-between p-4 border-b border-[#403424]/10">
+                            <h2 className="text-lg font-bold text-[#403424] flex items-center gap-2">
+                                <FileUp size={20} /> Bulk Import Transactions
+                            </h2>
+                            <button onClick={() => setShowImportModal(false)} className="p-1 text-[#403424]/40 hover:text-[#403424]">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-4 space-y-4">
+                            {/* Mode Toggle */}
+                            <div className="flex gap-2">
+                                {(['CSV', 'JSON'] as const).map(mode => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => { setImportMode(mode); setImportText(''); setParsedEntries([]); setParseErrors([]); }}
+                                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${importMode === mode
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Format Documentation */}
+                            <details className="bg-slate-50 rounded-lg border border-slate-200">
+                                <summary className="px-4 py-3 cursor-pointer text-sm font-bold text-slate-600 flex items-center gap-2">
+                                    <AlertCircle size={16} /> Expected Format & Sample Data
+                                </summary>
+                                <div className="px-4 pb-4 space-y-3">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-1">Required Fields</h4>
+                                        <p className="text-xs text-slate-600">
+                                            <code className="bg-slate-200 px-1 rounded">date</code> (YYYY-MM-DD),
+                                            <code className="bg-slate-200 px-1 rounded ml-1">entryType</code> (INCOME/EXPENSE/REIMBURSEMENT),
+                                            <code className="bg-slate-200 px-1 rounded ml-1">category</code>,
+                                            <code className="bg-slate-200 px-1 rounded ml-1">amount</code>,
+                                            <code className="bg-slate-200 px-1 rounded ml-1">description</code>,
+                                            <code className="bg-slate-200 px-1 rounded ml-1">paymentMethod</code>
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase mb-1">Optional Fields</h4>
+                                        <p className="text-xs text-slate-600">
+                                            <code className="bg-slate-200 px-1 rounded">sourceAccount</code> (defaults to "Company Account"),
+                                            <code className="bg-slate-200 px-1 rounded ml-1">destinationAccount</code> (required for REIMBURSEMENT),
+                                            <code className="bg-slate-200 px-1 rounded ml-1">branchName</code>
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <h4 className="text-xs font-bold text-slate-500 uppercase">Sample {importMode}</h4>
+                                            <button
+                                                onClick={() => {
+                                                    const sample = importMode === 'CSV'
+                                                        ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount,branchName\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,,Main Branch\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,,\n2025-01-17,REIMBURSEMENT,Transport,500,Travel expense reimbursement,BANK_TRANSFER,Company Account,John,`
+                                                        : JSON.stringify([
+                                                            { date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH", branchName: "Main Branch" },
+                                                            { date: "2025-01-16", entryType: "INCOME", category: "Other", amount: 5000, description: "Client payment received", paymentMethod: "UPI" }
+                                                        ], null, 2);
+                                                    navigator.clipboard.writeText(sample);
+                                                    setCopiedSample(true);
+                                                    setTimeout(() => setCopiedSample(false), 2000);
+                                                }}
+                                                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700"
+                                            >
+                                                {copiedSample ? <Check size={12} /> : <Copy size={12} />}
+                                                {copiedSample ? 'Copied!' : 'Copy Sample'}
+                                            </button>
+                                        </div>
+                                        <pre className="bg-slate-800 text-slate-100 p-3 rounded text-xs overflow-x-auto max-h-32">
+                                            {importMode === 'CSV'
+                                                ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount,branchName\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,,Main Branch\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,,`
+                                                : JSON.stringify([{ date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH" }], null, 2)
+                                            }
+                                        </pre>
+                                    </div>
+                                </div>
+                            </details>
+
+                            {/* Input Area */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Paste your {importMode} data</label>
+                                <textarea
+                                    value={importText}
+                                    onChange={(e) => setImportText(e.target.value)}
+                                    placeholder={importMode === 'CSV'
+                                        ? 'Paste CSV data here (with header row)...'
+                                        : 'Paste JSON array here...'}
+                                    rows={6}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                                />
+                            </div>
+
+                            {/* Parse Button */}
+                            <button
+                                onClick={() => {
+                                    setParseErrors([]);
+                                    setParsedEntries([]);
+                                    setImportResult(null);
+
+                                    try {
+                                        if (importMode === 'JSON') {
+                                            const parsed = JSON.parse(importText);
+                                            if (!Array.isArray(parsed)) throw new Error('JSON must be an array');
+                                            setParsedEntries(parsed as BulkLedgerImportEntry[]);
+                                        } else {
+                                            // CSV parsing
+                                            const lines = importText.trim().split('\n');
+                                            if (lines.length < 2) throw new Error('CSV must have header row and at least one data row');
+
+                                            const headers = lines[0].split(',').map(h => h.trim());
+                                            const entries: BulkLedgerImportEntry[] = [];
+
+                                            for (let i = 1; i < lines.length; i++) {
+                                                const values = lines[i].split(',').map(v => v.trim());
+                                                const entry: any = {};
+                                                headers.forEach((h, idx) => {
+                                                    if (h === 'amount') entry[h] = parseFloat(values[idx]) || 0;
+                                                    else entry[h] = values[idx] || undefined;
+                                                });
+                                                entries.push(entry as BulkLedgerImportEntry);
+                                            }
+                                            setParsedEntries(entries);
+                                        }
+                                    } catch (e: any) {
+                                        setParseErrors([`Parse error: ${e.message}`]);
+                                    }
+                                }}
+                                disabled={!importText.trim()}
+                                className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Parse & Validate
+                            </button>
+
+                            {/* Parse Errors */}
+                            {parseErrors.length > 0 && (
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                    <h4 className="text-sm font-bold text-red-700 mb-1">Errors</h4>
+                                    <ul className="text-xs text-red-600 space-y-1">
+                                        {parseErrors.map((err, i) => <li key={i}>• {err}</li>)}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* Preview Table */}
+                            {parsedEntries.length > 0 && !importResult && (
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-600 mb-2">Preview ({parsedEntries.length} entries)</h4>
+                                    <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-60">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-slate-100 sticky top-0">
+                                                <tr>
+                                                    <th className="px-2 py-1.5 text-left">#</th>
+                                                    <th className="px-2 py-1.5 text-left">Date</th>
+                                                    <th className="px-2 py-1.5 text-left">Type</th>
+                                                    <th className="px-2 py-1.5 text-left">Category</th>
+                                                    <th className="px-2 py-1.5 text-right">Amount</th>
+                                                    <th className="px-2 py-1.5 text-left">Description</th>
+                                                    <th className="px-2 py-1.5 text-left">Payment</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {parsedEntries.slice(0, 50).map((entry, i) => (
+                                                    <tr key={i} className="hover:bg-slate-50">
+                                                        <td className="px-2 py-1.5 text-slate-400">{i + 1}</td>
+                                                        <td className="px-2 py-1.5">{entry.date}</td>
+                                                        <td className="px-2 py-1.5">
+                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${entry.entryType === 'INCOME' ? 'bg-emerald-100 text-emerald-700' :
+                                                                    entry.entryType === 'EXPENSE' ? 'bg-red-100 text-red-700' :
+                                                                        'bg-purple-100 text-purple-700'
+                                                                }`}>
+                                                                {entry.entryType}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-2 py-1.5">{entry.category}</td>
+                                                        <td className="px-2 py-1.5 text-right font-medium">₹{entry.amount?.toLocaleString()}</td>
+                                                        <td className="px-2 py-1.5 max-w-[200px] truncate">{entry.description}</td>
+                                                        <td className="px-2 py-1.5">{entry.paymentMethod}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {parsedEntries.length > 50 && (
+                                        <p className="text-xs text-slate-400 mt-1">Showing first 50 of {parsedEntries.length} entries</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Import Result */}
+                            {importResult && (
+                                <div className={`rounded-lg p-4 ${importResult.failureCount === 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-200'}`}>
+                                    <h4 className={`text-sm font-bold mb-2 ${importResult.failureCount === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                        Import Complete
+                                    </h4>
+                                    <div className="flex gap-4 text-sm">
+                                        <span className="text-emerald-600">✓ {importResult.successCount} imported</span>
+                                        {importResult.failureCount > 0 && (
+                                            <span className="text-red-600">✗ {importResult.failureCount} failed</span>
+                                        )}
+                                    </div>
+                                    {importResult.errors.length > 0 && (
+                                        <div className="mt-2 text-xs text-red-600 max-h-32 overflow-y-auto">
+                                            {importResult.errors.map((err, i) => (
+                                                <div key={i}>Row {err.row}: {err.message}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="flex gap-3 p-4 border-t border-slate-200">
+                            <button
+                                onClick={() => setShowImportModal(false)}
+                                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                            >
+                                {importResult ? 'Close' : 'Cancel'}
+                            </button>
+                            {parsedEntries.length > 0 && !importResult && (
+                                <button
+                                    onClick={async () => {
+                                        setIsImporting(true);
+                                        const result = await addBulkLedgerEntries(parsedEntries);
+                                        setImportResult(result);
+                                        setIsImporting(false);
+                                    }}
+                                    disabled={isImporting}
+                                    className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isImporting ? (
+                                        <><span className="animate-spin">⏳</span> Importing...</>
+                                    ) : (
+                                        <>Import {parsedEntries.length} Entries</>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
         </div >

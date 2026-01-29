@@ -2,17 +2,16 @@
 export const triggerCoolifyDeployment = async (
     instanceUrl: string,
     apiToken: string,
-    tagOrUuid: string,
-    targetType: 'tag' | 'uuid',
+    uuid: string,
     forceBuild: boolean
 ) => {
-    if (!instanceUrl || !apiToken || !tagOrUuid) {
+    if (!instanceUrl || !apiToken || !uuid) {
         throw new Error('Missing Coolify configuration');
     }
 
     const baseUrl = instanceUrl.replace(/\/$/, '');
     const params = new URLSearchParams();
-    params.append(targetType, tagOrUuid);
+    params.append('uuid', uuid);
     if (forceBuild) {
         params.append('force', 'true');
     }

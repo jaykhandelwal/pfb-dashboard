@@ -364,3 +364,21 @@ export interface LedgerLog {
   timestamp: number;
 }
 
+// Bulk Import Types
+export interface BulkLedgerImportEntry {
+  date: string;
+  entryType: LedgerEntryType;
+  category: string;
+  amount: number;
+  description: string;
+  paymentMethod: string;
+  sourceAccount?: string;
+  destinationAccount?: string;
+  branchName?: string;
+}
+
+export interface BulkImportResult {
+  successCount: number;
+  failureCount: number;
+  errors: { row: number; message: string }[];
+}

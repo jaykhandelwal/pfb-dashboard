@@ -6,7 +6,7 @@ import {
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
     TransactionType, LedgerEntry, LedgerLog, LedgerCategory, LedgerAccount,
-    LedgerCategoryDefinition, LedgerPaymentMethod
+    LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult
 } from '../types';
 import {
     INITIAL_SKUS, INITIAL_BRANCHES, INITIAL_MENU_ITEMS,
@@ -451,6 +451,7 @@ interface StoreContextType {
     updateLedgerEntry: (entry: LedgerEntry) => Promise<void>;
     deleteLedgerEntry: (id: string) => Promise<void>;
     updateLedgerEntryStatus: (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => Promise<void>;
+    addBulkLedgerEntries: (entries: BulkLedgerImportEntry[]) => Promise<BulkImportResult>;
 
     updateAppSetting: (key: string, value: any) => Promise<void>;
     isLoading: boolean;
@@ -1250,6 +1251,107 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         else if (status === 'REJECTED') await rejectLedgerEntry(id, reason || '');
     };
 
+    // Bulk import ledger entries
+    const addBulkLedgerEntries = async (entries: BulkLedgerImportEntry[]): Promise<BulkImportResult> => {
+        const result: BulkImportResult = { successCount: 0, failureCount: 0, errors: [] };
+        const validEntries: LedgerEntry[] = [];
+
+        // Validate and transform each entry
+        entries.forEach((entry, index) => {
+            const rowNum = index + 1;
+            const errors: string[] = [];
+
+            // Validate required fields
+            if (!entry.date) errors.push('Date is required');
+            else if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) errors.push('Date must be in YYYY-MM-DD format');
+
+            if (!entry.entryType) errors.push('Entry type is required');
+            else if (!['INCOME', 'EXPENSE', 'REIMBURSEMENT'].includes(entry.entryType)) {
+                errors.push('Entry type must be INCOME, EXPENSE, or REIMBURSEMENT');
+            }
+
+            if (!entry.category) errors.push('Category is required');
+            if (!entry.amount || isNaN(entry.amount) || entry.amount <= 0) errors.push('Amount must be a positive number');
+            if (!entry.description) errors.push('Description is required');
+            if (!entry.paymentMethod) errors.push('Payment method is required');
+
+            if (entry.entryType === 'REIMBURSEMENT' && !entry.destinationAccount) {
+                errors.push('Destination account is required for REIMBURSEMENT');
+            }
+
+            if (errors.length > 0) {
+                result.errors.push({ row: rowNum, message: errors.join('; ') });
+                result.failureCount++;
+                return;
+            }
+
+            // Resolve branch ID from name
+            let branchId: string | undefined;
+            if (entry.branchName) {
+                const branch = branches.find(b => b.name.toLowerCase() === entry.branchName!.toLowerCase());
+                if (branch) branchId = branch.id;
+            }
+
+            // Resolve category ID
+            const category = appSettings.ledger_categories?.find(
+                c => c.name.toLowerCase() === entry.category.toLowerCase()
+            );
+
+            // Resolve payment method ID
+            const paymentMethod = appSettings.payment_methods?.find(
+                m => m.name.toLowerCase() === entry.paymentMethod.toLowerCase()
+            );
+
+            // Create ledger entry
+            const newEntry: LedgerEntry = {
+                id: `ledger-${Date.now()}-${index}`,
+                date: entry.date,
+                timestamp: new Date(entry.date).getTime(),
+                branchId,
+                entryType: entry.entryType,
+                category: category?.name || entry.category,
+                categoryId: category?.id,
+                amount: entry.amount,
+                description: entry.description.trim(),
+                paymentMethod: paymentMethod?.name || entry.paymentMethod,
+                paymentMethodId: paymentMethod?.id,
+                sourceAccount: entry.sourceAccount || 'Company Account',
+                destinationAccount: entry.entryType === 'REIMBURSEMENT' ? entry.destinationAccount : undefined,
+                createdBy: currentUser?.id || '',
+                createdByName: currentUser?.name || 'Bulk Import',
+                status: 'PENDING',
+                billUrls: []
+            };
+
+            validEntries.push(newEntry);
+            result.successCount++;
+        });
+
+        if (validEntries.length === 0) {
+            return result;
+        }
+
+        // Add all valid entries to state
+        const updatedEntries = [...validEntries, ...ledgerEntries];
+        setLedgerEntries(updatedEntries);
+        save('ledgerEntries', updatedEntries);
+
+        // Create logs for each entry
+        for (const entry of validEntries) {
+            await addLedgerLog(entry, 'CREATE');
+        }
+
+        // Sync to Supabase
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').insert(validEntries.map(mapLedgerEntryToDB));
+            } catch (e) {
+                console.error('Bulk ledger sync failed:', e);
+            }
+        }
+
+        return result;
+    };
 
 
     return (
@@ -1269,7 +1371,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             addTodo, toggleTodo, addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
             addAttendance, setAttendanceStatus,
             addStorageUnit, updateStorageUnit, deleteStorageUnit,
-            ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus,
+            ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, addBulkLedgerEntries,
             ledgerLogs, fetchLedgerLogs, approveLedgerEntry, rejectLedgerEntry,
             updateAppSetting
         }}>

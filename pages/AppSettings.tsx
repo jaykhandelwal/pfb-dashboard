@@ -76,7 +76,6 @@ const AppSettings: React.FC = () => {
             coolifyUrl,
             coolifyToken,
             coolifyTag,
-            appSettings.coolify_target_type || 'tag',
             appSettings.coolify_force_build || false
          );
          setToastMsg('Deployment triggered successfully!');
@@ -362,17 +361,18 @@ const AppSettings: React.FC = () => {
                            </div>
                         </div>
 
-                        {/* Tag or UUID */}
+                        {/* Application UUID */}
                         <div className="space-y-2">
                            <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                              <Tag size={12} /> Deployment Tag or UUID
+                              <Tag size={12} /> Application UUID
                            </label>
+                           <p className="text-xs text-slate-400 -mt-1">Find this in your Coolify application's URL.</p>
                            <div className="flex gap-2">
                               <input
                                  type="text"
                                  value={coolifyTag}
                                  onChange={(e) => setCoolifyTag(e.target.value)}
-                                 placeholder="e.g. pfb-prod or uuid-string"
+                                 placeholder="e.g. cs0sgkksk0ccockw8kskwco4"
                                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-slate-600"
                               />
                               <button
