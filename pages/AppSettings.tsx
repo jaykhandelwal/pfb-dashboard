@@ -66,16 +66,28 @@ const AppSettings: React.FC = () => {
    };
 
    const checkStatus = async () => {
-      if (!coolifyUrl || !coolifyToken || !coolifyTag) return;
+      if (!coolifyUrl || !coolifyToken || !coolifyTag) {
+         setToastMsg('Please fill all Coolify settings first.');
+         setTimeout(() => setToastMsg(''), 3000);
+         return;
+      }
 
       setIsCheckingStatus(true);
       try {
          const deployments = await getRecentDeployments(coolifyUrl, coolifyToken, coolifyTag);
+         console.log('Coolify API response:', deployments);
          setRecentDeployments(deployments);
-      } catch (error) {
+         if (deployments.length === 0) {
+            setToastMsg('No deployments found for this application.');
+         } else {
+            setToastMsg(`Found ${deployments.length} recent deployment(s).`);
+         }
+      } catch (error: any) {
          console.error('Status check failed:', error);
+         setToastMsg(`Status check failed: ${error.message}`);
       } finally {
          setIsCheckingStatus(false);
+         setTimeout(() => setToastMsg(''), 4000);
       }
    };
 
@@ -475,12 +487,12 @@ const AppSettings: React.FC = () => {
                                        <div key={deployment.id || index} className="flex items-center justify-between px-4 py-3">
                                           <div className="flex items-center gap-3">
                                              <div className={`w-2.5 h-2.5 rounded-full ${deployment.status === 'finished' || deployment.status === 'success'
-                                                   ? 'bg-emerald-500'
-                                                   : deployment.status === 'failed' || deployment.status === 'error'
-                                                      ? 'bg-red-500'
-                                                      : deployment.status === 'in_progress' || deployment.status === 'queued'
-                                                         ? 'bg-amber-500 animate-pulse'
-                                                         : 'bg-slate-400'
+                                                ? 'bg-emerald-500'
+                                                : deployment.status === 'failed' || deployment.status === 'error'
+                                                   ? 'bg-red-500'
+                                                   : deployment.status === 'in_progress' || deployment.status === 'queued'
+                                                      ? 'bg-amber-500 animate-pulse'
+                                                      : 'bg-slate-400'
                                                 }`}></div>
                                              <span className="text-sm font-medium text-slate-700">
                                                 {deployment.status?.toUpperCase() || 'UNKNOWN'}
