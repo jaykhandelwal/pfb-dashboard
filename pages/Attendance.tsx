@@ -42,6 +42,12 @@ const Attendance: React.FC = () => {
       }
    }, [currentUser, branches]);
 
+   // --- DEBUG SETTINGS OVERLAY ---
+   // Temporary debug aid
+   if (appSettings.enable_debug_logging) {
+      console.log("Attendance Render Settings:", appSettings);
+   }
+
    // Check if already checked in today
    const today = getLocalISOString();
    const todayRecord = attendanceRecords.find(r => r.userId === currentUser?.id && r.date === today);
@@ -419,6 +425,16 @@ const Attendance: React.FC = () => {
                <UserCheck className="text-indigo-600" /> Staff Attendance
             </h2>
             <p className="text-slate-500">Verify your location and check in.</p>
+
+            {appSettings.enable_debug_logging && (
+               <div className="mt-2 p-2 bg-slate-800 text-green-400 text-xs font-mono rounded overflow-hidden break-all">
+                  <strong>DEBUG MODE:</strong> Settings Loaded<br />
+                  Webhook Enabled: {appSettings.enable_attendance_webhook ? 'YES' : 'NO'}<br />
+                  Webhook URL: {appSettings.attendance_webhook_url || '(Empty)'}<br />
+                  Is Staged: {isStaged ? 'YES' : 'NO'}<br />
+                  Current Stage: {currentStage ? `${currentStage.title} (Send: ${currentStage.sendToWebhook})` : 'N/A'}
+               </div>
+            )}
          </div>
 
          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
