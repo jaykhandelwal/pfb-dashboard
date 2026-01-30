@@ -8,10 +8,7 @@ interface UpdateNotificationProps {
 
 const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' }) => {
     const [updateAvailable, setUpdateAvailable] = useState(false);
-    const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
-
-    const [isVersionMismatch, setIsVersionMismatch] = useState(false);
 
     // Get the build version injected by Vite
     const currentVersion = '__APP_VERSION__';
@@ -19,7 +16,7 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
     useEffect(() => {
         // Skip update checks when running inside an iframe (Samsung/Android WebView compatibility)
         const isInIframe = window !== window.top;
-        if ('serviceWorker' in navigator && !isInIframe) {
+        if (!isInIframe) {
 
             const checkVersion = async () => {
                 try {
@@ -33,83 +30,28 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
                         if (serverVersion && serverVersion !== currentVersion) {
                             console.log(`[Update] Version mismatch detected. Current: ${currentVersion}, Server: ${serverVersion}`);
                             setUpdateAvailable(true);
-                            setIsVersionMismatch(true);
                         }
                     }
                 } catch (error) {
-                    console.log('[Update] Failed to check version.json:', error);
+                    // Silently fail on network/json errors
                 }
             };
 
-            // Check for updates on page load
-            navigator.serviceWorker.ready.then((registration) => {
-                // Force an update check immediately
-                registration.update();
-
-                // Also check via version.json
-                checkVersion();
-
-                // Check if there's already a waiting worker
-                if (registration.waiting) {
-                    setWaitingWorker(registration.waiting);
-                    setUpdateAvailable(true);
-                }
-
-                // Listen for new workers
-                registration.addEventListener('updatefound', () => {
-                    const newWorker = registration.installing;
-                    if (newWorker) {
-                        newWorker.addEventListener('statechange', () => {
-                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                // New content is available
-                                setWaitingWorker(newWorker);
-                                setUpdateAvailable(true);
-                            }
-                        });
-                    }
-                });
-            });
-
-            // Handle controller change (when new SW takes over)
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (isUpdating) {
-                    window.location.reload();
-                }
-            });
+            // Check immediately
+            checkVersion();
 
             // Periodically check for updates (every 5 minutes)
-            const checkInterval = setInterval(() => {
-                navigator.serviceWorker.ready.then((registration) => {
-                    registration.update();
-                });
-                checkVersion();
-            }, 5 * 60 * 1000);
+            const checkInterval = setInterval(checkVersion, 5 * 60 * 1000);
 
             return () => clearInterval(checkInterval);
         }
-    }, [isUpdating]);
+    }, []);
 
     const handleUpdate = () => {
         setIsUpdating(true);
         saveFormData();
-
-        if (waitingWorker) {
-            // Standard SW update
-            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-        } else if (isVersionMismatch) {
-            // Hard update: version mismatch but no waiting worker detected (likely stuck cache)
-            // Unregister all SWs and reload
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(registrations => {
-                    for (const registration of registrations) {
-                        registration.unregister();
-                    }
-                    window.location.reload();
-                });
-            } else {
-                window.location.reload();
-            }
-        }
+        // Simple reload to fetch new HTML/JS
+        window.location.reload();
     };
 
     const handleDismiss = () => {

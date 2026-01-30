@@ -14,10 +14,10 @@ const buildVersion = (() => {
   return `${yy}.${mm}.${dd}.${hh}${min}`;
 })();
 
-// Plugin to inject build version into service worker AND generate version.ts
-function serviceWorkerVersionPlugin(): Plugin {
+// Plugin to generate version.ts and public/version.json
+function appVersionPlugin(): Plugin {
   return {
-    name: 'sw-version-inject',
+    name: 'app-version-inject',
 
     buildStart() {
       // 2. Generate version.ts for the app to consume
@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
     },
-    plugins: [react(), serviceWorkerVersionPlugin()],
+    plugins: [react(), appVersionPlugin()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
