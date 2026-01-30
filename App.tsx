@@ -26,6 +26,7 @@ import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import UpdateNotification from './components/UpdateNotification';
 
 // Root Redirect Component
 const RootRedirect = () => {
@@ -207,6 +208,7 @@ function App() {
             </Routes>
           </Layout>
         </HashRouter>
+        <UpdateNotification />
       </StoreProvider>
     </AuthProvider>
   );

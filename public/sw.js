@@ -1,5 +1,7 @@
 // Service Worker for Pakaja Inventory PWA
-const CACHE_NAME = 'pakaja-inventory-v2';
+// Version is auto-generated at build time - DO NOT EDIT MANUALLY
+const BUILD_VERSION = '__BUILD_VERSION__';
+const CACHE_NAME = `pakaja-inventory-${BUILD_VERSION}`;
 const OFFLINE_URL = '/';
 
 // Assets to cache on install
@@ -10,6 +12,7 @@ const PRECACHE_ASSETS = [
 
 // Install event - cache core assets
 self.addEventListener('install', (event) => {
+    console.log('[SW] Installing new version:', BUILD_VERSION);
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => {
@@ -17,20 +20,21 @@ self.addEventListener('install', (event) => {
                 return cache.addAll(PRECACHE_ASSETS);
             })
             .then(() => {
-                // Force the waiting service worker to become active
-                return self.skipWaiting();
+                // Don't skip waiting - let the app control when to update
+                console.log('[SW] Installation complete, waiting for activation');
             })
     );
 });
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
+    console.log('[SW] Activating new version:', BUILD_VERSION);
     event.waitUntil(
         caches.keys()
             .then((cacheNames) => {
                 return Promise.all(
                     cacheNames
-                        .filter((cacheName) => cacheName !== CACHE_NAME)
+                        .filter((cacheName) => cacheName.startsWith('pakaja-inventory-') && cacheName !== CACHE_NAME)
                         .map((cacheName) => {
                             console.log('[SW] Deleting old cache:', cacheName);
                             return caches.delete(cacheName);
@@ -42,6 +46,14 @@ self.addEventListener('activate', (event) => {
                 return self.clients.claim();
             })
     );
+});
+
+// Listen for skip waiting message from the app
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        console.log('[SW] Received skip waiting message, activating now');
+        self.skipWaiting();
+    }
 });
 
 // Fetch event - network first for API, cache first for static assets
