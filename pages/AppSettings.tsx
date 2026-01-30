@@ -497,6 +497,11 @@ const AppSettings: React.FC = () => {
                                              <span className="text-sm font-medium text-slate-700">
                                                 {deployment.status?.toUpperCase() || 'UNKNOWN'}
                                              </span>
+                                             {deployment.extracted_version && (
+                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono">
+                                                   v{deployment.extracted_version}
+                                                </span>
+                                             )}
                                           </div>
                                           <span className="text-xs text-slate-400">
                                              {new Date(deployment.created_at).toLocaleString()}

@@ -62,6 +62,30 @@ export const getRecentDeployments = async (
     // excessive safety check, but good to have
     const deployments = data.deployments && Array.isArray(data.deployments) ? data.deployments : [];
 
+    // Process deployments to extract version from logs
+    const processedDeployments = deployments.map((deployment: any) => {
+        let extractedVersion = null;
+        if (deployment.logs) {
+            try {
+                // Logs are often a JSON string, try to parse it first if it looks like one
+                let logContent = deployment.logs;
+                // Simple regex to find the version pattern in the raw string or parsed content
+                // Pattern: [Version] Generated version.ts: XX.XX.XX.XXXX
+                const versionMatch = /\[Version\] Generated version\.ts: ([0-9.]+)/.exec(logContent);
+                if (versionMatch && versionMatch[1]) {
+                    extractedVersion = versionMatch[1];
+                }
+            } catch (e) {
+                // Ignore parsing errors
+                console.warn('Failed to parse logs for version extraction', e);
+            }
+        }
+        return {
+            ...deployment,
+            extracted_version: extractedVersion
+        };
+    });
+
     // Return only the last 3 deployments
-    return deployments.slice(0, 3);
+    return processedDeployments.slice(0, 3);
 };
