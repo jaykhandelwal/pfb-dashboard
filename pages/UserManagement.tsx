@@ -6,7 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
-import { User, Role, Permission, AttendanceOverrideType } from '../types';
+import { User, Role, Permission, AttendanceOverrideType, AttendanceRecord } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
 import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe } from 'lucide-react';
 
@@ -19,7 +19,7 @@ const UserManagement: React.FC = () => {
   // Attendance View Modal State
   const [viewingAttendanceFor, setViewingAttendanceFor] = useState<User | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewRecord, setPreviewRecord] = useState<AttendanceRecord | null>(null);
 
   // Day Action Modal
   const [selectedDayAction, setSelectedDayAction] = useState<{ date: string, formattedDate: string } | null>(null);
@@ -764,12 +764,12 @@ const UserManagement: React.FC = () => {
                               <div className="text-xs text-slate-500 flex items-center gap-1">
                                 <Store size={10} /> {getBranchName(record.branchId)}
                               </div>
-                              {record.imageUrl && (
+                              {(record.imageUrl || (record.imageUrls && record.imageUrls.length > 0)) && (
                                 <button
-                                  onClick={() => setPreviewImage(record.imageUrl)}
+                                  onClick={() => setPreviewRecord(record)}
                                   className="text-[10px] flex items-center gap-1 text-blue-600 hover:text-blue-800 mt-1 font-medium transition-colors"
                                 >
-                                  <ImageIcon size={12} /> View Photo
+                                  <ImageIcon size={12} /> View {record.imageUrls && record.imageUrls.length > 1 ? 'Photos' : 'Photo'}
                                 </button>
                               )}
                             </div>
@@ -859,24 +859,70 @@ const UserManagement: React.FC = () => {
 
       {/* --- PHOTO PREVIEW OVERLAY --- */}
       {
-        previewImage && (
+        previewRecord && (
           <div
             className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in"
-            onClick={() => setPreviewImage(null)}
+            onClick={() => setPreviewRecord(null)}
           >
-            <div className="relative max-w-lg w-full flex flex-col items-center">
+            <div className="relative max-w-4xl w-full flex flex-col items-center max-h-[90vh]">
               <button
-                onClick={() => setPreviewImage(null)}
+                onClick={() => setPreviewRecord(null)}
                 className="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors p-2"
               >
                 <X size={32} />
               </button>
-              <img
-                src={previewImage}
-                alt="Attendance Proof"
-                className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-white/10"
-                onClick={(e) => e.stopPropagation()}
-              />
+
+              <div className="w-full overflow-y-auto px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                {/* Header Information */}
+                <div className="text-white mb-6 text-center">
+                  <h3 className="text-xl font-bold">{previewRecord.userName}</h3>
+                  <p className="text-slate-400 text-sm">
+                    {new Date(previewRecord.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    <span className="mx-2">•</span>
+                    {new Date(previewRecord.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+
+                {/* Images Grid */}
+                <div className="flex flex-wrap justify-center gap-6 pb-10">
+                  {(previewRecord.imageUrls && previewRecord.imageUrls.length > 0) ? (
+                    previewRecord.imageUrls.map((url, index) => {
+                      // Attempt to find stage name from user config
+                      // Note: This uses CURRENT config, so if stages changed, it might not match perfectly.
+                      // Fallback to "Stage X"
+                      const stageConfig = viewingAttendanceFor?.stagedAttendanceConfig?.[index];
+                      const stageName = stageConfig?.title || `Stage ${index + 1}`;
+
+                      return (
+                        <div key={index} className="flex flex-col items-center bg-white/5 p-3 rounded-xl backdrop-blur-sm border border-white/10">
+                          <div className="relative h-64 md:h-80 aspect-[3/4] bg-black rounded-lg overflow-hidden mb-3 border border-white/20">
+                            <img
+                              src={url}
+                              alt={`${stageName} Proof`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="text-center">
+                            <span className="block text-white font-bold text-sm bg-indigo-600/80 px-3 py-1 rounded-full backdrop-blur-md border border-indigo-400/30">
+                              {stageName}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : previewRecord.imageUrl ? (
+                    <div className="flex flex-col items-center">
+                      <img
+                        src={previewRecord.imageUrl}
+                        alt="Attendance Proof"
+                        className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-white/10"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 italic">No images attached to this record.</div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )

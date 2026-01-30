@@ -49,9 +49,28 @@ const Attendance: React.FC = () => {
       if (!currentUser) return;
 
       // 1. Restore Progress
+      // Only update if the remote state is "ahead" or different to avoid overwriting active state with stale data during updates
       if (currentUser.stagedAttendanceProgress && currentUser.stagedAttendanceProgress.date === today) {
-         setCollectedImages(currentUser.stagedAttendanceProgress.collectedImages || []);
-         setCurrentStageIndex(currentUser.stagedAttendanceProgress.currentStageIndex || 0);
+         const remoteProgress = currentUser.stagedAttendanceProgress;
+
+         setCollectedImages(prev => {
+            // Trust remote if it has more images
+            if (remoteProgress.collectedImages && remoteProgress.collectedImages.length > prev.length) {
+               return remoteProgress.collectedImages;
+            }
+            // If lengths are same but content differs, trust remote (sync), BUT
+            // usually local is ahead. Let's just iterate and ensure we don't define holes?
+            // Safer: If remote has images, and we have empty/fewer, take remote.
+            // If we have equal/more, keep ours (assuming we just uploaded and remote is catching up)
+            return prev.length === 0 ? (remoteProgress.collectedImages || []) : prev;
+         });
+
+         setCurrentStageIndex(prev => {
+            const remoteIndex = remoteProgress.currentStageIndex || 0;
+            // Only advance if remote is ahead (e.g. continuing elsewhere), 
+            // NEVER regress (which happens if currentUser is stale during an update cycle)
+            return remoteIndex > prev ? remoteIndex : prev;
+         });
       }
 
       // 2. Check Missing Attendance (Yesterday)
@@ -59,20 +78,11 @@ const Attendance: React.FC = () => {
       const checkMissing = async () => {
          const d = new Date();
          d.setDate(d.getDate() - 1);
-         const yesterday = d.toISOString().slice(0, 10); // Simple ISO date for local timezone approximation
-
-         // Ideally use a more robust date library or helper if timezones are critical, 
-         // but consistent getLocalISOString usage across app suggests this pattern:
-         // Re-implement getLocalISOString logic for "yesterday" if needed or trust simple Date manipulation for now.
+         const yesterday = d.toISOString().slice(0, 10);
 
          const yesterdayRecord = attendanceRecords.find(r => r.userId === currentUser.id && r.date === yesterday);
 
-         // We also need to check if they were supposed to work yesterday? 
-         // For now, assuming if they open app today, they might have missed yesterday.
-         // Showing a gentle warning.
          if (!yesterdayRecord) {
-            // Check if yesterday was a working day? Omitted for MVP.
-            // Just show warning if no record found.
             setWarningMsg(`You did not record attendance for yesterday (${yesterday}).`);
          }
       };
@@ -268,6 +278,7 @@ const Attendance: React.FC = () => {
    const submitAttendance = async (imagesToSubmit: string[]) => {
       if (!currentUser) return;
       setIsSubmitting(true);
+      console.log('Submitting Attendance with Images:', imagesToSubmit);
 
       try {
          let uploadedUrls: string[] = [];
