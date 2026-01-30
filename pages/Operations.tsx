@@ -659,13 +659,15 @@ const Operations: React.FC = () => {
                 <h3 className={`text-lg font-bold ${type === TransactionType.CHECK_OUT ? 'text-emerald-800' : 'text-blue-800'}`}>
                   Confirm {type === TransactionType.CHECK_OUT ? 'Check Out' : 'Return'}
                 </h3>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm text-slate-500">
-                    Branch: <span className="font-bold">{branches.find(b => b.id === branchId)?.name || 'Unknown'}</span>
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    Date: <span className="font-bold">{formatDateLabel(date)}</span>
-                  </p>
+                <div className="flex flex-wrap items-center gap-3 mt-2">
+                  <div className="bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm flex items-center">
+                    <span className="text-[10px] text-slate-500 uppercase font-extrabold mr-2 tracking-wider">Branch</span>
+                    <span className="text-slate-900 font-bold text-base">{branches.find(b => b.id === branchId)?.name || 'Unknown'}</span>
+                  </div>
+                  <div className="bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm flex items-center">
+                    <span className="text-[10px] text-slate-500 uppercase font-extrabold mr-2 tracking-wider">Date</span>
+                    <span className="text-slate-900 font-bold text-base">{formatDateLabel(date)}</span>
+                  </div>
                 </div>
               </div>
               <button onClick={() => setIsConfirmOpen(false)} className="text-slate-400 hover:text-slate-600">

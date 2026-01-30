@@ -22,8 +22,15 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
 
             const checkVersion = async () => {
                 try {
-                    // Fetch version.json with cache busting
-                    const response = await fetch(`/version.json?t=${Date.now()}`);
+                    // Fetch version.json with cache busting and explicit no-cache headers
+                    const response = await fetch(`/version.json?t=${Date.now()}`, {
+                        cache: 'no-store',
+                        headers: {
+                            'Pragma': 'no-cache',
+                            'Cache-Control': 'no-cache'
+                        }
+                    });
+
                     if (response.ok) {
                         const data = await response.json();
                         const serverVersion = data.version;
@@ -32,10 +39,14 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
                         if (serverVersion && serverVersion !== currentVersion) {
                             console.log(`[Update] Version mismatch detected. Current: ${currentVersion}, Server: ${serverVersion}`);
                             setUpdateAvailable(true);
+                        } else {
+                            // console.log(`[Update] App is up to date (v${currentVersion})`);
                         }
+                    } else {
+                        console.warn('[Update] Failed to fetch version info:', response.status);
                     }
                 } catch (error) {
-                    // Silently fail on network/json errors
+                    console.error('[Update] Error checking for updates:', error);
                 }
             };
 

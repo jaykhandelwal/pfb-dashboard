@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/update-version.js && vite build",
+    "build": "vite build",
     "start": "npx serve -c serve.json -l 3000",
     "preview": "vite preview"
   },
