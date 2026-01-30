@@ -1,5 +1,5 @@
 // Service Worker for Pakaja Inventory PWA
-const CACHE_NAME = 'pakaja-inventory-v1';
+const CACHE_NAME = 'pakaja-inventory-v2';
 const OFFLINE_URL = '/';
 
 // Assets to cache on install
