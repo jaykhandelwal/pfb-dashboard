@@ -6,7 +6,8 @@ import {
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
     TransactionType, LedgerEntry, LedgerLog, LedgerCategory, LedgerAccount,
-    LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult
+    LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult,
+    User
 } from '../types';
 import {
     INITIAL_SKUS, INITIAL_BRANCHES, INITIAL_MENU_ITEMS,
@@ -14,6 +15,7 @@ import {
 } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { useAuth } from './AuthContext';
+import { deleteImageFromBunny } from '../services/bunnyStorage';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -507,7 +509,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
     const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-    const { currentUser, refreshUser } = useAuth(); // Assume refreshUser might be needed later, or just use currentUser
+    const { currentUser, refreshUser, users, updateUser } = useAuth();
 
     // Persistence Helper
     const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
@@ -1100,12 +1102,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         } else {
             // == CLEAR STATUS ==
-            // 1. Remove Overrides
+
+            // 1. Delete associated images from BunnyCDN
+            const recordsToDelete = attendanceRecords.filter(a => a.userId === userId && a.date === date);
+            for (const record of recordsToDelete) {
+                const images = [...(record.imageUrls || [])];
+                if (record.imageUrl) images.push(record.imageUrl);
+
+                for (const imgUrl of images) {
+                    await deleteImageFromBunny(imgUrl);
+                }
+            }
+
+            // 2. Remove Overrides
             const remainingOverrides = attendanceOverrides.filter(o => !(o.userId === userId && o.date === date));
             setAttendanceOverrides(remainingOverrides);
             save('attendanceOverrides', remainingOverrides);
 
-            // 2. Remove Actual Attendance Record (Photo)
+            // 3. Remove Actual Attendance Record (Photo)
             const remainingAttendance = attendanceRecords.filter(a => !(a.userId === userId && a.date === date));
             // Only update if changes happened
             if (remainingAttendance.length !== attendanceRecords.length) {
@@ -1115,6 +1129,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 if (isSupabaseConfigured()) {
                     await supabase.from('attendance').delete().eq('user_id', userId).eq('date', date);
                 }
+            }
+
+            // 4. Reset User Staged Attendance Progress IF it matches the cleared date
+            const userToUpdate = users.find(u => u.id === userId);
+            if (userToUpdate && userToUpdate.stagedAttendanceProgress?.date === date) {
+                const updatedUser: User = {
+                    ...userToUpdate,
+                    stagedAttendanceProgress: undefined
+                };
+                await updateUser(updatedUser);
             }
         }
     };

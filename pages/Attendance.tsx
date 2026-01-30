@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw, AlertTriangle, UploadCloud } from 'lucide-react';
-import { uploadImageToBunny } from '../services/bunnyStorage';
+import { uploadImageToBunny, deleteImageFromBunny } from '../services/bunnyStorage';
 import { getLocalISOString } from '../constants';
 
 const Attendance: React.FC = () => {
@@ -21,6 +21,7 @@ const Attendance: React.FC = () => {
    const [successMsg, setSuccessMsg] = useState('');
    const [errorMsg, setErrorMsg] = useState('');
    const [warningMsg, setWarningMsg] = useState('');
+   const [isDeleting, setIsDeleting] = useState(false);
 
    const videoRef = useRef<HTMLVideoElement>(null);
    const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -323,6 +324,55 @@ const Attendance: React.FC = () => {
       }
    };
 
+   const handleDeleteImage = async () => {
+      if (!currentUser || (!capturedImage && !collectedImages[currentStageIndex])) return;
+
+      const imageToDelete = collectedImages[currentStageIndex];
+      // simplified check: if we are in staged mode and have an image at current index, delete it.
+
+      if (!imageToDelete) return;
+
+      if (!window.confirm("Are you sure you want to delete this image? You will need to take a new photo.")) {
+         return;
+      }
+
+      setIsDeleting(true);
+      try {
+         // 1. Delete from BunnyCDN
+         const success = await deleteImageFromBunny(imageToDelete);
+
+         if (success) {
+            // 2. Update local state
+            const newImages = [...collectedImages];
+            delete newImages[currentStageIndex];
+
+            setCollectedImages(newImages);
+            setCapturedImage(null); // Ensure camera view comes back
+
+            // 3. Update User Profile to persist the deletion
+            await updateUser({
+               ...currentUser,
+               stagedAttendanceProgress: {
+                  date: today,
+                  currentStageIndex: currentStageIndex,
+                  collectedImages: newImages
+               }
+            });
+
+            setSuccessMsg("Image deleted successfully.");
+            setTimeout(() => setSuccessMsg(''), 3000);
+         } else {
+            setErrorMsg("Failed to delete image. Please try again.");
+         }
+
+      } catch (e) {
+         console.error("Delete Error", e);
+         setErrorMsg("An error occurred while deleting.");
+      } finally {
+         setIsDeleting(false);
+      }
+   };
+
 
    if (todayRecord) {
       return (
@@ -475,7 +525,7 @@ const Attendance: React.FC = () => {
                      {/* Explicit "Next Step" button when image is already uploaded for this stage */}
                      {isStaged && collectedImages[currentStageIndex] ? (
                         <div className="w-full mb-4">
-                           <div className="relative aspect-video bg-emerald-50 rounded-xl overflow-hidden border border-emerald-100 flex flex-col items-center justify-center mb-4">
+                           <div className="relative aspect-video bg-emerald-50 rounded-xl overflow-hidden border border-emerald-100 flex flex-col items-center justify-center mb-4 group">
                               <img src={collectedImages[currentStageIndex]} alt="Uploaded" className="w-full h-full object-cover opacity-50" />
                               <div className="absolute inset-0 flex flex-col items-center justify-center">
                                  <div className="bg-white/90 p-3 rounded-full shadow-sm mb-2">
@@ -483,7 +533,21 @@ const Attendance: React.FC = () => {
                                  </div>
                                  <span className="font-bold text-emerald-800">Image Uploaded</span>
                               </div>
+
+                              {/* Delete Overlay */}
+                              <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <button
+                                    onClick={handleDeleteImage}
+                                    disabled={isDeleting}
+                                    className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-all"
+                                 >
+                                    {isDeleting ? <Loader2 className="animate-spin" size={20} /> : <RotateCcw size={20} />}
+                                    {isDeleting ? "Deleting..." : "Delete & Retake"}
+                                 </button>
+                              </div>
                            </div>
+
+
                            <button
                               onClick={handleStageNext}
                               className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg flex items-center justify-center gap-2"
@@ -494,6 +558,18 @@ const Attendance: React.FC = () => {
                                  <>Next Step <CheckCircle2 size={20} /></>
                               )}
                            </button>
+
+                           <div className="mt-3 text-center md:hidden">
+                              <button
+                                 onClick={handleDeleteImage}
+                                 disabled={isDeleting}
+                                 className="text-red-500 text-sm font-medium flex items-center justify-center gap-1 mx-auto py-2"
+                              >
+                                 {isDeleting ? <Loader2 className="animate-spin" size={14} /> : <RotateCcw size={14} />}
+                                 Tap to Delete & Retake
+                              </button>
+                           </div>
+
                         </div>
                      ) : (
                         <>

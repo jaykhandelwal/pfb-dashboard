@@ -248,6 +248,17 @@ const UserManagement: React.FC = () => {
 
   const applyStatus = async (type: AttendanceOverrideType | null) => {
     if (!viewingAttendanceFor || !selectedDayAction) return;
+
+    if (type === null) {
+      if (currentUser?.role !== 'ADMIN') {
+        alert("Only Admins can clear attendance records.");
+        return;
+      }
+      if (!window.confirm("Are you sure you want to clear this status?\n\nWARNING: All attached images will be PERMANENTLY DELETED from BunnyCDN storage.")) {
+        return;
+      }
+    }
+
     await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type);
     setSelectedDayAction(null);
   };
