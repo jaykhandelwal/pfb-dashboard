@@ -11,6 +11,9 @@ import { useStore } from '../context/StoreContext';
 import { Permission } from '../types';
 import { UselessDashboard } from './UselessDashboard';
 
+// Declare global build version from Vite
+declare const __APP_VERSION__: string;
+
 interface LayoutProps {
   children: React.ReactNode;
 }
@@ -268,6 +271,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
             {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
           </div>
+          <div className="flex justify-center items-center mt-0.5 opacity-30 text-[9px] font-mono tracking-tight cursor-default select-none group-hover:opacity-60 transition-opacity">
+            v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
+          </div>
         </div>
       </aside>
 
@@ -322,6 +328,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
                 {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
               </div>
+              <div className="flex justify-center items-center mt-1 opacity-20 text-[8px] font-mono tracking-widest uppercase">
+                Version {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'Development'}
+              </div>
             </div>
           </div>
         )}
@@ -341,7 +350,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {children}
         </div>
       </main>
-    </div>
+    </div >
   );
 };
 

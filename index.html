@@ -64,7 +64,10 @@
 
   <!-- Service Worker Registration -->
   <script>
-    if ('serviceWorker' in navigator) {
+    // Skip service worker registration when running inside an iframe (for Android WebView/Samsung compatibility)
+    const isInIframe = window !== window.top;
+
+    if ('serviceWorker' in navigator && !isInIframe) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
           .then((registration) => {
@@ -74,6 +77,8 @@
             console.log('[App] Service Worker registration failed:', error);
           });
       });
+    } else if (isInIframe) {
+      console.log('[App] Running in iframe, skipping Service Worker registration');
     }
   </script>
 </body>

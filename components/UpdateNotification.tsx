@@ -12,7 +12,9 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
     const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
-        if ('serviceWorker' in navigator) {
+        // Skip update checks when running inside an iframe (Samsung/Android WebView compatibility)
+        const isInIframe = window !== window.top;
+        if ('serviceWorker' in navigator && !isInIframe) {
             // Check for updates on page load
             navigator.serviceWorker.ready.then((registration) => {
                 // Check if there's already a waiting worker

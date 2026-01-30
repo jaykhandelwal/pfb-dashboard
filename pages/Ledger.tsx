@@ -11,6 +11,8 @@ import { uploadImageToBunny } from '../services/bunnyStorage';
 import { compressImage } from '../services/imageUtils';
 import { IconRenderer } from '../services/iconLibrary';
 
+import LedgerEntryModal from '../components/LedgerEntryModal';
+
 const getLocalISOString = (date: Date = new Date()): string => {
     const offset = date.getTimezoneOffset() * 60000;
     const localTime = new Date(date.getTime() - offset);
@@ -52,20 +54,8 @@ const Ledger: React.FC = () => {
     // Form state
     const [showForm, setShowForm] = useState(false);
     const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
-    const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
-        branchId: currentUser?.defaultBranchId || '',
-        entryType: 'EXPENSE' as LedgerEntryType,
-        category: defaultCategory?.name || '',
-        categoryId: defaultCategory?.id || '',
-        amount: '',
-        description: '',
-        paymentMethod: defaultMethod?.name || '',
-        paymentMethodId: defaultMethod?.id || '',
-        sourceAccount: defaultAccount,
-        destinationAccount: '',
-        destinationAccountId: '',
-    });
+
+    // Filter state
 
     // Filter state
     const [filterType, setFilterType] = useState<LedgerEntryType | 'ALL'>('ALL');
@@ -77,10 +67,6 @@ const Ledger: React.FC = () => {
     // Logs state
     const [viewingLogsFor, setViewingLogsFor] = useState<string | 'ALL' | null>(null);
 
-    // Bill Upload State - now supports multiple images
-    const [billFiles, setBillFiles] = useState<File[]>([]);
-    const [tempBillPreviews, setTempBillPreviews] = useState<string[]>([]);
-    const [isUploading, setIsUploading] = useState(false);
 
     // Image Modal State
     const [imageModalUrls, setImageModalUrls] = useState<string[]>([]);
@@ -88,6 +74,7 @@ const Ledger: React.FC = () => {
 
     // Custom Select State
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+
 
     // Import Modal State
     const [showImportModal, setShowImportModal] = useState(false);
@@ -99,65 +86,7 @@ const Ledger: React.FC = () => {
     const [isImporting, setIsImporting] = useState(false);
     const [copiedSample, setCopiedSample] = useState(false);
 
-    const CustomDropdown = <T extends { id: string, name: string, icon?: string, color?: string }>({
-        label,
-        value,
-        options,
-        onSelect,
-        placeholder
-    }: {
-        label: string,
-        value: string,
-        options: T[],
-        onSelect: (option: T) => void,
-        placeholder: string
-    }) => {
-        const selected = options.find(o => o.id === value);
-        return (
-            <div className="relative">
-                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">{label}</label>
-                <button
-                    type="button"
-                    onClick={() => setOpenDropdown(openDropdown === label ? null : label)}
-                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5 flex items-center justify-between"
-                >
-                    {selected ? (
-                        <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded flex items-center justify-center text-white" style={{ backgroundColor: selected.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
-                                <IconRenderer name={selected.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={12} />
-                            </div>
-                            <span className="font-bold text-sm text-[#403424]">{selected.name}</span>
-                        </div>
-                    ) : <span className="text-[#403424]/40 text-sm">{placeholder}</span>}
-                    <ChevronDown size={16} className={`text-[#403424]/40 transition-transform ${openDropdown === label ? 'rotate-180' : ''}`} />
-                </button>
 
-                {openDropdown === label && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-[#403424]/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
-                        <div className="p-1">
-                            {options.map(opt => (
-                                <button
-                                    key={opt.id}
-                                    type="button"
-                                    onClick={() => { onSelect(opt); setOpenDropdown(null); }}
-                                    className={`w-full px-3 py-2.5 flex items-center gap-3 rounded-lg hover:bg-[#403424]/5 transition-colors text-left ${opt.id === value ? 'bg-[#95a77c]/10' : ''}`}
-                                >
-                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: opt.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
-                                        <IconRenderer name={opt.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={18} />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className={`font-bold text-sm text-[#403424] ${opt.id === value ? 'text-[#95a77c]' : ''}`}>{opt.name}</span>
-                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{label}</span>
-                                    </div>
-                                    {opt.id === value && <CheckCircle2 size={16} className="ml-auto text-[#95a77c]" />}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        );
-    };
 
     React.useEffect(() => {
         if (viewingLogsFor) {
@@ -229,104 +158,13 @@ const Ledger: React.FC = () => {
     }, [userBalances]);
 
     const resetForm = () => {
-        setFormData({
-            date: new Date().toISOString().split('T')[0],
-            branchId: currentUser?.defaultBranchId || '',
-            entryType: 'EXPENSE',
-            category: defaultCategory?.name || '',
-            categoryId: defaultCategory?.id || '',
-            amount: '',
-            description: '',
-            paymentMethod: defaultMethod?.name || '',
-            paymentMethodId: defaultMethod?.id || '',
-            sourceAccount: defaultAccount,
-        });
-        setBillFiles([]);
-        setTempBillPreviews([]);
         setEditingEntry(null);
         setShowForm(false);
     };
 
     const handleEdit = (entry: LedgerEntry) => {
         setEditingEntry(entry);
-        setFormData({
-            date: entry.date,
-            branchId: entry.branchId || '',
-            entryType: entry.entryType,
-            category: entry.category,
-            categoryId: entry.categoryId || '',
-            amount: entry.amount.toString(),
-            description: entry.description,
-            paymentMethod: entry.paymentMethod,
-            paymentMethodId: entry.paymentMethodId || '',
-            sourceAccount: entry.sourceAccount || 'Company Account',
-            destinationAccount: entry.destinationAccount || '',
-            destinationAccountId: entry.destinationAccountId || '',
-        });
-        setBillFiles([]);
-        setTempBillPreviews(entry.billUrls || []);
         setShowForm(true);
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formData.amount || !formData.description) return;
-
-        setIsUploading(true);
-
-        // Start with existing URLs (for editing) or empty array
-        let billUrls: string[] = editingEntry?.billUrls || [];
-
-        // Upload all new files
-        if (billFiles.length > 0) {
-            const uploadPromises = billFiles.map(file => new Promise<string | null>((resolve) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onloadend = async () => {
-                    const base64 = reader.result as string;
-                    try {
-                        const url = await uploadImageToBunny(base64, 'ledger');
-                        resolve(url);
-                    } catch (err) {
-                        console.error("Bill upload failed", err);
-                        resolve(null);
-                    }
-                };
-            }));
-
-            const uploadedUrls = await Promise.all(uploadPromises);
-            billUrls = [...billUrls, ...uploadedUrls.filter((u): u is string => u !== null)];
-        }
-
-        const selectedAccount = appSettings.ledger_accounts?.find(a => a.name === formData.sourceAccount);
-        const entryData = {
-            date: formData.date,
-            timestamp: Date.now(),
-            branchId: formData.branchId || undefined,
-            entryType: formData.entryType,
-            category: formData.category,
-            categoryId: formData.categoryId,
-            amount: parseFloat(formData.amount),
-            description: formData.description.trim(),
-            paymentMethod: formData.paymentMethod,
-            paymentMethodId: formData.paymentMethodId,
-            sourceAccount: formData.sourceAccount || 'Company Account',
-            sourceAccountId: selectedAccount?.id,
-            destinationAccount: formData.entryType === 'REIMBURSEMENT' ? formData.destinationAccount : undefined,
-            destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? (appSettings.ledger_accounts?.find(a => a.name === formData.destinationAccount)?.id || availableAccounts.find(a => a.name === formData.destinationAccount)?.id) : undefined,
-            createdBy: currentUser?.id || '',
-            createdByName: currentUser?.name || 'Unknown',
-            billUrls: billUrls
-        };
-
-        if (editingEntry) {
-            await updateLedgerEntry({ ...entryData, id: editingEntry.id });
-        } else {
-            await addLedgerEntry(entryData);
-        }
-
-        setIsUploading(false);
-        resetForm();
     };
 
 
@@ -766,226 +604,12 @@ const Ledger: React.FC = () => {
             )}
 
             {/* Add/Edit Modal */}
-            {showForm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-                        <div className="flex items-center justify-between p-4 border-b border-[#403424]/10">
-                            <h2 className="text-lg font-bold text-[#403424]">
-                                {editingEntry ? 'Edit Entry' : 'New Entry'}
-                            </h2>
-                            <button onClick={resetForm} className="p-1 text-[#403424]/40 hover:text-[#403424]">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-                            {/* Hidden Type Selector - Subtle & Discrete */}
-                            <div className="flex justify-end -mb-2 relative z-20">
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => setOpenDropdown(openDropdown === 'TYPE_SELECTOR' ? null : 'TYPE_SELECTOR')}
-                                        className="text-[10px] font-bold text-[#403424]/40 hover:text-[#403424]/80 uppercase tracking-widest flex items-center gap-1.5 transition-colors"
-                                    >
-                                        Recording as <span className={`${getTypeColor(formData.entryType)} px-1.5 py-0.5 rounded shadow-sm border border-current/20`}>{formData.entryType}</span>
-                                    </button>
-
-                                    {openDropdown === 'TYPE_SELECTOR' && (
-                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-[#403424]/10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                            {(['INCOME', 'EXPENSE', 'REIMBURSEMENT'] as LedgerEntryType[]).map(type => (
-                                                <button
-                                                    key={type}
-                                                    type="button"
-                                                    onClick={() => { setFormData({ ...formData, entryType: type }); setOpenDropdown(null); }}
-                                                    className={`w-full text-left px-4 py-3 text-xs font-bold transition-colors flex items-center gap-3 border-b border-[#403424]/5 last:border-0 hover:bg-[#403424]/5 ${formData.entryType === type ? getTypeColor(type) : 'text-[#403424]/60'
-                                                        }`}
-                                                >
-                                                    {getTypeIcon(type)}
-                                                    {type}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Date & Branch */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Date</label>
-                                    <input
-                                        type="date"
-                                        value={formData.date}
-                                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Branch</label>
-                                    <select
-                                        value={formData.branchId}
-                                        onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
-                                    >
-                                        <option value="">General (No Branch)</option>
-                                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Category & Payment */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <CustomDropdown
-                                    label="Category"
-                                    value={formData.categoryId}
-                                    options={(appSettings.ledger_categories || []).filter(c => c.isActive || c.id === formData.categoryId)}
-                                    placeholder="Select Category"
-                                    onSelect={(opt) => setFormData({ ...formData, categoryId: opt.id, category: opt.name })}
-                                />
-
-                                <CustomDropdown
-                                    label="Payment Method"
-                                    value={formData.paymentMethodId}
-                                    options={(appSettings.payment_methods || []).filter(m => m.isActive || m.id === formData.paymentMethodId)}
-                                    placeholder="Select Method"
-                                    onSelect={(opt) => setFormData({ ...formData, paymentMethodId: opt.id, paymentMethod: opt.name })}
-                                />
-                            </div>
-
-                            {/* Accounts - From/To for Reimbursement */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
-                                        {formData.entryType === 'REIMBURSEMENT' ? 'From Account' : 'Payment Account'}
-                                    </label>
-                                    <select
-                                        value={formData.sourceAccount}
-                                        onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
-                                        className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
-                                    >
-                                        {availableAccounts.filter(a => a.isActive).map(acc => (
-                                            <option key={acc.id} value={acc.name}>{acc.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                {formData.entryType === 'REIMBURSEMENT' && (
-                                    <div>
-                                        <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
-                                            To Account (Payee)
-                                        </label>
-                                        <select
-                                            value={formData.destinationAccount}
-                                            onChange={(e) => setFormData({ ...formData, destinationAccount: e.target.value })}
-                                            className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5"
-                                            required={formData.entryType === 'REIMBURSEMENT'}
-                                        >
-                                            <option value="">Select Account</option>
-                                            {availableAccounts.filter(a => a.isActive && a.name !== formData.sourceAccount).map(acc => (
-                                                <option key={acc.id} value={acc.name}>{acc.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Amount */}
-                            <div>
-                                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Amount (₹)</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={formData.amount}
-                                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                                    placeholder="0.00"
-                                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] text-lg font-semibold"
-                                    required
-                                />
-                            </div>
-
-                            {/* Description */}
-                            <div>
-                                <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Description</label>
-                                <textarea
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    placeholder="What is this entry for?"
-                                    rows={2}
-                                    className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] resize-none"
-                                    required
-                                />
-                            </div>
-
-                            {/* Bill Photo Upload - Multiple Images */}
-                            <div>
-                                <label className="block text-xs font-bold text-[#403424]/60 uppercase tracking-wide mb-1.5">
-                                    Bill / Receipt Photos
-                                </label>
-                                <div className="border border-dashed border-[#403424]/20 rounded-lg p-4 bg-[#403424]/5 hover:bg-[#403424]/10 transition-colors text-center cursor-pointer relative">
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        multiple
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        onChange={(e) => {
-                                            const files: File[] = Array.from(e.target.files || []);
-                                            if (files.length > 0) {
-                                                setBillFiles(prev => [...prev, ...files]);
-                                                setTempBillPreviews(prev => [...prev, ...files.map((f: File) => URL.createObjectURL(f))]);
-                                            }
-                                        }}
-                                    />
-                                    {tempBillPreviews.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2 justify-center">
-                                            {tempBillPreviews.map((preview, idx) => (
-                                                <div key={idx} className="relative h-20 w-20">
-                                                    <img src={preview} alt={`Preview ${idx + 1}`} className="h-full w-full object-cover rounded" />
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setTempBillPreviews(prev => prev.filter((_, i) => i !== idx));
-                                                            setBillFiles(prev => prev.filter((_, i) => i !== idx));
-                                                        }}
-                                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
-                                                    >
-                                                        ×
-                                                    </button>
-                                                </div>
-                                            ))}
-                                            <div className="h-20 w-20 border-2 border-dashed border-[#403424]/20 rounded flex items-center justify-center text-[#403424]/40">
-                                                <Plus size={20} />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center gap-2 py-2">
-                                            <UploadCloud size={24} className="text-[#403424]/40" />
-                                            <span className="text-sm font-medium text-[#403424]/60">Click to upload or take photos</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={resetForm}
-                                    className="flex-1 py-2.5 rounded-lg border border-[#403424]/10 text-[#403424]/60 hover:bg-[#403424]/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 py-2.5 rounded-lg bg-[#95a77c] text-white hover:bg-[#7d8f68] transition-colors shadow-md"
-                                >
-                                    {editingEntry ? 'Update Entry' : 'Add Entry'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )
-            }
+            {/* Add/Edit Modal */}
+            <LedgerEntryModal
+                isOpen={showForm}
+                onClose={resetForm}
+                initialData={editingEntry}
+            />
             {/* Image Carousel Modal */}
             {imageModalUrls.length > 0 && (
                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4" onClick={() => setImageModalUrls([])}>
@@ -1050,8 +674,8 @@ const Ledger: React.FC = () => {
                                         key={mode}
                                         onClick={() => { setImportMode(mode); setImportText(''); setParsedEntries([]); setParseErrors([]); }}
                                         className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${importMode === mode
-                                                ? 'bg-indigo-600 text-white'
-                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                             }`}
                                     >
                                         {mode}
@@ -1204,8 +828,8 @@ const Ledger: React.FC = () => {
                                                         <td className="px-2 py-1.5">{entry.date}</td>
                                                         <td className="px-2 py-1.5">
                                                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${entry.entryType === 'INCOME' ? 'bg-emerald-100 text-emerald-700' :
-                                                                    entry.entryType === 'EXPENSE' ? 'bg-red-100 text-red-700' :
-                                                                        'bg-purple-100 text-purple-700'
+                                                                entry.entryType === 'EXPENSE' ? 'bg-red-100 text-red-700' :
+                                                                    'bg-purple-100 text-purple-700'
                                                                 }`}>
                                                                 {entry.entryType}
                                                             </span>
