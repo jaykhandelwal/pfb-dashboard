@@ -490,6 +490,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         whatsapp_webhook_url: '',
         debug_whatsapp_webhook: false,
 
+        enable_attendance_webhook: false,
+        attendance_webhook_url: '',
+
         enable_debug_logging: false,
         enable_debug_inventory: false,
         stock_ordering_litres_per_packet: 2.3,

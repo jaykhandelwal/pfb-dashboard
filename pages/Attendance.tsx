@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw, AlertTriangle, UploadCloud } from 'lucide-react';
+import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw, AlertTriangle, UploadCloud, Bug } from 'lucide-react';
 import { uploadImageToBunny, deleteImageFromBunny } from '../services/bunnyStorage';
 import { getLocalISOString } from '../constants';
 
@@ -22,6 +22,7 @@ const Attendance: React.FC = () => {
    const [errorMsg, setErrorMsg] = useState('');
    const [warningMsg, setWarningMsg] = useState('');
    const [isDeleting, setIsDeleting] = useState(false);
+   const [debugInfo, setDebugInfo] = useState<{ payload: any; responseStatus?: number; error?: string } | null>(null);
 
    const videoRef = useRef<HTMLVideoElement>(null);
    const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -182,6 +183,8 @@ const Attendance: React.FC = () => {
          const globalWebhookEnabled = appSettings.enable_attendance_webhook;
          const globalWebhookUrl = appSettings.attendance_webhook_url;
 
+         console.log('WEBHOOK DEBUG:', { globalWebhookEnabled, globalWebhookUrl, isStaged, currentStage });
+
          // Determine if we should send to webhook
          // 1. Global setting must be ON
          // 2. If staged, stage-specific toggle must be ON (or we can assume specific override behavior pending clarification, but user said "options in settings... if enabled... then [per stage controlled]")
@@ -206,11 +209,13 @@ const Attendance: React.FC = () => {
                // Don't await this to block the UI? Or do we want to ensure it sends?
                // User said "right after the image is uploaded it will make a webhook call"
                // I will await it but catch errors so it doesn't fail the attendance itself.
-               await fetch(globalWebhookUrl, {
+               console.log('WEBHOOK: Sending payload...', payload);
+               const response = await fetch(globalWebhookUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(payload)
                });
+               console.log('WEBHOOK: Response status:', response.status);
             } catch (webhookErr) {
                console.error("Webhook failed:", webhookErr);
                // Optionally warn user, or silent fail. Silent fail is safer for UX flow.
@@ -489,6 +494,42 @@ const Attendance: React.FC = () => {
                      <p className="text-xs text-slate-500 animate-pulse">
                         {currentStageIndex < stages.length - 1 ? 'More photos required to submit' : 'Final photo'}
                      </p>
+                  </div>
+               </div>
+            )}
+
+            {/* Debug Info Modal */}
+            {debugInfo && (
+               <div className="mx-5 mb-4 bg-slate-800 text-slate-200 p-4 rounded-xl text-xs font-mono overflow-hidden">
+                  <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
+                     <span className="font-bold flex items-center gap-2">
+                        <Bug size={14} className="text-yellow-400" /> Webhook Debug
+                     </span>
+                     <button onClick={() => setDebugInfo(null)} className="text-slate-400 hover:text-white">
+                        <X size={14} />
+                     </button>
+                  </div>
+                  <div className="space-y-2">
+                     <div>
+                        <span className="text-slate-500">Payload:</span>
+                        <pre className="mt-1 bg-slate-900 p-2 rounded overflow-x-auto">
+                           {JSON.stringify(debugInfo.payload, null, 2)}
+                        </pre>
+                     </div>
+                     <div className="flex gap-4">
+                        <div>
+                           <span className="text-slate-500">Status:</span>
+                           <span className={`ml-2 font-bold ${debugInfo.responseStatus === 200 ? 'text-green-400' : 'text-orange-400'}`}>
+                              {debugInfo.responseStatus !== undefined ? debugInfo.responseStatus : 'Sending...'}
+                           </span>
+                        </div>
+                        {debugInfo.error && (
+                           <div>
+                              <span className="text-slate-500">Error:</span>
+                              <span className="ml-2 text-red-400">{debugInfo.error}</span>
+                           </div>
+                        )}
+                     </div>
                   </div>
                </div>
             )}
