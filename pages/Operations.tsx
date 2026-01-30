@@ -144,6 +144,70 @@ const Operations: React.FC = () => {
     return limits;
   }, [transactions, date, branchId, skus, type]);
 
+  // --- New Stats for Confirmation Modal ---
+
+  // 1. Calculate Waste for the selected Date/Branch
+  const wasteStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    transactions
+      .filter(t => t.branchId === branchId && t.date === date && t.type === TransactionType.WASTE)
+      .forEach(t => { stats[t.skuId] = (stats[t.skuId] || 0) + t.quantityPieces; });
+    return stats;
+  }, [transactions, branchId, date]);
+
+  // 2. Calculate Existing Returns (already saved checks-ins for this date) - in case of multiple returns
+  const existingReturnsStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    transactions
+      .filter(t => t.branchId === branchId && t.date === date && t.type === TransactionType.CHECK_IN)
+      .forEach(t => { stats[t.skuId] = (stats[t.skuId] || 0) + t.quantityPieces; });
+    return stats;
+  }, [transactions, branchId, date]);
+
+  // 3. Calculate Actual Sales from Orders
+  const salesStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    const filteredOrders = orders.filter(o => o.branchId === branchId && o.date === date);
+
+    filteredOrders.forEach(order => {
+      const addQty = (skuId: string, qty: number) => {
+        stats[skuId] = (stats[skuId] || 0) + qty;
+      };
+
+      order.items.forEach(item => {
+        const variant = item.variant || 'FULL';
+        const anyItem = item as any;
+
+        // 1. Legacy Plate
+        if (anyItem.plate && anyItem.plate.skuId) {
+          addQty(anyItem.plate.skuId, anyItem.plate.quantity);
+        }
+        // 2. Consumed Override
+        else if (item.consumed) {
+          const consumedArray = Array.isArray(item.consumed) ? item.consumed : [item.consumed];
+          consumedArray.forEach(c => addQty(c.skuId, c.quantity));
+        }
+        // 3. Menu Definition
+        else {
+          const menu = menuItems.find(m => m.id === item.menuItemId);
+          if (menu) {
+            const ingredients = (variant === 'HALF' && menu.halfIngredients && menu.halfIngredients.length > 0)
+              ? menu.halfIngredients
+              : (variant === 'HALF' ? menu.ingredients.map(i => ({ ...i, quantity: i.quantity * 0.5 })) : menu.ingredients);
+            ingredients.forEach(ing => addQty(ing.skuId, ing.quantity * item.quantity));
+          }
+        }
+      });
+
+      // Custom SKU Items
+      order.customSkuItems?.forEach(cs => {
+        addQty(cs.skuId, cs.quantity);
+      });
+    });
+
+    return stats;
+  }, [orders, branchId, date, menuItems]);
+
   const handleInputChange = (skuId: string, field: 'packets' | 'loose', value: string) => {
     setInputs(prev => ({
       ...prev,
@@ -687,20 +751,21 @@ const Operations: React.FC = () => {
 
                   // Unified list logic for rendering
                   const renderItem = (sku: SKU, isActive: boolean) => {
-                    const qty = getCalculatedTotal(sku.id, sku.piecesPerPacket);
-                    const maxLimit = maxTransactionLimits[sku.id] || 0;
-                    const netConsumed = Math.max(0, maxLimit - qty);
+                    const currentReturnInput = getCalculatedTotal(sku.id, sku.piecesPerPacket);
+                    const totalTaken = maxTransactionLimits[sku.id] || 0;
+
+                    const existingReturn = existingReturnsStats[sku.id] || 0;
+                    const totalReturned = currentReturnInput + existingReturn;
+
+                    const soldQty = salesStats[sku.id] || 0; // Actual Sold
+                    const wasteQty = wasteStats[sku.id] || 0; // Actual Waste
+
+                    // Missing Calculation
+                    // Missing = Taken - (Returned + Sold + Waste)
+                    const missingPcs = Math.round(totalTaken - (totalReturned + soldQty + wasteQty));
+
+                    // For display text
                     const plateSize = getPlateSize(sku);
-
-                    // Logic: Sold = Taken - Returned. 
-                    // If Sold (netConsumed) is NOT a multiple of plateSize, the remainder is "Missing" pieces.
-                    const platesSold = plateSize > 0 ? Math.floor(netConsumed / plateSize) : 0;
-                    const pcsSold = plateSize > 0 ? netConsumed % plateSize : netConsumed;
-
-                    // "Missing" here means the loose pieces that don't make up a full plate.
-                    // e.g. Taken 18. Return 11. Sold 7. Plate 6. 
-                    // Sold = 1 Plate + 1 pc. "1 pc" is the missing/loose part.
-                    const missingPcs = pcsSold;
 
                     return (
                       <div
@@ -715,7 +780,7 @@ const Operations: React.FC = () => {
                           <span className="font-medium truncate text-slate-700">{sku.name}</span>
                           {type === TransactionType.CHECK_IN && (
                             <button
-                              onClick={() => setLinkedSkuData({ sku, soldQty: netConsumed })}
+                              onClick={() => setLinkedSkuData({ sku, soldQty })}
                               className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
                               title="View Linked Orders"
                             >
@@ -725,26 +790,32 @@ const Operations: React.FC = () => {
                         </div>
 
                         <div className="text-right flex-shrink-0 ml-2">
-                          {/* Main Display: Return Quantity (The Action) */}
-                          <div className={`font-mono font-bold leading-none ${type === TransactionType.CHECK_OUT ? 'text-emerald-700' : 'text-blue-700'}`}>
-                            {type === TransactionType.CHECK_IN ? (
-                              <span>{qty} <span className="text-xs font-sans font-normal opacity-60">Returns</span></span>
-                            ) : (
-                              <span>{qty} <span className="text-xs font-sans font-normal opacity-60">pcs</span></span>
-                            )}
-                          </div>
-
-                          {/* Secondary Display: Verification Stats (Sold / Missing) */}
+                          {/* Secondary Display: Verification Stats (Sold / Waste / Missing) */}
                           {type === TransactionType.CHECK_IN && (
-                            <div className="flex flex-col items-end mt-1">
-                              <div className="text-[10px] text-slate-500 font-medium">
-                                Sold: <span className="font-bold text-slate-700">{platesSold} Plates</span>
-                                {pcsSold > 0 && <span> + {pcsSold} pcs</span>}
+                            <div className="flex flex-col items-end mt-1 space-y-0.5">
+                              {/* SOLD */}
+                              <div className="text-[10px] text-slate-500 font-medium whitespace-nowrap">
+                                Sold: <span className="font-bold text-slate-700">{Math.round(soldQty)} pcs</span>
                               </div>
-                              {missingPcs > 0 && (
-                                <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-bold mt-0.5 animate-pulse">
+
+                              {/* WASTE */}
+                              {wasteQty > 0 && (
+                                <div className="text-[10px] text-slate-500 font-medium whitespace-nowrap">
+                                  Waste: <span className="font-bold text-slate-700">{Math.round(wasteQty)} pcs</span>
+                                </div>
+                              )}
+
+                              {/* MISSING / SURPLUS */}
+                              {missingPcs > 0 ? (
+                                <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-bold animate-pulse">
                                   Missing {missingPcs}
                                 </span>
+                              ) : (
+                                missingPcs < 0 && (
+                                  <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">
+                                    Surplus {Math.abs(missingPcs)}
+                                  </span>
+                                )
                               )}
                             </div>
                           )}
