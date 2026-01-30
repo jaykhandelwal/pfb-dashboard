@@ -257,7 +257,7 @@ export interface AttendanceRecord {
   imageUrls?: string[];
 }
 
-export type AttendanceOverrideType = 'HOLIDAY' | 'ABSENT' | 'PENALTY_2_DAYS';
+export type AttendanceOverrideType = 'HOLIDAY' | 'ABSENT' | 'PENALTY_2_DAYS' | 'PRESENT';
 
 export interface AttendanceOverride {
   id: string;

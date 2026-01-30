@@ -162,7 +162,7 @@ const UserManagement: React.FC = () => {
       return o.userId === viewingAttendanceFor.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
-    const presentCount = monthlyRecords.length;
+    const presentCount = monthlyRecords.length + monthlyOverrides.filter(o => o.type === 'PRESENT').length;
 
     // Calculated Penalty/Absent Count
     // Logic: Iterate days up to today. 
@@ -284,6 +284,8 @@ const UserManagement: React.FC = () => {
           bgClass = 'bg-red-100 border-red-200 text-red-700 font-bold';
         } else if (override.type === 'PENALTY_2_DAYS') {
           bgClass = 'bg-purple-100 border-purple-200 text-purple-700 font-bold ring-1 ring-purple-300';
+        } else if (override.type === 'PRESENT') {
+          bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
         }
       } else if (record) {
         // Present
@@ -844,6 +846,17 @@ const UserManagement: React.FC = () => {
                 </button>
 
                 <div className="border-t border-slate-100 my-2"></div>
+
+                <button
+                  onClick={() => applyStatus('PRESENT')}
+                  className="w-full p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 font-bold flex items-center gap-3 hover:bg-emerald-100 transition-colors mb-2"
+                >
+                  <div className="w-8 h-8 rounded-full bg-emerald-200 flex items-center justify-center text-emerald-700"><Check size={16} /></div>
+                  <div>
+                    <div className="text-sm">Mark Present (Manual)</div>
+                    <div className="text-[10px] opacity-70 font-normal">Admin Override</div>
+                  </div>
+                </button>
 
                 <button
                   onClick={() => applyStatus(null)}
