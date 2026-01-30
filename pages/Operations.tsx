@@ -683,136 +683,87 @@ const Operations: React.FC = () => {
                     return qty === 0 && maxLimit > 0;
                   });
 
-                  return (
-                    <>
-                      {/* Active Items List */}
-                      {activeItems.map(sku => {
-                        const qty = getCalculatedTotal(sku.id, sku.piecesPerPacket);
+                  // Unified list logic for rendering
+                  const renderItem = (sku: SKU, isActive: boolean) => {
+                    const qty = getCalculatedTotal(sku.id, sku.piecesPerPacket);
+                    const maxLimit = maxTransactionLimits[sku.id] || 0;
+                    const netConsumed = Math.max(0, maxLimit - qty);
+                    const plateSize = getPlateSize(sku);
 
-                        return (
-                          <div
-                            key={sku.id}
-                            className={`flex justify-between items-center p-3 rounded-lg border ${type === TransactionType.CHECK_OUT ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`}
-                          >
-                            <div className="flex items-center gap-3 overflow-hidden flex-1">
-                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${type === TransactionType.CHECK_OUT ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-                              <span className="font-medium truncate text-slate-700">{sku.name}</span>
-                              {type === TransactionType.CHECK_IN && (
-                                <button
-                                  onClick={() => {
-                                    const maxLimit = maxTransactionLimits[sku.id] || 0;
-                                    const netConsumed = Math.max(0, maxLimit - qty);
-                                    setLinkedSkuData({ sku, soldQty: netConsumed });
-                                  }}
-                                  className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                                  title="View Linked Orders"
-                                >
-                                  <Receipt size={14} />
-                                </button>
+                    // Logic: Sold = Taken - Returned. 
+                    // If Sold (netConsumed) is NOT a multiple of plateSize, the remainder is "Missing" pieces.
+                    const platesSold = plateSize > 0 ? Math.floor(netConsumed / plateSize) : 0;
+                    const pcsSold = plateSize > 0 ? netConsumed % plateSize : netConsumed;
+
+                    // "Missing" here means the loose pieces that don't make up a full plate.
+                    // e.g. Taken 18. Return 11. Sold 7. Plate 6. 
+                    // Sold = 1 Plate + 1 pc. "1 pc" is the missing/loose part.
+                    const missingPcs = pcsSold;
+
+                    return (
+                      <div
+                        key={sku.id}
+                        className={`flex justify-between items-center p-3 rounded-lg border ${type === TransactionType.CHECK_OUT
+                          ? 'bg-emerald-50 border-emerald-100'
+                          : (isActive ? 'bg-blue-50 border-blue-100' : 'bg-slate-50 border-slate-200 opacity-90')
+                          }`}
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden flex-1">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sku.dietary === 'Veg' ? 'bg-green-500' : (sku.dietary === 'Non-Veg' ? 'bg-red-500' : 'bg-slate-400')}`} />
+                          <span className="font-medium truncate text-slate-700">{sku.name}</span>
+                          {type === TransactionType.CHECK_IN && (
+                            <button
+                              onClick={() => setLinkedSkuData({ sku, soldQty: netConsumed })}
+                              className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                              title="View Linked Orders"
+                            >
+                              <Receipt size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="text-right flex-shrink-0 ml-2">
+                          {/* Main Display: Return Quantity (The Action) */}
+                          <div className={`font-mono font-bold leading-none ${type === TransactionType.CHECK_OUT ? 'text-emerald-700' : 'text-blue-700'}`}>
+                            {type === TransactionType.CHECK_IN ? (
+                              <span>{qty} <span className="text-xs font-sans font-normal opacity-60">Returns</span></span>
+                            ) : (
+                              <span>{qty} <span className="text-xs font-sans font-normal opacity-60">pcs</span></span>
+                            )}
+                          </div>
+
+                          {/* Secondary Display: Verification Stats (Sold / Missing) */}
+                          {type === TransactionType.CHECK_IN && (
+                            <div className="flex flex-col items-end mt-1">
+                              <div className="text-[10px] text-slate-500 font-medium">
+                                Sold: <span className="font-bold text-slate-700">{platesSold} Plates</span>
+                                {pcsSold > 0 && <span> + {pcsSold} pcs</span>}
+                              </div>
+                              {missingPcs > 0 && (
+                                <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-bold mt-0.5 animate-pulse">
+                                  Missing {missingPcs}
+                                </span>
                               )}
                             </div>
-
-                            <div className="text-right flex-shrink-0 ml-2">
-                              <div className={`font-mono font-bold leading-none ${type === TransactionType.CHECK_OUT ? 'text-emerald-700' : 'text-blue-700'}`}>
-                                {type === TransactionType.CHECK_IN ? (
-                                  <span>
-                                    {(() => {
-                                      const maxLimit = maxTransactionLimits[sku.id] || 0;
-                                      const netConsumed = Math.max(0, maxLimit - qty);
-                                      const plateSize = getPlateSize(sku);
-                                      const platesSold = plateSize > 0 ? Math.floor(netConsumed / plateSize) : 0;
-                                      const pcsSold = plateSize > 0 ? netConsumed % plateSize : netConsumed;
-                                      const missingForFull = (plateSize > 0 && pcsSold > 0) ? plateSize - pcsSold : 0;
-
-                                      return (
-                                        <span className="flex flex-col items-end">
-                                          <span>{platesSold} Plates</span>
-                                          {pcsSold > 0 && (
-                                            <div className="flex items-center gap-1 mt-1">
-                                              <span className="text-xs font-normal opacity-80">+{pcsSold} pcs</span>
-                                              {missingForFull > 0 && (
-                                                <span className="text-sm text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-extrabold animate-pulse">
-                                                  Short {missingForFull}
-                                                </span>
-                                              )}
-                                            </div>
-                                          )}
-                                        </span>
-                                      );
-                                    })()}
-                                  </span>
-                                ) : (
-                                  <>
-                                    {qty} <span className="text-xs font-sans font-normal opacity-60">pcs</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="text-[10px] mt-0.5 text-slate-500">
-                                {type === TransactionType.CHECK_OUT ? (
-                                  <>{inputs[sku.id]?.packets || 0} pkts + {inputs[sku.id]?.loose || 0} pcs</>
-                                ) : (
-                                  <span className="text-blue-600 font-medium opacity-80">Active Return</span>
-                                )}
-                              </div>
+                          )}
+                          {/* Check Out Subtext */}
+                          {type === TransactionType.CHECK_OUT && (
+                            <div className="text-[10px] mt-0.5 text-slate-500">
+                              {inputs[sku.id]?.packets || 0} pkts + {inputs[sku.id]?.loose || 0} pcs
                             </div>
-                          </div>
-                        );
-                      })}
+                          )}
+                        </div>
+                      </div>
+                    );
+                  };
 
-                      {/* Implied Full Sales (No Return Entered) - Only for Returns Mode */}
-                      {type === TransactionType.CHECK_IN && missedItems.length > 0 && (
-                        <>
-                          <div className="mt-4 mb-2 flex items-center gap-2">
-                            <div className="h-px bg-slate-200 flex-1"></div>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Full Sales (No Returns)</span>
-                            <div className="h-px bg-slate-200 flex-1"></div>
-                          </div>
+                  return (
+                    <>
+                      {/* Active Items First */}
+                      {activeItems.map(sku => renderItem(sku, true))}
 
-                          <div className="space-y-2 opacity-80 hover:opacity-100 transition-opacity">
-                            {missedItems.map(sku => {
-                              const maxLimit = maxTransactionLimits[sku.id] || 0;
-                              const plateSize = getPlateSize(sku);
-                              const platesSold = plateSize > 0 ? Math.floor(maxLimit / plateSize) : 0;
-                              const pcsSold = plateSize > 0 ? maxLimit % plateSize : maxLimit;
-                              const missingForFull = (plateSize > 0 && pcsSold > 0) ? plateSize - pcsSold : 0;
-
-                              return (
-                                <div key={sku.id} className="flex justify-between items-center p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-                                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400" />
-                                    <span className="text-sm font-medium truncate text-slate-600">{sku.name}</span>
-                                    <button
-                                      onClick={() => setLinkedSkuData({ sku, soldQty: maxLimit })}
-                                      className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                                      title="View Linked Orders"
-                                    >
-                                      <Receipt size={14} />
-                                    </button>
-                                  </div>
-                                  <div className="text-right flex-shrink-0 ml-2">
-                                    <div className="font-mono text-sm font-bold text-slate-600 leading-none flex flex-col items-end">
-                                      <span>{platesSold} Plates</span>
-                                      {pcsSold > 0 && (
-                                        <div className="flex items-center gap-1 mt-1">
-                                          <span className="text-[10px] font-normal opacity-80">+{pcsSold} pcs</span>
-                                          {missingForFull > 0 && (
-                                            <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-bold">
-                                              Short {missingForFull}
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5">
-                                      All {maxLimit} pcs Sold
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
+                      {/* Implied Full Sales (Zero Returns) Second - No Header */}
+                      {missedItems.map(sku => renderItem(sku, false))}
                     </>
                   );
                 })()}
