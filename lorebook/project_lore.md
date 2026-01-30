@@ -183,7 +183,23 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 *   **Tables:** `skus`, `menu_items`, `transactions`, `orders`, `customers`, `coupons`, `users`, `storage_units`.
 *   **Security:** RLS (Row Level Security) enabled.
 
----
+### 7.3. Supabase
+*   **Tables:** `skus`, `menu_items`, `transactions`, `orders`, `customers`, `coupons`, `users`, `storage_units`.
+*   **Security:** RLS (Row Level Security) enabled.
+
+### 7.4. Webhook Integrations
+*   **Attendance Webhook:**
+    *   **Trigger:** Successful photo upload during attendance (Standard or Staged).
+    *   **Payload:** JSON containing `image_url`, `user_name`, `stage_name`, `branch`, `timestamp`.
+    *   **Configuration:**
+        *   **Global:** Toggle in App Settings.
+        *   **Per-Stage:** Fine-grained control for Staged Attendance (set in User Management).
+
+### 7.5. Debugging System
+*   **Attendance Webhook Debugging:**
+    *   **Toggle:** "Attendance Webhook Debugging" in App Settings (Admin Only). Internally mapped to `enable_attendance_webhook_debug`.
+    *   **UI:** Shows a popup on the Attendance page with Payload, Status Code, and Error details for the last webhook attempt.
+    *   **Overlay:** Displays a permanent "DEBUG MODE" status box on the Attendance screen when enabled, verifying settings propagation.
 
 ## 8. Configuration Variables (`.env`)
 *   `VITE_SUPABASE_URL`: DB Endpoint.

@@ -44,7 +44,7 @@ const Attendance: React.FC = () => {
 
    // --- DEBUG SETTINGS OVERLAY ---
    // Temporary debug aid
-   if (appSettings.enable_debug_logging) {
+   if (appSettings.enable_attendance_webhook_debug) {
       console.log("Attendance Render Settings:", appSettings);
    }
 
@@ -191,30 +191,27 @@ const Attendance: React.FC = () => {
 
          console.log('WEBHOOK DEBUG:', { globalWebhookEnabled, globalWebhookUrl, isStaged, currentStage });
 
-         // Determine if we should send to webhook
-         // 1. Global setting must be ON
-         // 2. If staged, stage-specific toggle must be ON (or we can assume specific override behavior pending clarification, but user said "options in settings... if enabled... then [per stage controlled]")
-         //    Actually user said: "if a particular stage photo needs to be send to webhook will be controlled from the users edit page"
-         //    Let's assume: If global is OFF -> Never send. If global is ON -> Send if stage allows (for staged user). 
-
          const shouldSendToWebhook = globalWebhookEnabled && globalWebhookUrl && (
-            isStaged ? currentStage?.sendToWebhook : true // Default to true for unstaged if global is on? Or maybe false? User requirement implies per-stage control. For unstaged, maybe just send it? Let's default to sending for unstaged if global is ON.
+            isStaged ? currentStage?.sendToWebhook : true
          );
 
-         if (shouldSendToWebhook) {
-            try {
-               const payload = {
-                  image_url: uploadedUrl,
-                  branch: branches.find(b => b.id === branchId)?.name || 'Unknown',
-                  user_name: currentUser.name,
-                  stage_name: isStaged ? currentStage?.title : 'Attendance Check-in',
-                  user_id: currentUser.id,
-                  timestamp: new Date().toISOString()
-               };
+         const payload = {
+            image_url: uploadedUrl,
+            branch: branches.find(b => b.id === branchId)?.name || 'Unknown',
+            user_name: currentUser.name,
+            stage_name: isStaged ? currentStage?.title : 'Attendance Check-in',
+            user_id: currentUser.id,
+            timestamp: new Date().toISOString()
+         };
 
-               // Don't await this to block the UI? Or do we want to ensure it sends?
-               // User said "right after the image is uploaded it will make a webhook call"
-               // I will await it but catch errors so it doesn't fail the attendance itself.
+         if (shouldSendToWebhook) {
+
+            // Debug UI Trigger (Sending)
+            if (appSettings.enable_attendance_webhook_debug) {
+               setDebugInfo({ payload, responseStatus: undefined });
+            }
+
+            try {
                console.log('WEBHOOK: Sending payload...', payload);
                const response = await fetch(globalWebhookUrl, {
                   method: 'POST',
@@ -222,10 +219,27 @@ const Attendance: React.FC = () => {
                   body: JSON.stringify(payload)
                });
                console.log('WEBHOOK: Response status:', response.status);
-            } catch (webhookErr) {
+
+               if (appSettings.enable_attendance_webhook_debug) {
+                  setDebugInfo(prev => prev ? { ...prev, responseStatus: response.status } : null);
+               }
+            } catch (webhookErr: any) {
                console.error("Webhook failed:", webhookErr);
-               // Optionally warn user, or silent fail. Silent fail is safer for UX flow.
+               if (appSettings.enable_attendance_webhook_debug) {
+                  setDebugInfo(prev => prev ? { ...prev, error: webhookErr?.message || 'Unknown Error' } : null);
+               }
             }
+         } else if (appSettings.enable_attendance_webhook_debug) {
+            // Debug UI Trigger (Skipped)
+            let skipReason = "Unknown";
+            if (!globalWebhookEnabled) skipReason = "Global Webhook Disabled";
+            else if (!globalWebhookUrl) skipReason = "No Webhook URL";
+            else if (isStaged && !currentStage?.sendToWebhook) skipReason = "Stage Config Disabled";
+
+            setDebugInfo({
+               payload: { ...payload, _status: "SKIPPED", _reason: skipReason },
+               error: `Skipped: ${skipReason}`
+            });
          }
          // --- WEBHOOK CALL END ---
 
@@ -426,7 +440,7 @@ const Attendance: React.FC = () => {
             </h2>
             <p className="text-slate-500">Verify your location and check in.</p>
 
-            {appSettings.enable_debug_logging && (
+            {appSettings.enable_attendance_webhook_debug && (
                <div className="mt-2 p-2 bg-slate-800 text-green-400 text-xs font-mono rounded overflow-hidden break-all">
                   <strong>DEBUG MODE:</strong> Settings Loaded<br />
                   Webhook Enabled: {appSettings.enable_attendance_webhook ? 'YES' : 'NO'}<br />

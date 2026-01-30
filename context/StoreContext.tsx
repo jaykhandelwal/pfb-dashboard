@@ -493,7 +493,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         enable_attendance_webhook: false,
         attendance_webhook_url: '',
 
-        enable_debug_logging: false,
+        enable_attendance_webhook_debug: false,
         enable_debug_inventory: false,
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],

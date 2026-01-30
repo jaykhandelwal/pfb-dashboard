@@ -245,6 +245,14 @@ ALTER TABLE task_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE todos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deleted_transactions ENABLE ROW LEVEL SECURITY;
 
+-- 9. SEED DATA (Essential Settings) -----------------------------------------
+INSERT INTO app_settings (key, value)
+VALUES 
+  ('enable_attendance_webhook', 'false'::jsonb),
+  ('attendance_webhook_url', '""'::jsonb),
+  ('enable_attendance_webhook_debug', 'false'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
 DO $$ 
 DECLARE t text;
 BEGIN

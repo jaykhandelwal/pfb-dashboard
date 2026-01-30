@@ -307,7 +307,7 @@ export interface AppSettings {
   enable_whatsapp_webhook: boolean;
   whatsapp_webhook_url: string;
   debug_whatsapp_webhook: boolean;
-  enable_debug_logging: boolean;
+  enable_attendance_webhook_debug: boolean;
   enable_debug_inventory: boolean;
   stock_ordering_litres_per_packet: number | string;
   deep_freezer_categories: string[];
