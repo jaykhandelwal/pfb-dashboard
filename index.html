@@ -13,6 +13,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Pakaja" />
 
+  <!-- Critical: Prevent Caching of index.html to avoid "White Screen" on new builds -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
   <!-- Icons -->
   <link rel="icon" type="image/png" href="https://pakaja.b-cdn.net/assets/favicon.png" />
   <link rel="apple-touch-icon" href="https://pakaja.b-cdn.net/assets/favicon.png" />
@@ -57,27 +62,27 @@
   }
 }
 </script>
-</head>
-
-<body>
-  <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-
-  <!-- Service Worker UN-Registration -->
   <script>
-    // Force unregister any existing service workers to fix caching issues
+    // Critical: Unregister all Service Workers immediately to fix caching/white screen issues
+    // This runs before the app loads to ensure we don't get stuck with a broken cache
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.getRegistrations().then(function (registrations) {
-          for (let registration of registrations) {
-            registration.unregister().then(function (boolean) {
-              console.log('[App] Specific Service Worker unregistered: ' + boolean);
-            });
-          }
-        });
+      // Unregister immediately
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        if (registrations.length === 0) {
+          console.log('[App] No Service Workers found to unregister.');
+        }
+        for (let registration of registrations) {
+          console.log('[App] Unregistering Service Worker:', registration.scope);
+          registration.unregister().then(function (success) {
+            console.log('[App] Unregister success:', success);
+            // Optional: Reload if we just killed a worker and the page might be stale?
+            // But we don't want boot loops.
+          });
+        }
       });
     }
   </script>
+</head>
 </body>
 
 </html>
