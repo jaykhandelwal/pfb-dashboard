@@ -43,8 +43,8 @@ export const getRecentDeployments = async (
     }
 
     const baseUrl = instanceUrl.replace(/\/$/, '');
-    // Using generic deployments endpoint with uuid query filter as the application-specific endpoint (path-based) returned 404
-    const url = `${baseUrl}/api/v1/deployments?uuid=${uuid}&take=3`;
+    // Using application specific endpoint which returns { deployments: [...] }
+    const url = `${baseUrl}/api/v1/deployments/applications/${uuid}`;
 
     const response = await fetch(url, {
         method: 'GET',
@@ -58,6 +58,10 @@ export const getRecentDeployments = async (
         throw new Error(errorData.message || `Status check failed with status ${response.status}`);
     }
 
-    const deployments = await response.json();
-    return Array.isArray(deployments) ? deployments : [];
+    const data = await response.json();
+    // excessive safety check, but good to have
+    const deployments = data.deployments && Array.isArray(data.deployments) ? data.deployments : [];
+
+    // Return only the last 3 deployments
+    return deployments.slice(0, 3);
 };

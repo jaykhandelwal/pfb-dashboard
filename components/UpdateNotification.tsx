@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { saveFormData } from '../utils/formPreservation';
 
+import { APP_VERSION } from '../version';
+
 interface UpdateNotificationProps {
     className?: string;
 }
@@ -10,8 +12,8 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
 
-    // Get the build version injected by Vite
-    const currentVersion = '__APP_VERSION__';
+    // Get the build version from the generated file
+    const currentVersion = APP_VERSION;
 
     useEffect(() => {
         // Skip update checks when running inside an iframe (Samsung/Android WebView compatibility)
