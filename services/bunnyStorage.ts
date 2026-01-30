@@ -64,7 +64,6 @@ export const uploadImageToBunny = async (base64Data: string, folder: string = 'u
     // Return original base64 so we don't lose the data if upload fails
     return base64Data;
   }
-}
 };
 
 export const deleteImageFromBunny = async (imageUrl: string): Promise<boolean> => {
