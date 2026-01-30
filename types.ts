@@ -38,6 +38,13 @@ export interface User {
   isLedgerAuditor?: boolean;
   isStagedAttendanceEnabled?: boolean;
   stagedAttendanceConfig?: StagedAttendanceConfig[];
+  stagedAttendanceProgress?: StagedAttendanceProgress;
+}
+
+export interface StagedAttendanceProgress {
+  date: string;
+  currentStageIndex: number;
+  collectedImages: string[];
 }
 
 export interface Branch {

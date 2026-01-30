@@ -288,9 +288,24 @@ const UserManagement: React.FC = () => {
       } else if (record) {
         // Present
         bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
-      } else if (!isFuture) {
-        // Absent (Default)
-        bgClass = 'bg-red-50 border-red-100 text-red-300';
+      } else {
+        // Check for Partial / In Progress
+        // Only if date matches the stored progress date
+        const isPartial = viewingAttendanceFor.stagedAttendanceProgress &&
+          viewingAttendanceFor.stagedAttendanceProgress.date === dateStr;
+
+        if (isPartial) {
+          bgClass = 'bg-amber-50 border-amber-200 text-amber-600 font-bold ring-1 ring-amber-200';
+          content = (
+            <div className="flex flex-col items-center">
+              <span className="text-sm">{i}</span>
+              <span className="text-[8px] leading-none mt-0.5">Part</span>
+            </div>
+          );
+        } else if (!isFuture) {
+          // Absent (Default)
+          bgClass = 'bg-red-50 border-red-100 text-red-300';
+        }
       }
 
       if (isToday && !record && !override) {

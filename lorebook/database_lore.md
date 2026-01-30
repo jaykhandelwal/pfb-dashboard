@@ -160,6 +160,20 @@ CREATE TABLE IF NOT EXISTS customer_coupons (
 
 -- 6. STAFF & OPERATIONS -----------------------------------------------------
 
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    code TEXT,
+    role TEXT,                         -- ADMIN, MANAGER, STAFF
+    permissions JSONB DEFAULT '[]'::jsonb,
+    default_branch_id TEXT,
+    default_page TEXT,
+    is_ledger_auditor BOOLEAN DEFAULT false,
+    is_staged_attendance_enabled BOOLEAN DEFAULT false,
+    staged_attendance_config JSONB,
+    staged_attendance_progress JSONB
+);
+
 CREATE TABLE IF NOT EXISTS attendance (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -381,7 +395,19 @@ END $$;
 | `expires_at` | `BIGINT` | Epoch ms |
 | `redeemed_at` | `BIGINT` | Epoch ms |
 
-### 9. `attendance`
+### 9. `users` (Staff Profiles)
+
+| Column Name | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `TEXT` (Primary Key) | User ID |
+| `name` | `TEXT` | Display Name |
+| `code` | `TEXT` | Login Code |
+| `role` | `TEXT` | `ADMIN`, `MANAGER`, `STAFF` |
+| `permissions` | `JSONB` | Array of permission strings |
+| `is_staged_attendance_enabled` | `BOOLEAN` | Toggle for staged flow |
+| `staged_attendance_progress` | `JSONB` | Saved draft of partial attendance |
+
+### 10. `attendance`
 
 | Column Name | Type | Description |
 | :--- | :--- | :--- |

@@ -2,23 +2,25 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw } from 'lucide-react';
+import { Camera, CheckCircle2, UserCheck, MapPin, Loader2, X, RotateCcw, AlertTriangle, UploadCloud } from 'lucide-react';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { getLocalISOString } from '../constants';
 
 const Attendance: React.FC = () => {
    const { branches, addAttendance, attendanceRecords } = useStore();
-   const { currentUser } = useAuth();
+   const { currentUser, updateUser } = useAuth();
 
    const [branchId, setBranchId] = useState<string>('');
-   const [capturedImage, setCapturedImage] = useState<string | null>(null); // Current stage image
-   const [collectedImages, setCollectedImages] = useState<string[]>([]); // All stage images
+   const [capturedImage, setCapturedImage] = useState<string | null>(null); // Current captured but not uploaded
+   const [collectedImages, setCollectedImages] = useState<string[]>([]); // Uploaded URLs
    const [currentStageIndex, setCurrentStageIndex] = useState(0);
 
    const [isCameraOpen, setIsCameraOpen] = useState(false);
    const [isSubmitting, setIsSubmitting] = useState(false);
+   const [isUploading, setIsUploading] = useState(false);
    const [successMsg, setSuccessMsg] = useState('');
    const [errorMsg, setErrorMsg] = useState('');
+   const [warningMsg, setWarningMsg] = useState('');
 
    const videoRef = useRef<HTMLVideoElement>(null);
    const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +43,45 @@ const Attendance: React.FC = () => {
    // Check if already checked in today
    const today = getLocalISOString();
    const todayRecord = attendanceRecords.find(r => r.userId === currentUser?.id && r.date === today);
+
+   // --- RESTORE PROGRESS & MISSING CHECK ---
+   useEffect(() => {
+      if (!currentUser) return;
+
+      // 1. Restore Progress
+      if (currentUser.stagedAttendanceProgress && currentUser.stagedAttendanceProgress.date === today) {
+         setCollectedImages(currentUser.stagedAttendanceProgress.collectedImages || []);
+         setCurrentStageIndex(currentUser.stagedAttendanceProgress.currentStageIndex || 0);
+      }
+
+      // 2. Check Missing Attendance (Yesterday)
+      // Simple check: if yesterday exists in calendar and no record found
+      const checkMissing = async () => {
+         const d = new Date();
+         d.setDate(d.getDate() - 1);
+         const yesterday = d.toISOString().slice(0, 10); // Simple ISO date for local timezone approximation
+
+         // Ideally use a more robust date library or helper if timezones are critical, 
+         // but consistent getLocalISOString usage across app suggests this pattern:
+         // Re-implement getLocalISOString logic for "yesterday" if needed or trust simple Date manipulation for now.
+
+         const yesterdayRecord = attendanceRecords.find(r => r.userId === currentUser.id && r.date === yesterday);
+
+         // We also need to check if they were supposed to work yesterday? 
+         // For now, assuming if they open app today, they might have missed yesterday.
+         // Showing a gentle warning.
+         if (!yesterdayRecord) {
+            // Check if yesterday was a working day? Omitted for MVP.
+            // Just show warning if no record found.
+            setWarningMsg(`You did not record attendance for yesterday (${yesterday}).`);
+         }
+      };
+
+      if (!todayRecord) {
+         checkMissing();
+      }
+
+   }, [currentUser, attendanceRecords, todayRecord]);
 
    // Camera Functions
    const startCamera = async () => {
@@ -117,25 +158,63 @@ const Attendance: React.FC = () => {
       };
    }, [stream]);
 
-   const handleStageNext = () => {
-      if (!capturedImage) return;
+   const handleUpload = async () => {
+      if (!capturedImage || !currentUser) return;
 
-      const newImages = [...collectedImages, capturedImage];
-      setCollectedImages(newImages);
-      setCapturedImage(null);
+      setIsUploading(true);
+      try {
+         // Upload immediately
+         const folder = `attendance/${currentUser.id}/${today}/${currentStageIndex}`;
+         const uploadedUrl = await uploadImageToBunny(capturedImage, folder);
 
+         const newImages = [...collectedImages];
+         newImages[currentStageIndex] = uploadedUrl; // Place at specific index
+         setCollectedImages(newImages);
+         setCapturedImage(null); // Clear capture to show "Next" or "Uploaded" state
+
+         // Save Progress to User Profile
+         await updateUser({
+            ...currentUser,
+            stagedAttendanceProgress: {
+               date: today,
+               currentStageIndex: currentStageIndex, // Still on this stage until they click "Next"
+               collectedImages: newImages
+            }
+         });
+
+      } catch (e) {
+         console.error("Upload Error", e);
+         setErrorMsg("Failed to upload image. Please try again.");
+      } finally {
+         setIsUploading(false);
+      }
+   };
+
+   const handleStageNext = async () => {
+      // Advance stage
       if (currentStageIndex < stages.length - 1) {
-         // Move to next stage
-         setCurrentStageIndex(prev => prev + 1);
+         const nextIndex = currentStageIndex + 1;
+         setCurrentStageIndex(nextIndex);
+
+         // Update progress index
+         if (currentUser) {
+            await updateUser({
+               ...currentUser,
+               stagedAttendanceProgress: {
+                  date: today,
+                  currentStageIndex: nextIndex,
+                  collectedImages: collectedImages
+               }
+            });
+         }
       } else {
-         // All stages done, trigger submit
-         submitAttendance(newImages);
+         // Final submit
+         submitAttendance(collectedImages);
       }
    };
 
    const handleRetake = () => {
       setCapturedImage(null);
-      // collectedImages remains same for current stage index
    };
 
    const handleSubmitUnstaged = () => {
@@ -151,12 +230,18 @@ const Attendance: React.FC = () => {
       setIsSubmitting(true);
 
       try {
-         // Upload all images
-         const uploadPromises = imagesToSubmit.map((img, idx) =>
-            uploadImageToBunny(img, `attendance/${currentUser.id}/${today}/${idx}`)
-         );
+         let uploadedUrls: string[] = [];
 
-         const uploadedUrls = await Promise.all(uploadPromises);
+         if (isStaged) {
+            // For staged, images are already uploaded one by one
+            uploadedUrls = imagesToSubmit;
+         } else {
+            // For unstaged, upload now
+            const uploadPromises = imagesToSubmit.map((img, idx) =>
+               uploadImageToBunny(img, `attendance/${currentUser.id}/${today}/${idx}`)
+            );
+            uploadedUrls = await Promise.all(uploadPromises);
+         }
 
          await addAttendance({
             userId: currentUser.id,
@@ -172,6 +257,13 @@ const Attendance: React.FC = () => {
          setCapturedImage(null);
          setCollectedImages([]);
          setCurrentStageIndex(0);
+
+         // Clear progress from User Profile
+         await updateUser({
+            ...currentUser,
+            stagedAttendanceProgress: undefined
+         });
+
       } catch (e) {
          console.error("Attendance Submit Error", e);
          setErrorMsg("Failed to submit attendance. Please try again.");
@@ -255,10 +347,10 @@ const Attendance: React.FC = () => {
                            <div
                               key={stage.id}
                               className={`relative flex-1 aspect-[3/4] max-w-[80px] rounded-lg border-2 overflow-hidden transition-all duration-300 ${isCurrent
-                                    ? 'border-indigo-500 ring-2 ring-indigo-200 ring-offset-2 scale-105 z-10'
-                                    : isCompleted
-                                       ? 'border-emerald-500 bg-emerald-50'
-                                       : 'border-slate-200 bg-slate-50 opacity-60'
+                                 ? 'border-indigo-500 ring-2 ring-indigo-200 ring-offset-2 scale-105 z-10'
+                                 : isCompleted
+                                    ? 'border-emerald-500 bg-emerald-50'
+                                    : 'border-slate-200 bg-slate-50 opacity-60'
                                  }`}
                            >
                               {isCompleted && collectedImages[idx] ? (
@@ -300,12 +392,24 @@ const Attendance: React.FC = () => {
                </div>
             )}
 
+            {/* Warning Message */}
+            {warningMsg && (
+               <div className="mx-5 mb-4 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3">
+                  <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                  <div>
+                     <h4 className="font-bold text-amber-700 text-sm">Action Required</h4>
+                     <p className="text-amber-600 text-xs mt-1">{warningMsg}</p>
+                  </div>
+               </div>
+            )}
+
             {/* Camera Section */}
             <div className="p-5 flex flex-col items-center">
                <canvas ref={canvasRef} className="hidden" />
 
                {!isCameraOpen && !capturedImage && (
                   <div className="w-full">
+                     {/* ... Header ... */}
                      <div className="flex justify-between items-center mb-3">
                         <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
                            <Camera size={12} /> Camera Verification
@@ -317,23 +421,53 @@ const Attendance: React.FC = () => {
                         )}
                      </div>
 
-                     <button
-                        onClick={startCamera}
-                        className="w-full aspect-square md:aspect-video rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center bg-slate-50 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all group mb-4"
-                     >
-                        <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                           <Camera size={32} />
+                     {/* Explicit "Next Step" button when image is already uploaded for this stage */}
+                     {isStaged && collectedImages[currentStageIndex] ? (
+                        <div className="w-full mb-4">
+                           <div className="relative aspect-video bg-emerald-50 rounded-xl overflow-hidden border border-emerald-100 flex flex-col items-center justify-center mb-4">
+                              <img src={collectedImages[currentStageIndex]} alt="Uploaded" className="w-full h-full object-cover opacity-50" />
+                              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                 <div className="bg-white/90 p-3 rounded-full shadow-sm mb-2">
+                                    <CheckCircle2 className="text-emerald-600" size={32} />
+                                 </div>
+                                 <span className="font-bold text-emerald-800">Image Uploaded</span>
+                              </div>
+                           </div>
+                           <button
+                              onClick={handleStageNext}
+                              className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg flex items-center justify-center gap-2"
+                           >
+                              {currentStageIndex === stages.length - 1 ? (
+                                 <>Finish & Submit Attendance <CheckCircle2 size={20} /></>
+                              ) : (
+                                 <>Next Step <CheckCircle2 size={20} /></>
+                              )}
+                           </button>
                         </div>
-                        <span className="font-bold text-sm">Tap to Take Photo</span>
-                     </button>
+                     ) : (
+                        <>
+                           <button
+                              onClick={startCamera}
+                              className="w-full aspect-square md:aspect-video rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center bg-slate-50 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all group mb-4"
+                           >
+                              <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                 <Camera size={32} />
+                              </div>
+                              <span className="font-bold text-sm">Tap to Take Photo</span>
+                           </button>
 
-                     <button
-                        disabled={true}
-                        className="w-full py-3.5 bg-slate-100 text-slate-400 rounded-xl font-bold border border-slate-200 cursor-not-allowed flex items-center justify-center gap-2"
-                     >
-                        <CheckCircle2 size={20} />
-                        {isStaged ? (currentStageIndex === stages.length - 1 ? "Finish & Submit" : "Next Step") : "Take Photo to Check In"}
-                     </button>
+                           {/* Placeholder Disabled Button only if not staged or purely initial state */}
+                           {!isStaged && (
+                              <button
+                                 disabled={true}
+                                 className="w-full py-3.5 bg-slate-100 text-slate-400 rounded-xl font-bold border border-slate-200 cursor-not-allowed flex items-center justify-center gap-2"
+                              >
+                                 <CheckCircle2 size={20} />
+                                 Take Photo to Check In
+                              </button>
+                           )}
+                        </>
+                     )}
                   </div>
                )}
 
@@ -379,28 +513,32 @@ const Attendance: React.FC = () => {
                         </div>
                      )}
 
-                     <button
-                        onClick={isStaged ? handleStageNext : handleSubmitUnstaged}
-                        disabled={isSubmitting}
-                        className={`w-full py-3.5 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${isStaged && currentStageIndex < stages.length - 1
-                           ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                           : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                           }`}
-                     >
-                        {isSubmitting ? (
-                           <>
-                              <Loader2 size={20} className="animate-spin" /> {isStaged && currentStageIndex < stages.length - 1 ? 'Processing...' : 'Checking In...'}
-                           </>
-                        ) : (
-                           <>
-                              {isStaged && currentStageIndex < stages.length - 1 ? (
-                                 <>Next: {stages[currentStageIndex + 1]?.title} <CheckCircle2 size={20} /></>
-                              ) : (
-                                 <><CheckCircle2 size={20} /> Confirm Attendance</>
-                              )}
-                           </>
-                        )}
-                     </button>
+                     {/* Actions based on Staged vs Unstaged */}
+                     {isStaged ? (
+                        <button
+                           onClick={handleUpload}
+                           disabled={isUploading}
+                           className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                           {isUploading ? (
+                              <><Loader2 size={20} className="animate-spin" /> Uploading...</>
+                           ) : (
+                              <><UploadCloud size={20} /> Upload Photo</>
+                           )}
+                        </button>
+                     ) : (
+                        <button
+                           onClick={handleSubmitUnstaged}
+                           disabled={isSubmitting}
+                           className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                           {isSubmitting ? (
+                              <><Loader2 size={20} className="animate-spin" /> Checking In...</>
+                           ) : (
+                              <><CheckCircle2 size={20} /> Confirm Attendance</>
+                           )}
+                        </button>
+                     )}
                   </div>
                )}
             </div>

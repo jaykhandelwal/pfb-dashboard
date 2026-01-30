@@ -181,7 +181,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       defaultPage: u.default_page || u.defaultPage,
       isLedgerAuditor: u.is_ledger_auditor || u.isLedgerAuditor || false,
       isStagedAttendanceEnabled: u.is_staged_attendance_enabled ?? u.isStagedAttendanceEnabled ?? false,
-      stagedAttendanceConfig: typeof u.staged_attendance_config === 'string' ? JSON.parse(u.staged_attendance_config) : (u.staged_attendance_config || u.stagedAttendanceConfig || [])
+      stagedAttendanceConfig: typeof u.staged_attendance_config === 'string' ? JSON.parse(u.staged_attendance_config) : (u.staged_attendance_config || u.stagedAttendanceConfig || []),
+      stagedAttendanceProgress: typeof u.staged_attendance_progress === 'string' ? JSON.parse(u.staged_attendance_progress) : (u.staged_attendance_progress || u.stagedAttendanceProgress)
     };
     // Runtime patch for admins to get new permissions immediately
     if (user.role === 'ADMIN') {
@@ -242,7 +243,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         default_page: newUser.defaultPage,
         is_ledger_auditor: newUser.isLedgerAuditor,
         is_staged_attendance_enabled: newUser.isStagedAttendanceEnabled,
-        staged_attendance_config: newUser.stagedAttendanceConfig
+        staged_attendance_config: newUser.stagedAttendanceConfig,
+        staged_attendance_progress: newUser.stagedAttendanceProgress
       });
       if (error) {
         console.error("Error adding user to Supabase:", error);
@@ -265,9 +267,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         permissions: updatedUser.permissions,
         default_branch_id: updatedUser.defaultBranchId,
         default_page: updatedUser.defaultPage,
-        is_ledger_auditor: updatedUser.isLedgerAuditor,
         is_staged_attendance_enabled: updatedUser.isStagedAttendanceEnabled,
-        staged_attendance_config: updatedUser.stagedAttendanceConfig
+        staged_attendance_config: updatedUser.stagedAttendanceConfig,
+        staged_attendance_progress: updatedUser.stagedAttendanceProgress
       }).eq('id', updatedUser.id);
 
       if (error) {
