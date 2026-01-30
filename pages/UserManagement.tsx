@@ -31,7 +31,6 @@ const UserManagement: React.FC = () => {
       role: 'STAFF',
       permissions: [...ROLE_PRESETS.STAFF],
       defaultBranchId: '',
-      defaultBranchId: '',
       defaultPage: '/dashboard',
       isStagedAttendanceEnabled: false,
       stagedAttendanceConfig: []
@@ -728,6 +727,7 @@ const UserManagement: React.FC = () => {
                     <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Holiday</div>
                     <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Absent (1)</div>
                     <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Penalty (2)</div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-400"></div> In Progress</div>
                   </div>
                 </div>
 
