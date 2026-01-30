@@ -1,7 +1,7 @@
 # Database Lore: The Backbone of Pakaja
 
 > **Status:** Active Reference
-> **Last Updated:** 2026-01-18
+> **Last Updated:** 2026-01-30
 > **System:** PostgreSQL (via Supabase)
 
 ## 1. Design Philosophy

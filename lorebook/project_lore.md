@@ -1,7 +1,7 @@
 # Project Lore: Pakaja Inventory & Analytics System
 
 > **Version:** 1.0.0
-> **Last Updated:** 2026-01-18
+> **Last Updated:** 2026-01-30
 > **Scope:** Full Project Documentation for AI & Developers
 
 ## 1. Project Identity & Purpose
@@ -141,32 +141,51 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 5.  **Reconciliation:** Manager views the "End of Day" report.
     *   *Match:* `(Opening + CheckOut - CheckIn - Waste)` should equal `Sales`.
 
-### 5.2. Attendance
+### 5.2. Transaction Logs
+*   **Unified View:** Combines all transaction types (CheckIn, CheckOut, Waste, etc.) into a single, cohesive list.
+*   **Sorting Modes:** 
+    *   `FOR_DATE`: Groups by Operational Date (Default).
+    *   `LOGGED_ON`: Sorts strictly by timestamp of entry.
+*   **Visual Indicators:** Red highlighting used exclusively for "Missing Return" (Check-out without corresponding Check-in).
+
+### 5.3. Attendance
 *   **Check-In:** Staff takes a selfie.
 *   **Storage:** Image uploaded to BunnyCDN (`/attendance` folder).
 *   **Timestamp:** Logged for payroll accuracy.
 
 ---
 
-## 6. External Service Integration
+## 6. System Resiliency & Updates
 
-### 6.1. BunnyCDN
+### 6.1. Auto-Update System
+*   **Versioning:** `vite.config.ts` injects a build timestamp into `sw.js` during production build.
+*   **Detection:** Service Worker detects new version, installs in background, and prompts user via `UpdateNotification`.
+*   **Form Preservation:** 
+    *   Before update, `formPreservation.ts` saves all inputs/textareas to `localStorage`.
+    *   After reload, data is automatically restored to the fields to prevent data loss.
+    *   *TTL:* Saved data expires after 5 minutes.
+
+---
+
+## 7. External Service Integration
+
+### 7.1. BunnyCDN
 *   **Purpose:** High-performance storage for evidence photos (Wastage/Attendance).
 *   **Structure:**
     *   Zone: `pakaja`
     *   Folders: `/wastage`, `/attendance`, `/ledger`
 
-### 6.2. Google Gemini
+### 7.2. Google Gemini
 *   **Model:** `gemini-1.5-flash` (implied by typical usage, code says `gemini-pro` or similar - check generic usage).
 *   **Usage:** Generates text summaries of tabular data for the Dashboard.
 
-### 6.3. Supabase
+### 7.3. Supabase
 *   **Tables:** `skus`, `menu_items`, `transactions`, `orders`, `customers`, `coupons`, `users`, `storage_units`.
 *   **Security:** RLS (Row Level Security) enabled.
 
 ---
 
-## 7. Configuration Variables (`.env`)
+## 8. Configuration Variables (`.env`)
 *   `VITE_SUPABASE_URL`: DB Endpoint.
 *   `VITE_SUPABASE_ANON_KEY`: Public API Key.
 *   `API_KEY`: Google Gemini API Key.
