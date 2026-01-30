@@ -710,6 +710,34 @@ const AppSettings: React.FC = () => {
                      </div>
 
                      <div className="divide-y divide-slate-100">
+                        {/* Setting: General Debug Logging */}
+                        <div className="p-6 flex items-center justify-between">
+                           <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                                 <Bug size={20} />
+                              </div>
+                              <div>
+                                 <h4 className="font-bold text-slate-700">Attendance Webhook Debugging</h4>
+                                 <p className="text-sm text-slate-500">
+                                    Show technical details (JSON payloads, errors) in popups and console logs.
+                                 </p>
+                              </div>
+                           </div>
+                           {savingKeys.includes('enable_debug_logging') ? (
+                              <Loader2 size={24} className="text-red-600 animate-spin" />
+                           ) : (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={appSettings.enable_debug_logging || false}
+                                    onChange={() => handleToggle('enable_debug_logging')}
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                              </label>
+                           )}
+                        </div>
+
                         {/* Setting 1: Inventory Debug */}
                         <div className="p-6 flex items-center justify-between">
                            <div className="flex gap-4">
