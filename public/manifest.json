@@ -1,0 +1,30 @@
+{
+    "name": "Pakaja Inventory & Analytics",
+    "short_name": "Pakaja",
+    "description": "Inventory management and analytics dashboard for Pakaja",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f9faf7",
+    "theme_color": "#403424",
+    "orientation": "any",
+    "scope": "/",
+    "icons": [
+        {
+            "src": "https://pakaja.b-cdn.net/assets/favicon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "https://pakaja.b-cdn.net/assets/favicon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "categories": [
+        "business",
+        "productivity"
+    ],
+    "lang": "en"
+}
