@@ -11,12 +11,44 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
     const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
 
+    const [isVersionMismatch, setIsVersionMismatch] = useState(false);
+
+    // Get the build version injected by Vite
+    const currentVersion = '__APP_VERSION__';
+
     useEffect(() => {
         // Skip update checks when running inside an iframe (Samsung/Android WebView compatibility)
         const isInIframe = window !== window.top;
         if ('serviceWorker' in navigator && !isInIframe) {
+
+            const checkVersion = async () => {
+                try {
+                    // Fetch version.json with cache busting
+                    const response = await fetch(`/version.json?t=${Date.now()}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        const serverVersion = data.version;
+
+                        // Compare versions
+                        if (serverVersion && serverVersion !== currentVersion) {
+                            console.log(`[Update] Version mismatch detected. Current: ${currentVersion}, Server: ${serverVersion}`);
+                            setUpdateAvailable(true);
+                            setIsVersionMismatch(true);
+                        }
+                    }
+                } catch (error) {
+                    console.log('[Update] Failed to check version.json:', error);
+                }
+            };
+
             // Check for updates on page load
             navigator.serviceWorker.ready.then((registration) => {
+                // Force an update check immediately
+                registration.update();
+
+                // Also check via version.json
+                checkVersion();
+
                 // Check if there's already a waiting worker
                 if (registration.waiting) {
                     setWaitingWorker(registration.waiting);
@@ -50,6 +82,7 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
                 navigator.serviceWorker.ready.then((registration) => {
                     registration.update();
                 });
+                checkVersion();
             }, 5 * 60 * 1000);
 
             return () => clearInterval(checkInterval);
@@ -57,13 +90,25 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
     }, [isUpdating]);
 
     const handleUpdate = () => {
-        if (waitingWorker) {
-            // Save any form data before updating
-            saveFormData();
+        setIsUpdating(true);
+        saveFormData();
 
-            setIsUpdating(true);
-            // Tell the waiting service worker to activate
+        if (waitingWorker) {
+            // Standard SW update
             waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        } else if (isVersionMismatch) {
+            // Hard update: version mismatch but no waiting worker detected (likely stuck cache)
+            // Unregister all SWs and reload
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (const registration of registrations) {
+                        registration.unregister();
+                    }
+                    window.location.reload();
+                });
+            } else {
+                window.location.reload();
+            }
         }
     };
 

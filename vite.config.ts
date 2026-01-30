@@ -34,6 +34,15 @@ function serviceWorkerVersionPlugin(): Plugin {
       const versionContent = `export const APP_VERSION = '${buildVersion}';\n`;
       fs.writeFileSync(versionFilePath, versionContent);
       console.log(`[Version] Generated version.ts: ${buildVersion}`);
+
+      // 3. Generate public/version.json for runtime checks (robust update detection)
+      const publicVersionPath = path.resolve(__dirname, 'public/version.json');
+      // Ensure public dir exists
+      if (!fs.existsSync(path.resolve(__dirname, 'public'))) {
+        fs.mkdirSync(path.resolve(__dirname, 'public'));
+      }
+      fs.writeFileSync(publicVersionPath, JSON.stringify({ version: buildVersion, timestamp: new Date().toISOString() }, null, 2));
+      console.log(`[Version] Generated public/version.json: ${buildVersion}`);
     }
   };
 }

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Iframe Verification Test</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 100%;
+            height: 90vh;
+            border: none;
+        }
+
+        .header {
+            height: 10vh;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            font-family: sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>Iframe Simulation Test (Simulating Android App)</h1>
+    </div>
+    <p style="padding: 10px;">Check the browser console (F12) to verify that Service Worker registration is skipped.</p>
+    <!-- Adjust the URL if your dev server is on a different port -->
+    <iframe src="http://localhost:3001"></iframe>
+</body>
+
+</html>

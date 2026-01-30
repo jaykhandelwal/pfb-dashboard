@@ -57,6 +57,7 @@ self.addEventListener('message', (event) => {
 });
 
 // Fetch event - network first for API, cache first for static assets
+// Fetch event - network first for API/HTML, cache first for static assets
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
@@ -66,18 +67,38 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Handle API requests (network first)
+    // specific NetworkFirst strategies
+    // 1. Navigation requests (HTML) - always try network first for fresh content
+    if (request.mode === 'navigate') {
+        event.respondWith(networkFirst(request));
+        return;
+    }
+
+    // 2. API requests (Supabase, Google APIs/Fonts, CDN)
     if (url.hostname.includes('supabase') ||
         url.hostname.includes('googleapis') ||
+        url.hostname.includes('gstatic') ||
         url.hostname.includes('b-cdn.net')) {
         event.respondWith(networkFirst(request));
         return;
     }
 
-    // Handle static assets (cache first)
-    event.respondWith(cacheFirst(request));
+    // 3. Static Assets (JS, CSS, Images, Fonts) - CacheFirst
+    // Only cache same-origin assets or specific known extensions
+    const isStaticAsset =
+        url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot)$/) ||
+        url.hostname === self.location.hostname;
+
+    if (isStaticAsset) {
+        event.respondWith(cacheFirst(request));
+        return;
+    }
+
+    // Default to network only for everything else to be safe
+    return;
 });
 
+// Network first strategy - try network, fall back to cache
 // Network first strategy - try network, fall back to cache
 async function networkFirst(request) {
     try {
@@ -92,6 +113,15 @@ async function networkFirst(request) {
         if (cachedResponse) {
             return cachedResponse;
         }
+
+        // If navigation request and not in cache, try offline page
+        if (request.mode === 'navigate') {
+            const offlineResponse = await caches.match(OFFLINE_URL);
+            if (offlineResponse) {
+                return offlineResponse;
+            }
+        }
+
         throw error;
     }
 }
