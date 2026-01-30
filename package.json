@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite preview --host --port 3000",
+    "start": "npx serve -s dist -l 3000",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,7 +17,8 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "apexcharts": "^3.49.0",
-    "react-apexcharts": "^1.7.0"
+    "react-apexcharts": "^1.7.0",
+    "serve": "^14.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
