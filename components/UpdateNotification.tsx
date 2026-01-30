@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, X } from 'lucide-react';
+import { saveFormData } from '../utils/formPreservation';
 
 interface UpdateNotificationProps {
     className?: string;
@@ -55,6 +56,9 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ className = '' 
 
     const handleUpdate = () => {
         if (waitingWorker) {
+            // Save any form data before updating
+            saveFormData();
+
             setIsUpdating(true);
             // Tell the waiting service worker to activate
             waitingWorker.postMessage({ type: 'SKIP_WAITING' });
