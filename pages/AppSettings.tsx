@@ -89,6 +89,7 @@ const AppSettings: React.FC = () => {
                const latestSuccessful = deployments.find((d: any) => d.status === 'finished' || d.status === 'success');
 
                if (latestSuccessful && latestSuccessful.extracted_version) {
+                  console.log(`Comparing - Local: ${APP_VERSION} vs Remote: ${latestSuccessful.extracted_version}`);
                   // Simple string comparison for version (assuming format YY.MM.DD.HHMM which works lexicographically)
                   if (latestSuccessful.extracted_version > APP_VERSION) {
                      setToastMsg(`New version available: v${latestSuccessful.extracted_version}. Please update.`);
@@ -96,6 +97,7 @@ const AppSettings: React.FC = () => {
                      setToastMsg(`Status updated. You are on the latest version.`);
                   }
                } else {
+                  console.log('No extracted version found in latest deployment', latestSuccessful);
                   setToastMsg(`Found ${deployments.length} recent deployment(s). Status updated.`);
                }
             }

@@ -71,7 +71,10 @@ export const getRecentDeployments = async (
                 let logContent = deployment.logs;
                 // Simple regex to find the version pattern in the raw string or parsed content
                 // Pattern: [Version] Generated version.ts: XX.XX.XX.XXXX
-                const versionMatch = /\[Version\] Generated version\.ts: ([0-9.]+)/.exec(logContent);
+                // Improved regex to handle potential JSON escaping or slight format variations
+                // Pattern: [Version] Generated version.ts: XX.XX.XX.XXXX
+                // We use a broader match to catch it even if somewhat malformed in logs
+                const versionMatch = /\[Version\] Generated version\.ts:\s*([0-9.]+)/.exec(logContent);
                 if (versionMatch && versionMatch[1]) {
                     extractedVersion = versionMatch[1];
                 }
