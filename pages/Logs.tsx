@@ -245,43 +245,26 @@ const Logs: React.FC = () => {
         key={group.id}
         className={`transition-colors border-b border-slate-100 ${rowBgClass}`}
       >
-        {/* Expand Toggle + Date Column */}
-        <td className="p-3 whitespace-nowrap align-top">
-          <div className="flex items-start gap-2">
-            <button
-              onClick={() => toggleExpand(group.id)}
-              className="p-1 hover:bg-slate-200 rounded transition-colors mt-1"
-            >
-              {isExpanded ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-400" />}
-            </button>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">For Date</span>
-              <span className="font-bold text-slate-800 text-sm">
-                {new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-              </span>
-
-              <div className="flex flex-col mt-2 pt-2 border-t border-slate-100">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide flex items-center gap-1">
-                  <Clock size={8} /> Logged On
-                </span>
-                <span className="text-xs text-slate-500">
-                  {new Date(group.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  <span className="text-slate-300 mx-1">|</span>
-                  {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            </div>
+        {/* Logged On (Compact) */}
+        <td className="px-3 py-2 align-middle whitespace-nowrap">
+          <div className="flex flex-col">
+            <span className="text-xs font-medium text-slate-700">
+              {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {new Date(group.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
           </div>
         </td>
 
         {/* User */}
-        <td className="p-3 align-middle">
+        <td className="px-3 py-2 align-middle">
           {group.userName ? (
             <div className="flex items-center gap-1.5 text-slate-700 font-medium text-sm">
               <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-600">
                 <UserIcon size={10} />
               </div>
-              {group.userName}
+              <span className="truncate max-w-[100px]">{group.userName}</span>
             </div>
           ) : (
             <span className="text-slate-400 text-xs italic">--</span>
@@ -289,24 +272,27 @@ const Logs: React.FC = () => {
         </td>
 
         {/* Type */}
-        <td className="p-3 align-middle">
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getTypeStyles(group.type)}`}>
-            {getTypeIcon(group.type)}
-            {getTypeName(group.type)}
-          </span>
-          {group.hasImages && (
-            <button
-              onClick={() => setSelectedImage(group.imageUrls[0])}
-              className="ml-2 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
-            >
-              <ImageIcon size={12} /> View
-            </button>
-          )}
+        <td className="px-3 py-2 align-middle">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${getTypeStyles(group.type)}`}>
+              {getTypeIcon(group.type)}
+              {getTypeName(group.type)}
+            </span>
+            {group.hasImages && (
+              <button
+                onClick={() => setSelectedImage(group.imageUrls[0])}
+                className="text-slate-400 hover:text-blue-600 transition-colors"
+                title="View Evidence"
+              >
+                <ImageIcon size={14} />
+              </button>
+            )}
+          </div>
         </td>
 
         {/* Deleted Info Column */}
         {dataScope === 'DELETED' && (
-          <td className="p-3 align-middle">
+          <td className="px-3 py-2 align-middle">
             <div className="text-xs">
               <div className="font-bold text-red-700">{group.deletedBy || 'Unknown'}</div>
               <div className="text-slate-400">
@@ -317,37 +303,50 @@ const Logs: React.FC = () => {
         )}
 
         {/* Branch */}
-        <td className="p-3 text-slate-700 font-medium align-middle text-sm">
+        <td className="px-3 py-2 text-slate-700 font-medium align-middle text-sm text-center">
           {getBranchName(group.branchId)}
         </td>
 
         {/* Items Summary - Condensed or Expanded */}
-        <td className="p-3 align-middle">
+        <td className="px-3 py-2 align-middle">
           {isExpanded ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 animate-fade-in">
               {group.items.map((item, idx) => (
                 <span key={idx} className={`inline-flex items-center gap-1 border px-2 py-0.5 rounded text-xs ${isAdjustment ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
-                  <span className="font-semibold">{item.qty > 0 && isAdjustment ? '+' : ''}{item.qty}</span>
-                  <span className="truncate max-w-[120px]">{item.skuName}</span>
+                  <span className="font-semibold text-xs">{item.qty > 0 && isAdjustment ? '+' : ''}{item.qty}</span>
+                  <span className="text-[11px] truncate max-w-[150px]">{item.skuName}</span>
                 </span>
               ))}
             </div>
           ) : (
             <span className="text-sm text-slate-500">
               {group.items.length} item{group.items.length !== 1 ? 's' : ''}
+              <span className="text-slate-300 mx-2">|</span>
+              <span className="text-xs text-slate-400 italic">
+                {group.items.slice(0, 2).map(i => i.skuName).join(', ')}
+                {group.items.length > 2 && '...'}
+              </span>
             </span>
           )}
         </td>
 
         {/* Total */}
-        <td className="p-3 text-right font-mono font-bold text-slate-700 align-middle">
+        <td className="px-3 py-2 text-right font-mono font-bold text-slate-700 align-middle">
           {group.totalQty > 0 && isAdjustment ? '+' : ''}{group.totalQty}
         </td>
 
-        {/* Actions */}
-        {(dataScope === 'ACTIVE' && isAdmin) && (
-          <td className="p-3 text-center align-middle">
-            {group.batchId && (
+        {/* Actions (Expand + Delete) */}
+        <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={() => toggleExpand(group.id)}
+              className={`p-1.5 rounded transition-colors ${isExpanded ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+              title={isExpanded ? "Collapse" : "Expand Details"}
+            >
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+
+            {(dataScope === 'ACTIVE' && isAdmin && group.batchId) && (
               <button
                 onClick={() => handleDelete(group.batchId)}
                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
@@ -356,8 +355,8 @@ const Logs: React.FC = () => {
                 <Trash2 size={14} />
               </button>
             )}
-          </td>
-        )}
+          </div>
+        </td>
       </tr>
     );
   };
@@ -535,21 +534,45 @@ const Logs: React.FC = () => {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="p-3 w-40">Date & Time</th>
-                    <th className="p-3 w-24">User</th>
-                    <th className="p-3 w-32">Type</th>
-                    {dataScope === 'DELETED' && <th className="p-3 w-32 text-red-600">Deleted By</th>}
-                    <th className="p-3 w-36">Branch</th>
-                    <th className="p-3">Items</th>
-                    <th className="p-3 text-right w-20">Total</th>
-                    {(dataScope === 'ACTIVE' && isAdmin) && <th className="p-3 text-center w-14"></th>}
+                    <th className="px-3 py-2 w-32">
+                      <div className="flex items-center gap-1"><Clock size={12} /> Time</div>
+                    </th>
+                    <th className="px-3 py-2 w-24">User</th>
+                    <th className="px-3 py-2 w-32">Type</th>
+                    {dataScope === 'DELETED' && <th className="px-3 py-2 w-32 text-red-600">Deleted By</th>}
+                    <th className="px-3 py-2 w-36 text-center">Branch</th>
+                    <th className="px-3 py-2">Items</th>
+                    <th className="px-3 py-2 text-right w-20">Total</th>
+                    <th className="px-3 py-2 text-right w-20">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {groupedTransactions.map(group => {
+                  {groupedTransactions.map((group, index) => {
                     // Get status for checkout/return transactions (for highlighting)
                     const status = getTransactionStatus(group);
-                    return renderTransactionRow(group, status);
+
+                    // Header Logic: Check if date changed from previous row
+                    const showDateHeader = index === 0 || groupedTransactions[index - 1].date !== group.date;
+
+                    // If Sorting by LOGGED_ON, we might not want strict date grouping headers if the list isn't strictly ordered by operational date
+                    // However, we'll enable it for clarity, assuming mostly chronological order
+                    const shouldRenderHeader = sortMode === 'FOR_DATE' && showDateHeader;
+
+                    return (
+                      <React.Fragment key={group.id}>
+                        {shouldRenderHeader && (
+                          <tr className="bg-slate-100 border-b border-slate-200">
+                            <td colSpan={dataScope === 'DELETED' ? 8 : 7} className="px-3 py-1.5 font-bold text-slate-700 text-xs">
+                              <div className="flex items-center gap-2">
+                                <Calendar size={12} className="text-slate-500" />
+                                {new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {renderTransactionRow(group, status)}
+                      </React.Fragment>
+                    );
                   })}
                 </tbody>
               </table>
