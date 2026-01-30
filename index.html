@@ -17,8 +17,8 @@
   <link rel="icon" type="image/png" href="https://pakaja.b-cdn.net/assets/favicon.png" />
   <link rel="apple-touch-icon" href="https://pakaja.b-cdn.net/assets/favicon.png" />
 
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="/manifest.json" />
+  <!-- PWA Manifest REMOVED -->
+
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Mynerve&family=Stack+Sans+Text:wght@200..700&display=swap"
@@ -63,23 +63,19 @@
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 
-  <!-- Service Worker Registration -->
+  <!-- Service Worker UN-Registration -->
   <script>
-    // Skip service worker registration when running inside an iframe (for Android WebView/Samsung compatibility)
-    const isInIframe = window !== window.top;
-
-    if ('serviceWorker' in navigator && !isInIframe) {
+    // Force unregister any existing service workers to fix caching issues
+    if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((registration) => {
-            console.log('[App] Service Worker registered with scope:', registration.scope);
-          })
-          .catch((error) => {
-            console.log('[App] Service Worker registration failed:', error);
-          });
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+          for (let registration of registrations) {
+            registration.unregister().then(function (boolean) {
+              console.log('[App] Specific Service Worker unregistered: ' + boolean);
+            });
+          }
+        });
       });
-    } else if (isInIframe) {
-      console.log('[App] Running in iframe, skipping Service Worker registration');
     }
   </script>
 </body>

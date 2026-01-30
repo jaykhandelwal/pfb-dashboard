@@ -18,16 +18,7 @@ const buildVersion = (() => {
 function serviceWorkerVersionPlugin(): Plugin {
   return {
     name: 'sw-version-inject',
-    writeBundle() {
-      // 1. Inject into Service Worker
-      const swPath = path.resolve(__dirname, 'dist/sw.js');
-      if (fs.existsSync(swPath)) {
-        let swContent = fs.readFileSync(swPath, 'utf-8');
-        swContent = swContent.replace('__BUILD_VERSION__', buildVersion);
-        fs.writeFileSync(swPath, swContent);
-        console.log(`[SW] Injected build version: ${buildVersion}`);
-      }
-    },
+
     buildStart() {
       // 2. Generate version.ts for the app to consume
       const versionFilePath = path.resolve(__dirname, 'version.ts');
