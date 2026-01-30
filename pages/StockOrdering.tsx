@@ -261,19 +261,38 @@ const StockOrdering: React.FC = () => {
                 const skusInOrder = new Set<string>();
                 // Safeguard: o.items might be missing if data corrupted
                 if (o.items && Array.isArray(o.items)) {
+                    // Improved SKU extraction: Checks consumed (array/object) and plate
                     o.items.forEach(item => {
-                        // Extract SKUs from consumed list or menu lookup
-                        if (item.consumed && Array.isArray(item.consumed)) {
-                            item.consumed.forEach(c => skusInOrder.add(c.skuId));
-                        } else {
+                        const anyItem = item as any;
+                        let foundInSnapshot = false;
+
+                        // 1. Check 'consumed'
+                        if (anyItem.consumed) {
+                            if (Array.isArray(anyItem.consumed)) {
+                                anyItem.consumed.forEach((c: any) => {
+                                    skusInOrder.add(c.skuId);
+                                    foundInSnapshot = true;
+                                });
+                            } else if (anyItem.consumed.skuId) {
+                                skusInOrder.add(anyItem.consumed.skuId);
+                                foundInSnapshot = true;
+                            }
+                        }
+
+                        // 2. Check 'plate' (Legacy)
+                        if (anyItem.plate && anyItem.plate.skuId) {
+                            skusInOrder.add(anyItem.plate.skuId);
+                            foundInSnapshot = true;
+                        }
+
+                        // 3. Fallback to Menu Definition
+                        if (!foundInSnapshot) {
                             const menuItem = menuItems.find(m => m.id === item.menuItemId);
                             if (menuItem) {
                                 const ings = item.variant === 'HALF' ? menuItem.halfIngredients : menuItem.ingredients;
-                                // Safeguard: ingredients might be undefined
                                 if (ings && Array.isArray(ings)) {
                                     ings.forEach(i => skusInOrder.add(i.skuId));
                                 } else if (menuItem.ingredients && Array.isArray(menuItem.ingredients)) {
-                                    // Fallback to full ingredients if variant invalid
                                     menuItem.ingredients.forEach(i => skusInOrder.add(i.skuId));
                                 }
                             }
