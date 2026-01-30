@@ -21,6 +21,12 @@ export type Permission =
 
 export type Role = 'ADMIN' | 'MANAGER' | 'STAFF';
 
+export interface StagedAttendanceConfig {
+  id: string;
+  title: string;
+  cameraFacingMode: 'user' | 'environment';
+}
+
 export interface User {
   id: string;
   name: string;
@@ -30,6 +36,8 @@ export interface User {
   defaultBranchId?: string;
   defaultPage?: string;
   isLedgerAuditor?: boolean;
+  isStagedAttendanceEnabled?: boolean;
+  stagedAttendanceConfig?: StagedAttendanceConfig[];
 }
 
 export interface Branch {
@@ -238,6 +246,7 @@ export interface AttendanceRecord {
   date: string;
   timestamp: number;
   imageUrl?: string;
+  imageUrls?: string[];
 }
 
 export type AttendanceOverrideType = 'HOLIDAY' | 'ABSENT' | 'PENALTY_2_DAYS';

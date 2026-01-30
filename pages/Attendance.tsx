@@ -11,7 +11,10 @@ const Attendance: React.FC = () => {
    const { currentUser } = useAuth();
 
    const [branchId, setBranchId] = useState<string>('');
-   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+   const [capturedImage, setCapturedImage] = useState<string | null>(null); // Current stage image
+   const [collectedImages, setCollectedImages] = useState<string[]>([]); // All stage images
+   const [currentStageIndex, setCurrentStageIndex] = useState(0);
+
    const [isCameraOpen, setIsCameraOpen] = useState(false);
    const [isSubmitting, setIsSubmitting] = useState(false);
    const [successMsg, setSuccessMsg] = useState('');
@@ -20,6 +23,11 @@ const Attendance: React.FC = () => {
    const videoRef = useRef<HTMLVideoElement>(null);
    const canvasRef = useRef<HTMLCanvasElement>(null);
    const [stream, setStream] = useState<MediaStream | null>(null);
+
+   // Staged Attendance Config for Current User
+   const isStaged = currentUser?.isStagedAttendanceEnabled && currentUser?.stagedAttendanceConfig && currentUser.stagedAttendanceConfig.length > 0;
+   const stages = isStaged ? currentUser.stagedAttendanceConfig! : [];
+   const currentStage = isStaged ? stages[currentStageIndex] : null;
 
    // Initialize Branch ID based on User Default
    useEffect(() => {
@@ -40,17 +48,18 @@ const Attendance: React.FC = () => {
          setErrorMsg('');
          let mediaStream: MediaStream;
 
+         // Determine facing mode: 'user' (front) or 'environment' (back)
+         // Default to 'user' for unstaged or if not specified
+         const facingMode = currentStage?.cameraFacingMode || 'user';
+
          try {
-            // Attempt 1: Explicitly request front camera
             mediaStream = await navigator.mediaDevices.getUserMedia({
-               video: { facingMode: 'user' }
+               video: { facingMode }
             });
          } catch (e) {
-            console.warn("Front camera request failed, falling back to any video device", e);
-            // Fallback: Any available video device
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-               video: true
-            });
+            console.warn(`Camera request for ${facingMode} failed, trying fallback`, e);
+            // Fallback to any video device
+            mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
          }
 
          setStream(mediaStream);
@@ -84,9 +93,13 @@ const Attendance: React.FC = () => {
 
          const context = canvas.getContext('2d');
          if (context) {
-            // Flip horizontally for selfie mirror effect
-            context.translate(canvas.width, 0);
-            context.scale(-1, 1);
+            // Mirror only if using front camera (implied by 'user' mode or default)
+            const isFrontCamera = !currentStage || currentStage.cameraFacingMode === 'user';
+
+            if (isFrontCamera) {
+               context.translate(canvas.width, 0);
+               context.scale(-1, 1);
+            }
 
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
@@ -104,18 +117,46 @@ const Attendance: React.FC = () => {
       };
    }, [stream]);
 
-   const handleSubmit = async () => {
+   const handleStageNext = () => {
+      if (!capturedImage) return;
+
+      const newImages = [...collectedImages, capturedImage];
+      setCollectedImages(newImages);
+      setCapturedImage(null);
+
+      if (currentStageIndex < stages.length - 1) {
+         // Move to next stage
+         setCurrentStageIndex(prev => prev + 1);
+      } else {
+         // All stages done, trigger submit
+         submitAttendance(newImages);
+      }
+   };
+
+   const handleRetake = () => {
+      setCapturedImage(null);
+      // collectedImages remains same for current stage index
+   };
+
+   const handleSubmitUnstaged = () => {
       if (!capturedImage) {
-         setErrorMsg("Please take a photo to confirm attendance.");
+         setErrorMsg("Please take a photo.");
          return;
       }
-      if (!currentUser) return;
+      submitAttendance([capturedImage]);
+   };
 
+   const submitAttendance = async (imagesToSubmit: string[]) => {
+      if (!currentUser) return;
       setIsSubmitting(true);
 
       try {
-         // Upload image to 'attendance' folder
-         const imageUrl = await uploadImageToBunny(capturedImage, 'attendance');
+         // Upload all images
+         const uploadPromises = imagesToSubmit.map((img, idx) =>
+            uploadImageToBunny(img, `attendance/${currentUser.id}/${today}/${idx}`)
+         );
+
+         const uploadedUrls = await Promise.all(uploadPromises);
 
          await addAttendance({
             userId: currentUser.id,
@@ -123,17 +164,22 @@ const Attendance: React.FC = () => {
             branchId,
             date: today,
             timestamp: Date.now(),
-            imageUrl
+            imageUrl: uploadedUrls[0], // Primary image for backward compatibility
+            imageUrls: uploadedUrls
          });
 
          setSuccessMsg(`Checked in successfully at ${new Date().toLocaleTimeString()}!`);
          setCapturedImage(null);
+         setCollectedImages([]);
+         setCurrentStageIndex(0);
       } catch (e) {
+         console.error("Attendance Submit Error", e);
          setErrorMsg("Failed to submit attendance. Please try again.");
       } finally {
          setIsSubmitting(false);
       }
    };
+
 
    if (todayRecord) {
       return (
@@ -166,6 +212,8 @@ const Attendance: React.FC = () => {
       )
    }
 
+   // --- RENDER ---
+
    return (
       <div className="max-w-md mx-auto pb-20">
          <div className="mb-6">
@@ -176,25 +224,84 @@ const Attendance: React.FC = () => {
          </div>
 
          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            {/* Branch Selection */}
-            <div className="p-5 border-b border-slate-100">
-               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
-                  <MapPin size={12} /> Select Location
-               </label>
-               <select
-                  value={branchId}
-                  onChange={(e) => setBranchId(e.target.value)}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-               >
-                  {branches.map(b => (
-                     <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-               </select>
-            </div>
+            {/* Branch Selection (Only show on first stage if staged) */}
+            {(!isStaged || currentStageIndex === 0) && (
+               <div className="p-5 border-b border-slate-100">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                     <MapPin size={12} /> Select Location
+                  </label>
+                  <select
+                     value={branchId}
+                     onChange={(e) => setBranchId(e.target.value)}
+                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                     {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                     ))}
+                  </select>
+               </div>
+            )}
+
+            {/* Staged Progress Indicator - Visual Slots */}
+            {isStaged && (
+               <div className="px-5 pt-5 pb-0">
+                  <div className="flex gap-2 mb-4 justify-center">
+                     {stages.map((stage, idx) => {
+                        const isCompleted = idx < currentStageIndex;
+                        const isCurrent = idx === currentStageIndex;
+                        const isPending = idx > currentStageIndex;
+
+                        return (
+                           <div
+                              key={stage.id}
+                              className={`relative flex-1 aspect-[3/4] max-w-[80px] rounded-lg border-2 overflow-hidden transition-all duration-300 ${isCurrent
+                                    ? 'border-indigo-500 ring-2 ring-indigo-200 ring-offset-2 scale-105 z-10'
+                                    : isCompleted
+                                       ? 'border-emerald-500 bg-emerald-50'
+                                       : 'border-slate-200 bg-slate-50 opacity-60'
+                                 }`}
+                           >
+                              {isCompleted && collectedImages[idx] ? (
+                                 <div className="w-full h-full relative">
+                                    <img src={collectedImages[idx]} className="w-full h-full object-cover" alt="" />
+                                    <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
+                                       <div className="bg-emerald-500 text-white rounded-full p-0.5">
+                                          <CheckCircle2 size={12} strokeWidth={3} />
+                                       </div>
+                                    </div>
+                                 </div>
+                              ) : (
+                                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                                    <Camera size={20} className={isCurrent ? 'text-indigo-400 animate-pulse' : ''} />
+                                    <span className="text-[10px] font-bold mt-1">{idx + 1}</span>
+                                 </div>
+                              )}
+
+                              {/* Connector Line */}
+                              {idx < stages.length - 1 && (
+                                 <div className="absolute top-1/2 -right-3 w-4 h-0.5 bg-slate-200 -z-10 hidden" />
+                              )}
+                           </div>
+                        );
+                     })}
+                  </div>
+
+                  <div className="text-center mb-2">
+                     <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-2">
+                        {currentStage?.title}
+                        <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full border border-slate-200 uppercase tracking-wider">
+                           {currentStageIndex + 1}/{stages.length}
+                        </span>
+                     </h3>
+                     <p className="text-xs text-slate-500 animate-pulse">
+                        {currentStageIndex < stages.length - 1 ? 'More photos required to submit' : 'Final photo'}
+                     </p>
+                  </div>
+               </div>
+            )}
 
             {/* Camera Section */}
             <div className="p-5 flex flex-col items-center">
-               {/* Hidden canvas */}
                <canvas ref={canvasRef} className="hidden" />
 
                {!isCameraOpen && !capturedImage && (
@@ -203,9 +310,11 @@ const Attendance: React.FC = () => {
                         <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
                            <Camera size={12} /> Camera Verification
                         </span>
-                        <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-100 uppercase tracking-wider">
-                           Photo Mandatory
-                        </span>
+                        {!isStaged && (
+                           <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-100 uppercase tracking-wider">
+                              Photo Mandatory
+                           </span>
+                        )}
                      </div>
 
                      <button
@@ -215,18 +324,16 @@ const Attendance: React.FC = () => {
                         <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                            <Camera size={32} />
                         </div>
-                        <span className="font-bold text-sm">Tap to Take Selfie</span>
+                        <span className="font-bold text-sm">Tap to Take Photo</span>
                      </button>
 
                      <button
                         disabled={true}
                         className="w-full py-3.5 bg-slate-100 text-slate-400 rounded-xl font-bold border border-slate-200 cursor-not-allowed flex items-center justify-center gap-2"
                      >
-                        <CheckCircle2 size={20} /> Take Photo to Check In
+                        <CheckCircle2 size={20} />
+                        {isStaged ? (currentStageIndex === stages.length - 1 ? "Finish & Submit" : "Next Step") : "Take Photo to Check In"}
                      </button>
-                     <p className="text-[10px] text-slate-400 text-center mt-3 italice">
-                        Selfie photo is required to verify identity and location.
-                     </p>
                   </div>
                )}
 
@@ -237,7 +344,7 @@ const Attendance: React.FC = () => {
                         autoPlay
                         playsInline
                         muted
-                        className="w-full h-full object-cover flex-1 scale-x-[-1]"
+                        className={`w-full h-full object-cover flex-1 ${currentStage?.cameraFacingMode !== 'environment' ? 'scale-x-[-1]' : ''}`}
                      />
                      <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
                         <button
@@ -257,9 +364,9 @@ const Attendance: React.FC = () => {
                {capturedImage && (
                   <div className="w-full">
                      <div className="relative aspect-[3/4] md:aspect-video bg-slate-100 rounded-xl overflow-hidden mb-4 border border-slate-200">
-                        <img src={capturedImage} alt="Selfie" className="w-full h-full object-cover" />
+                        <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
                         <button
-                           onClick={() => setCapturedImage(null)}
+                           onClick={handleRetake}
                            className="absolute top-2 right-2 bg-slate-800/50 text-white p-2 rounded-full hover:bg-slate-800"
                         >
                            <RotateCcw size={16} />
@@ -273,17 +380,24 @@ const Attendance: React.FC = () => {
                      )}
 
                      <button
-                        onClick={handleSubmit}
+                        onClick={isStaged ? handleStageNext : handleSubmitUnstaged}
                         disabled={isSubmitting}
-                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className={`w-full py-3.5 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${isStaged && currentStageIndex < stages.length - 1
+                           ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                           : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                           }`}
                      >
                         {isSubmitting ? (
                            <>
-                              <Loader2 size={20} className="animate-spin" /> Checking In...
+                              <Loader2 size={20} className="animate-spin" /> {isStaged && currentStageIndex < stages.length - 1 ? 'Processing...' : 'Checking In...'}
                            </>
                         ) : (
                            <>
-                              <CheckCircle2 size={20} /> Confirm Attendance
+                              {isStaged && currentStageIndex < stages.length - 1 ? (
+                                 <>Next: {stages[currentStageIndex + 1]?.title} <CheckCircle2 size={20} /></>
+                              ) : (
+                                 <><CheckCircle2 size={20} /> Confirm Attendance</>
+                              )}
                            </>
                         )}
                      </button>

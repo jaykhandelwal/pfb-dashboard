@@ -108,7 +108,8 @@ const mapAttendanceFromDB = (data: any): AttendanceRecord => ({
     userId: data.user_id || data.userId,
     userName: data.user_name || data.userName,
     branchId: data.branch_id || data.branchId,
-    imageUrl: data.image_url || data.imageUrl
+    imageUrl: data.image_url || data.imageUrl, // Keep for backward compatibility
+    imageUrls: data.image_urls || data.imageUrls || []
 });
 
 const mapTemplateFromDB = (data: any): TaskTemplate => ({
@@ -245,7 +246,8 @@ const mapAttendanceToDB = (a: Partial<AttendanceRecord>) => ({
     branch_id: a.branchId,
     date: a.date,
     timestamp: a.timestamp,
-    image_url: a.imageUrl
+    image_url: a.imageUrl, // Primary/First image
+    image_urls: a.imageUrls // All images
 });
 
 const mapTemplateToDB = (t: TaskTemplate) => ({
@@ -505,7 +507,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
     const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-    const { currentUser } = useAuth();
+    const { currentUser, refreshUser } = useAuth(); // Assume refreshUser might be needed later, or just use currentUser
 
     // Persistence Helper
     const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };

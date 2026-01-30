@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Permission, AttendanceOverrideType } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
@@ -31,13 +31,19 @@ const UserManagement: React.FC = () => {
       role: 'STAFF',
       permissions: [...ROLE_PRESETS.STAFF],
       defaultBranchId: '',
-      defaultPage: '/dashboard'
+      defaultBranchId: '',
+      defaultPage: '/dashboard',
+      isStagedAttendanceEnabled: false,
+      stagedAttendanceConfig: []
     });
     setIsEditing(true);
   };
 
   const handleEdit = (user: User) => {
-    setSelectedUser({ ...user });
+    setSelectedUser({
+      ...user,
+      stagedAttendanceConfig: user.stagedAttendanceConfig || []
+    });
     setIsEditing(true);
   };
 
@@ -66,6 +72,47 @@ const UserManagement: React.FC = () => {
       return { ...prev, permissions: newPerms };
     });
   };
+
+  // --- Staged Attendance Helpers ---
+  const addStage = () => {
+    const newStage = {
+      id: Date.now().toString(),
+      title: `Stage ${(selectedUser.stagedAttendanceConfig?.length || 0) + 1}`,
+      cameraFacingMode: 'user' as const
+    };
+    setSelectedUser(prev => ({
+      ...prev,
+      stagedAttendanceConfig: [...(prev.stagedAttendanceConfig || []), newStage]
+    }));
+  };
+
+  const removeStage = (index: number) => {
+    setSelectedUser(prev => ({
+      ...prev,
+      stagedAttendanceConfig: (prev.stagedAttendanceConfig || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateStage = (index: number, field: string, value: any) => {
+    setSelectedUser(prev => {
+      const newConfig = [...(prev.stagedAttendanceConfig || [])];
+      newConfig[index] = { ...newConfig[index], [field]: value };
+      return { ...prev, stagedAttendanceConfig: newConfig };
+    });
+  };
+
+  const moveStage = (index: number, direction: 'up' | 'down') => {
+    setSelectedUser(prev => {
+      const newConfig = [...(prev.stagedAttendanceConfig || [])];
+      if (direction === 'up' && index > 0) {
+        [newConfig[index], newConfig[index - 1]] = [newConfig[index - 1], newConfig[index]];
+      } else if (direction === 'down' && index < newConfig.length - 1) {
+        [newConfig[index], newConfig[index + 1]] = [newConfig[index + 1], newConfig[index]];
+      }
+      return { ...prev, stagedAttendanceConfig: newConfig };
+    });
+  };
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,8 +441,8 @@ const UserManagement: React.FC = () => {
                     type="button"
                     onClick={() => handleRoleChange(role)}
                     className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all border ${selectedUser.role === role
-                        ? 'bg-slate-800 text-white border-slate-800 shadow-md'
-                        : 'bg-white text-slate-600 border-slate-300 hover:bg-white hover:border-slate-400'
+                      ? 'bg-slate-800 text-white border-slate-800 shadow-md'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-white hover:border-slate-400'
                       }`}
                   >
                     {role}
