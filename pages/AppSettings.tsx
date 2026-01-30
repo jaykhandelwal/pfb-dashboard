@@ -3,6 +3,7 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
+import { APP_VERSION } from '../version';
 
 const AppSettings: React.FC = () => {
    const { branches, appSettings, updateAppSetting, isLoading } = useStore();
@@ -65,10 +66,12 @@ const AppSettings: React.FC = () => {
       setTimeout(() => setToastMsg(''), 3000);
    };
 
-   const checkStatus = async () => {
+   const checkStatus = async (silent: boolean = false) => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
-         setToastMsg('Please fill all Coolify settings first.');
-         setTimeout(() => setToastMsg(''), 3000);
+         if (!silent) {
+            setToastMsg('Please fill all Coolify settings first.');
+            setTimeout(() => setToastMsg(''), 3000);
+         }
          return;
       }
 
@@ -77,23 +80,42 @@ const AppSettings: React.FC = () => {
          const deployments = await getRecentDeployments(coolifyUrl, coolifyToken, coolifyTag);
          console.log('Coolify API response:', deployments);
          setRecentDeployments(deployments);
-         if (deployments.length === 0) {
-            setToastMsg('No deployments found for this application.');
-         } else {
-            setToastMsg(`Found ${deployments.length} recent deployment(s).`);
+
+         if (!silent) {
+            if (deployments.length === 0) {
+               setToastMsg('No deployments found for this application.');
+            } else {
+               // Find latest SUCCESSFUL/FINISHED deployment
+               const latestSuccessful = deployments.find((d: any) => d.status === 'finished' || d.status === 'success');
+
+               if (latestSuccessful && latestSuccessful.extracted_version) {
+                  // Simple string comparison for version (assuming format YY.MM.DD.HHMM which works lexicographically)
+                  if (latestSuccessful.extracted_version > APP_VERSION) {
+                     setToastMsg(`New version available: v${latestSuccessful.extracted_version}. Please update.`);
+                  } else {
+                     setToastMsg(`Status updated. You are on the latest version.`);
+                  }
+               } else {
+                  setToastMsg(`Found ${deployments.length} recent deployment(s). Status updated.`);
+               }
+            }
          }
       } catch (error: any) {
          console.error('Status check failed:', error);
-         setToastMsg(`Status check failed: ${error.message}`);
+         if (!silent) {
+            setToastMsg(`Status check failed: ${error.message}`);
+         }
       } finally {
          setIsCheckingStatus(false);
-         setTimeout(() => setToastMsg(''), 4000);
+         if (!silent) {
+            setTimeout(() => setToastMsg(''), 5000); // 5s to read the longer message
+         }
       }
    };
 
    useEffect(() => {
       if (coolifyUrl && coolifyToken && coolifyTag) {
-         checkStatus();
+         checkStatus(true);
       }
    }, []);
 
@@ -333,8 +355,13 @@ const AppSettings: React.FC = () => {
                                  Trigger deployments directly from this dashboard.
                               </p>
                            </div>
-                           <div className="bg-white/50 px-2 py-1 rounded text-[10px] font-bold text-indigo-800 border border-indigo-100">
-                              ADMIN ONLY
+                           <div className="flex flex-col items-end gap-1">
+                              <div className="bg-white/50 px-2 py-1 rounded text-[10px] font-bold text-indigo-800 border border-indigo-100">
+                                 ADMIN ONLY
+                              </div>
+                              <span className="text-[10px] font-mono text-indigo-400">
+                                 Current v{APP_VERSION}
+                              </span>
                            </div>
                         </div>
                      </div>
