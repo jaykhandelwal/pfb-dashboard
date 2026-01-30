@@ -3,12 +3,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType, SKUCategory, SKUDietary, SKU } from '../types';
-import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock, Calculator, PackageCheck, Utensils, WifiOff } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTriangle, X, CheckCircle2, Clock, Calculator, PackageCheck, Utensils, WifiOff, Receipt } from 'lucide-react';
 import { getLocalISOString } from '../constants';
+import LinkedSkuOrdersModal from '../components/LinkedSkuOrdersModal';
 
 const Operations: React.FC = () => {
-  const { branches, skus, addBatchTransactions, transactions, menuItems } = useStore();
+  const { branches, skus, addBatchTransactions, transactions, menuItems, orders } = useStore();
   const { currentUser } = useAuth();
+  const [linkedSkuData, setLinkedSkuData] = useState<{ sku: SKU, soldQty: number } | null>(null);
 
   // Form State
   const [date, setDate] = useState<string>(getLocalISOString());
@@ -686,17 +688,28 @@ const Operations: React.FC = () => {
                       {/* Active Items List */}
                       {activeItems.map(sku => {
                         const qty = getCalculatedTotal(sku.id, sku.piecesPerPacket);
-                        const isZero = false;
 
                         return (
                           <div
                             key={sku.id}
-                            className={`flex justify-between items-center p-3 rounded-lg border ${type === TransactionType.CHECK_OUT ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'
-                              }`}
+                            className={`flex justify-between items-center p-3 rounded-lg border ${type === TransactionType.CHECK_OUT ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`}
                           >
-                            <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="flex items-center gap-3 overflow-hidden flex-1">
                               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${type === TransactionType.CHECK_OUT ? 'bg-emerald-500' : 'bg-blue-500'}`} />
                               <span className="font-medium truncate text-slate-700">{sku.name}</span>
+                              {type === TransactionType.CHECK_IN && (
+                                <button
+                                  onClick={() => {
+                                    const maxLimit = maxTransactionLimits[sku.id] || 0;
+                                    const netConsumed = Math.max(0, maxLimit - qty);
+                                    setLinkedSkuData({ sku, soldQty: netConsumed });
+                                  }}
+                                  className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                  title="View Linked Orders"
+                                >
+                                  <Receipt size={14} />
+                                </button>
+                              )}
                             </div>
 
                             <div className="text-right flex-shrink-0 ml-2">
@@ -709,11 +722,21 @@ const Operations: React.FC = () => {
                                       const plateSize = getPlateSize(sku);
                                       const platesSold = plateSize > 0 ? Math.floor(netConsumed / plateSize) : 0;
                                       const pcsSold = plateSize > 0 ? netConsumed % plateSize : netConsumed;
+                                      const missingForFull = (plateSize > 0 && pcsSold > 0) ? plateSize - pcsSold : 0;
 
                                       return (
                                         <span className="flex flex-col items-end">
                                           <span>{platesSold} Plates</span>
-                                          {pcsSold > 0 && <span className="text-xs font-normal opacity-80">+{pcsSold} pcs</span>}
+                                          {pcsSold > 0 && (
+                                            <div className="flex items-center gap-1 mt-1">
+                                              <span className="text-xs font-normal opacity-80">+{pcsSold} pcs</span>
+                                              {missingForFull > 0 && (
+                                                <span className="text-sm text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-extrabold animate-pulse">
+                                                  Short {missingForFull}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
                                         </span>
                                       );
                                     })()}
@@ -728,7 +751,7 @@ const Operations: React.FC = () => {
                                 {type === TransactionType.CHECK_OUT ? (
                                   <>{inputs[sku.id]?.packets || 0} pkts + {inputs[sku.id]?.loose || 0} pcs</>
                                 ) : (
-                                  <span className="text-blue-600 font-medium opacity-80">Partial Return</span>
+                                  <span className="text-blue-600 font-medium opacity-80">Active Return</span>
                                 )}
                               </div>
                             </div>
@@ -751,17 +774,34 @@ const Operations: React.FC = () => {
                               const plateSize = getPlateSize(sku);
                               const platesSold = plateSize > 0 ? Math.floor(maxLimit / plateSize) : 0;
                               const pcsSold = plateSize > 0 ? maxLimit % plateSize : maxLimit;
+                              const missingForFull = (plateSize > 0 && pcsSold > 0) ? plateSize - pcsSold : 0;
 
                               return (
                                 <div key={sku.id} className="flex justify-between items-center p-2 rounded-lg border border-slate-200 bg-slate-50/50">
-                                  <div className="flex items-center gap-2 overflow-hidden">
+                                  <div className="flex items-center gap-2 overflow-hidden flex-1">
                                     <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400" />
                                     <span className="text-sm font-medium truncate text-slate-600">{sku.name}</span>
+                                    <button
+                                      onClick={() => setLinkedSkuData({ sku, soldQty: maxLimit })}
+                                      className="ml-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                      title="View Linked Orders"
+                                    >
+                                      <Receipt size={14} />
+                                    </button>
                                   </div>
                                   <div className="text-right flex-shrink-0 ml-2">
-                                    <div className="font-mono text-sm font-bold text-slate-600 leading-none">
-                                      {platesSold} Plates
-                                      {pcsSold > 0 && <span className="text-[10px] font-normal opacity-80 ml-1">+{pcsSold} pcs</span>}
+                                    <div className="font-mono text-sm font-bold text-slate-600 leading-none flex flex-col items-end">
+                                      <span>{platesSold} Plates</span>
+                                      {pcsSold > 0 && (
+                                        <div className="flex items-center gap-1 mt-1">
+                                          <span className="text-[10px] font-normal opacity-80">+{pcsSold} pcs</span>
+                                          {missingForFull > 0 && (
+                                            <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 font-bold">
+                                              Short {missingForFull}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="text-[9px] text-slate-400 mt-0.5">
                                       All {maxLimit} pcs Sold
@@ -772,13 +812,6 @@ const Operations: React.FC = () => {
                             })}
                           </div>
                         </>
-                      )}
-
-                      {/* No items case */}
-                      {activeItems.length === 0 && missedItems.length === 0 && (
-                        <div className="text-center py-8 text-slate-400 italic">
-                          No items selected.
-                        </div>
                       )}
                     </>
                   );
@@ -806,7 +839,19 @@ const Operations: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      )
+      }
+      {/* Linked SKU Orders Modal */}
+      <LinkedSkuOrdersModal
+        isOpen={!!linkedSkuData}
+        onClose={() => setLinkedSkuData(null)}
+        sku={linkedSkuData?.sku || null}
+        orders={orders}
+        menuItems={menuItems}
+        date={date}
+        branchId={branchId}
+        inventorySoldQty={linkedSkuData?.soldQty || 0}
+      />
     </div>
   );
 };
