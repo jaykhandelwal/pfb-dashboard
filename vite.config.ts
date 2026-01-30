@@ -14,11 +14,12 @@ const buildVersion = (() => {
   return `${yy}.${mm}.${dd}.${hh}${min}`;
 })();
 
-// Plugin to inject build version into service worker
+// Plugin to inject build version into service worker AND generate version.ts
 function serviceWorkerVersionPlugin(): Plugin {
   return {
     name: 'sw-version-inject',
     writeBundle() {
+      // 1. Inject into Service Worker
       const swPath = path.resolve(__dirname, 'dist/sw.js');
       if (fs.existsSync(swPath)) {
         let swContent = fs.readFileSync(swPath, 'utf-8');
@@ -26,6 +27,13 @@ function serviceWorkerVersionPlugin(): Plugin {
         fs.writeFileSync(swPath, swContent);
         console.log(`[SW] Injected build version: ${buildVersion}`);
       }
+    },
+    buildStart() {
+      // 2. Generate version.ts for the app to consume
+      const versionFilePath = path.resolve(__dirname, 'version.ts');
+      const versionContent = `export const APP_VERSION = '${buildVersion}';\n`;
+      fs.writeFileSync(versionFilePath, versionContent);
+      console.log(`[Version] Generated version.ts: ${buildVersion}`);
     }
   };
 }
@@ -40,8 +48,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), serviceWorkerVersionPlugin()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      '__APP_VERSION__': JSON.stringify(buildVersion)
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
     },
     resolve: {
       alias: {
