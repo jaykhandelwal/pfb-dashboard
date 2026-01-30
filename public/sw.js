@@ -1,6 +1,6 @@
 // SERVICE WORKER KILL SWITCH
-// This script replaces the previous service worker to force-unregister it
-// and clear caches for users who have the old version installed.
+// This script forces immediate activation, clears all caches, and takes control of clients.
+// It effectively "resets" the browser's state for this origin.
 
 self.addEventListener('install', (event) => {
     // Skip waiting to activate immediately
@@ -18,10 +18,9 @@ self.addEventListener('activate', (event) => {
                 })
             );
         }).then(() => {
-            // 2. Unregister self
-            return self.registration.unregister();
-        }).then(() => {
-            // 3. Take control of all clients to force reload if needed
+            // 2. Take control of all clients to ensure we control the current page
+            // This is critical to stop the old worker from serving broken files
+            console.log('[SW Kill Switch] Caches cleared. Claiming clients...');
             return self.clients.claim();
         })
     );
