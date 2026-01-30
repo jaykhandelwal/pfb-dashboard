@@ -25,6 +25,7 @@ export interface StagedAttendanceConfig {
   id: string;
   title: string;
   cameraFacingMode: 'user' | 'environment';
+  sendToWebhook?: boolean;
 }
 
 export interface User {

@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Permission, AttendanceOverrideType } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
@@ -77,7 +77,8 @@ const UserManagement: React.FC = () => {
     const newStage = {
       id: Date.now().toString(),
       title: `Stage ${(selectedUser.stagedAttendanceConfig?.length || 0) + 1}`,
-      cameraFacingMode: 'user' as const
+      cameraFacingMode: 'user' as const,
+      sendToWebhook: false
     };
     setSelectedUser(prev => ({
       ...prev,
@@ -529,20 +530,34 @@ const UserManagement: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => updateStage(idx, 'cameraFacingMode', 'user')}
-                          className={`p-1.5 rounded transition-colors ${stage.cameraFacingMode === 'user' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                          title="Front Camera"
+                          className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${stage.cameraFacingMode === 'user' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                          <Users size={14} />
+                          Front
                         </button>
                         <button
                           type="button"
                           onClick={() => updateStage(idx, 'cameraFacingMode', 'environment')}
-                          className={`p-1.5 rounded transition-colors ${stage.cameraFacingMode === 'environment' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                          title="Back Camera"
+                          className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${stage.cameraFacingMode === 'environment' ? 'bg-white shadow text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                          <Camera size={14} />
+                          Back
                         </button>
                       </div>
+
+                      {/* Webhook Toggle */}
+                      <label className="flex items-center gap-2 cursor-pointer relative group">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={stage.sendToWebhook || false}
+                          onChange={(e) => updateStage(idx, 'sendToWebhook', e.target.checked)}
+                        />
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${stage.sendToWebhook ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}`}>
+                          <Globe size={14} />
+                        </div>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                          {stage.sendToWebhook ? 'Send to Webhook' : 'No Webhook'}
+                        </div>
+                      </label>
                       <button type="button" onClick={() => removeStage(idx)} className="text-slate-400 hover:text-red-500 p-1">
                         <X size={16} />
                       </button>

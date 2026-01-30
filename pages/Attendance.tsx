@@ -7,7 +7,7 @@ import { uploadImageToBunny } from '../services/bunnyStorage';
 import { getLocalISOString } from '../constants';
 
 const Attendance: React.FC = () => {
-   const { branches, addAttendance, attendanceRecords } = useStore();
+   const { branches, addAttendance, attendanceRecords, appSettings } = useStore();
    const { currentUser, updateUser } = useAuth();
 
    const [branchId, setBranchId] = useState<string>('');
@@ -166,6 +166,46 @@ const Attendance: React.FC = () => {
          // Upload immediately
          const folder = `attendance/${currentUser.id}/${today}/${currentStageIndex}`;
          const uploadedUrl = await uploadImageToBunny(capturedImage, folder);
+
+         // --- WEBHOOK CALL START ---
+         const globalWebhookEnabled = appSettings.enable_attendance_webhook;
+         const globalWebhookUrl = appSettings.attendance_webhook_url;
+
+         // Determine if we should send to webhook
+         // 1. Global setting must be ON
+         // 2. If staged, stage-specific toggle must be ON (or we can assume specific override behavior pending clarification, but user said "options in settings... if enabled... then [per stage controlled]")
+         //    Actually user said: "if a particular stage photo needs to be send to webhook will be controlled from the users edit page"
+         //    Let's assume: If global is OFF -> Never send. If global is ON -> Send if stage allows (for staged user). 
+
+         const shouldSendToWebhook = globalWebhookEnabled && globalWebhookUrl && (
+            isStaged ? currentStage?.sendToWebhook : true // Default to true for unstaged if global is on? Or maybe false? User requirement implies per-stage control. For unstaged, maybe just send it? Let's default to sending for unstaged if global is ON.
+         );
+
+         if (shouldSendToWebhook) {
+            try {
+               const payload = {
+                  image_url: uploadedUrl,
+                  branch: branches.find(b => b.id === branchId)?.name || 'Unknown',
+                  user_name: currentUser.name,
+                  stage_name: isStaged ? currentStage?.title : 'Attendance Check-in',
+                  user_id: currentUser.id,
+                  timestamp: new Date().toISOString()
+               };
+
+               // Don't await this to block the UI? Or do we want to ensure it sends?
+               // User said "right after the image is uploaded it will make a webhook call"
+               // I will await it but catch errors so it doesn't fail the attendance itself.
+               await fetch(globalWebhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+               });
+            } catch (webhookErr) {
+               console.error("Webhook failed:", webhookErr);
+               // Optionally warn user, or silent fail. Silent fail is safer for UX flow.
+            }
+         }
+         // --- WEBHOOK CALL END ---
 
          const newImages = [...collectedImages];
          newImages[currentStageIndex] = uploadedUrl; // Place at specific index
