@@ -525,9 +525,16 @@ const AppSettings: React.FC = () => {
                                                 {deployment.status?.toUpperCase() || 'UNKNOWN'}
                                              </span>
                                              {deployment.extracted_version && (
-                                                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono">
-                                                   v{deployment.extracted_version}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                   <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-mono">
+                                                      v{deployment.extracted_version}
+                                                   </span>
+                                                   {deployment.extracted_version === APP_VERSION && (
+                                                      <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 uppercase tracking-wide">
+                                                         Current
+                                                      </span>
+                                                   )}
+                                                </div>
                                              )}
                                           </div>
                                           <span className="text-xs text-slate-400">
