@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "npx serve -s dist -l 3000",
+    "start": "npx serve -c serve.json -l 3000",
     "preview": "vite preview"
   },
   "dependencies": {

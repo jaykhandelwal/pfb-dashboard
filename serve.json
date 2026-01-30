@@ -1,0 +1,38 @@
+{
+    "headers": [
+        {
+            "source": "/sw.js",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, no-store, must-revalidate"
+                }
+            ]
+        },
+        {
+            "source": "/index.html",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, no-store, must-revalidate"
+                }
+            ]
+        },
+        {
+            "source": "/version.json",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, no-store, must-revalidate"
+                }
+            ]
+        }
+    ],
+    "public": "dist",
+    "rewrites": [
+        {
+            "source": "**",
+            "destination": "/index.html"
+        }
+    ]
+}
