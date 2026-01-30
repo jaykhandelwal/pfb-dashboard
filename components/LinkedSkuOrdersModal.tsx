@@ -38,7 +38,40 @@ const LinkedSkuOrdersModal: React.FC<LinkedSkuOrdersModalProps> = ({
             const itemsUsingSku: string[] = [];
 
             order.items.forEach(orderItem => {
-                // Find menu item definition to get ingredients
+                let foundInSnapshot = false;
+                const anyItem = orderItem as any; // Allow access to dynamic properties like 'plate'
+
+                // 1. Check 'consumed' snapshot (Array or Object)
+                if (anyItem.consumed) {
+                    if (Array.isArray(anyItem.consumed)) {
+                        // Array format
+                        const match = anyItem.consumed.find((c: any) => c.skuId === sku.id);
+                        if (match) {
+                            // If consumed is recorded, it's usually the total deduction for this transaction item
+                            // However, we must be careful: if OrderItem has qty 2, and consumed says 8, is it 8 total or 8 per unit?
+                            // In this system's context, 'consumed' usually snapshots the TOTAL deduction.
+                            orderSkuQty += match.quantity;
+                            foundInSnapshot = true;
+                        }
+                    } else if (anyItem.consumed.skuId === sku.id) {
+                        // Object format (from user JSON)
+                        orderSkuQty += anyItem.consumed.quantity;
+                        foundInSnapshot = true;
+                    }
+                }
+
+                // 2. Check 'plate' snapshot (Legacy/Specific format from user JSON)
+                if (!foundInSnapshot && anyItem.plate && anyItem.plate.skuId === sku.id) {
+                    orderSkuQty += anyItem.plate.quantity;
+                    foundInSnapshot = true;
+                }
+
+                if (foundInSnapshot) {
+                    itemsUsingSku.push(`${orderItem.quantity}x ${orderItem.name}`);
+                    return; // Skip fallback
+                }
+
+                // 3. Fallback: Lookup in current Menu Items
                 const menuItem = menuItems.find(m => m.id === orderItem.menuItemId);
                 if (!menuItem) return;
 
@@ -53,12 +86,9 @@ const LinkedSkuOrdersModal: React.FC<LinkedSkuOrdersModalProps> = ({
                 }
                 // Check ingredients (Half)
                 else {
-                    const ingredients = menuItem.halfIngredients || menuItem.ingredients; // Fallback if half not defined, though logic might differ
+                    const ingredients = menuItem.halfIngredients || menuItem.ingredients;
                     const ing = ingredients.find(i => i.skuId === sku.id);
                     if (ing) {
-                        // If it's half ingredients, use the defined quantity. 
-                        // If falling back to full ingredients for a half item, typically we halve it, but here we assume the data is correct in 'halfIngredients' if it exists.
-                        // For simplicity in this display logic, we trust the array found.
                         const qty = ing.quantity * orderItem.quantity;
                         orderSkuQty += qty;
                         itemsUsingSku.push(`${orderItem.quantity}x ${orderItem.name} (Half)`);
