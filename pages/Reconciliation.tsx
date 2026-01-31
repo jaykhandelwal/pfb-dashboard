@@ -192,8 +192,11 @@ const Reconciliation: React.FC = () => {
             {/* Header & Mode Selector */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Scale className="text-indigo-600" /> Reconciliation Audit
+                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <Scale size={20} />
+                        </div>
+                        Reconciliation Audit
                     </h2>
                     <p className="text-slate-500">Cross-verify physical stock movements with billed sales records.</p>
                 </div>
@@ -280,8 +283,10 @@ const Reconciliation: React.FC = () => {
             {/* Main Reconciliation Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <ListChecks size={20} className="text-slate-600" />
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center">
+                            <ListChecks size={18} />
+                        </div>
                         <h3 className="font-bold text-slate-800 text-sm">Inventory Verification (SKU Grouped)</h3>
                     </div>
                 </div>

@@ -604,7 +604,10 @@ const StockOrdering: React.FC = () => {
             <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                        <Truck className="text-indigo-600" size={28} /> Stock Ordering
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <Truck size={20} />
+                        </div>
+                        Stock Ordering
                     </h2>
                     <p className="text-slate-500 mt-1">Average-volume based ordering system.</p>
                 </div>
@@ -685,8 +688,11 @@ const StockOrdering: React.FC = () => {
 
             {/* Order Recommendation Engine (Standard) */}
             <section className="mb-8">
-                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4">
-                    <Settings size={20} className="text-slate-400" /> Stock Analysis (90 Day Trend)
+                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-3 mb-4">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center">
+                        <Settings size={18} />
+                    </div>
+                    Stock Analysis (90 Day Trend)
                 </h3>
 
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -754,8 +760,11 @@ const StockOrdering: React.FC = () => {
             <section>
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
-                            <Box size={20} className="text-slate-400" /> Base Storage Configuration
+                        <h3 className="text-lg font-bold text-slate-700 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center">
+                                <Box size={18} />
+                            </div>
+                            Base Storage Configuration
                         </h3>
                         <p className="text-xs text-slate-500">Define the capacity of your base deep freezers.</p>
                     </div>

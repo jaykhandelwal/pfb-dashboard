@@ -463,12 +463,16 @@ const Attendance: React.FC = () => {
 
    return (
       <div className="max-w-md mx-auto pb-20">
-         <div className="mb-6">
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-               <UserCheck className="text-indigo-600" /> Staff Attendance
-            </h2>
-            <p className="text-slate-500">Verify your location and check in.</p>
-
+         <div className="flex justify-between items-center mb-6">
+            <div>
+               <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                     <UserCheck size={20} />
+                  </div>
+                  Staff Attendance
+               </h2>
+               <p className="text-slate-500 text-sm">Visual attendance with hygiene checks.</p>
+            </div>
             {appSettings.enable_attendance_webhook_debug && (
                <div className="mt-2 p-2 bg-slate-800 text-green-400 text-xs font-mono rounded overflow-hidden break-all">
                   <strong>DEBUG MODE:</strong> Settings Loaded<br />
@@ -511,11 +515,11 @@ const Attendance: React.FC = () => {
                         return (
                            <div
                               key={stage.id}
-                              className={`relative flex-1 aspect-[3/4] max-w-[80px] rounded-lg border-2 overflow-hidden transition-all duration-300 ${isCurrent
-                                 ? 'border-indigo-500 ring-2 ring-indigo-200 ring-offset-2 scale-105 z-10'
+                              className={`relative flex-1 aspect-[3/4] max-w-[80px] rounded-lg border overflow-hidden transition-all duration-300 ${isCurrent
+                                 ? 'border-indigo-100 shadow-md ring-1 ring-indigo-100 scale-105 z-10 bg-white'
                                  : isCompleted
-                                    ? 'border-emerald-500 bg-emerald-50'
-                                    : 'border-slate-200 bg-slate-50 opacity-60'
+                                    ? 'border-emerald-200 bg-emerald-50'
+                                    : 'border-slate-100 bg-slate-50'
                                  }`}
                            >
                               {isCompleted && collectedImages[idx] ? (

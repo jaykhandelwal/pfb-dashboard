@@ -31,16 +31,16 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
    const packets = Math.floor(safeQty / packetSize);
    const loose = safeQty % packetSize;
 
-   let bgClass = 'bg-white border-[#403424]/10';
-   let textClass = 'text-[#403424]';
-   let mutedTextClass = 'text-[#403424]/50';
+   let bgClass = 'bg-white border-slate-100 shadow-sm';
+   let textClass = 'text-slate-700';
+   let mutedTextClass = 'text-slate-400';
 
    if (status === 'CRITICAL') {
-      bgClass = 'bg-red-50 border-red-200';
+      bgClass = 'bg-red-50 border-red-50'; // Removed border-200 for softer look
       textClass = 'text-red-700';
       mutedTextClass = 'text-red-400';
    } else if (status === 'LOW') {
-      bgClass = 'bg-amber-50 border-amber-200';
+      bgClass = 'bg-amber-50 border-amber-50';
       textClass = 'text-amber-700';
       mutedTextClass = 'text-amber-400';
    }
@@ -542,19 +542,19 @@ const Dashboard: React.FC = () => {
          {/* Header & Quick Actions */}
          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-               <h1 className="text-2xl font-bold text-[#403424]">Dashboard</h1>
-               <p className="text-sm text-[#403424]/60">Overview & Quick Actions</p>
+               <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
+               <p className="text-sm text-slate-500">Overview & Quick Actions</p>
             </div>
             <div className="flex gap-3">
                <button
                   onClick={() => setLedgerModal({ isOpen: true, type: 'EXPENSE' })}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#403424] text-white rounded-lg hover:bg-[#2d2419] transition-colors shadow-sm font-bold text-sm"
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-sm font-bold text-sm"
                >
                   <TrendingDown size={16} /> Add Expense
                </button>
                <button
                   onClick={() => setLedgerModal({ isOpen: true, type: 'INCOME' })}
-                  className="flex items-center gap-2 px-4 py-2 bg-white text-[#403424] border border-[#403424]/10 rounded-lg hover:bg-[#f9faf7] transition-colors shadow-sm font-bold text-sm"
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm font-bold text-sm"
                >
                   <TrendingUp size={16} /> Add Earning
                </button>
@@ -608,16 +608,16 @@ const Dashboard: React.FC = () => {
          )}
 
          {/* 1. Operational Overview (Merged Section) */}
-         <div className="bg-white rounded-xl shadow-sm border border-[#403424]/10 overflow-hidden mb-8">
-            <div className="flex border-b border-[#403424]/10">
+         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+            <div className="flex border-b border-slate-100">
                <button
                   onClick={() => setActiveOperationalView(activeOperationalView === 'STOCK' ? null : 'STOCK')}
                   className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all relative ${activeOperationalView === 'STOCK'
-                        ? 'bg-[#eff2e7] text-[#403424] shadow-[inset_0_-2px_0_0_#95a77c]'
-                        : 'bg-white text-[#403424]/60 hover:bg-[#f9faf7] hover:text-[#403424]'
+                     ? 'bg-indigo-50/50 text-indigo-700 shadow-[inset_0_-2px_0_0_#6366f1]'
+                     : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                      }`}
                >
-                  <Snowflake size={18} className={activeOperationalView === 'STOCK' ? 'text-[#95a77c]' : ''} />
+                  <Snowflake size={18} className={activeOperationalView === 'STOCK' ? 'text-indigo-500' : ''} />
                   Current Fridge Stock
                   {(stockHealth.red > 0 || stockHealth.yellow > 0) && (
                      <div className="flex -space-x-1 ml-1">
@@ -631,16 +631,16 @@ const Dashboard: React.FC = () => {
                   )}
                </button>
 
-               <div className="w-px bg-[#403424]/10 self-stretch"></div>
+               <div className="w-px bg-slate-100 self-stretch"></div>
 
                <button
                   onClick={() => setActiveOperationalView(activeOperationalView === 'CHECKOUT' ? null : 'CHECKOUT')}
                   className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all relative ${activeOperationalView === 'CHECKOUT'
-                        ? 'bg-[#eff2e7] text-[#403424] shadow-[inset_0_-2px_0_0_#95a77c]'
-                        : 'bg-white text-[#403424]/60 hover:bg-[#f9faf7] hover:text-[#403424]'
+                     ? 'bg-indigo-50/50 text-indigo-700 shadow-[inset_0_-2px_0_0_#6366f1]'
+                     : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                      }`}
                >
-                  <Store size={18} className={activeOperationalView === 'CHECKOUT' ? 'text-[#95a77c]' : ''} />
+                  <Store size={18} className={activeOperationalView === 'CHECKOUT' ? 'text-indigo-500' : ''} />
                   Last Checkout
                </button>
             </div>
@@ -648,10 +648,10 @@ const Dashboard: React.FC = () => {
             {/* Content Area */}
             <div className={`transition-all duration-300 ease-in-out ${activeOperationalView ? 'opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
                {activeOperationalView === 'STOCK' && (
-                  <div className="p-4 bg-[#fcfdfa]">
+                  <div className="p-4 bg-slate-50/50">
                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xs font-bold text-[#403424]/50 uppercase tracking-wide">Live Inventory Status</h3>
-                        <div className="text-[10px] text-[#403424]/40 flex gap-2">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Live Inventory Status</h3>
+                        <div className="text-[10px] text-slate-400 flex gap-2">
                            <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Critical</span>
                            <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-400"></div> Low</span>
                         </div>
@@ -670,17 +670,17 @@ const Dashboard: React.FC = () => {
                )}
 
                {activeOperationalView === 'CHECKOUT' && (
-                  <div className="p-4 bg-[#fcfdfa]">
+                  <div className="p-4 bg-slate-50/50">
                      <div className="space-y-4">
-                        {branches.length === 0 && <p className="text-center text-[#403424]/50 italic text-sm">No branches configured.</p>}
+                        {branches.length === 0 && <p className="text-center text-slate-400 italic text-sm">No branches configured.</p>}
                         {branches.map(branch => {
                            const checkoutData = lastCheckouts[branch.id];
                            if (!checkoutData) return null;
                            return (
-                              <div key={branch.id} className="bg-white rounded-xl p-4 border border-[#403424]/10 shadow-sm">
+                              <div key={branch.id} className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
                                  <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-3 gap-2">
-                                    <h3 className="font-bold text-[#95a77c] flex items-center gap-2"><Store size={16} /> {branch.name}</h3>
-                                    <span className="text-xs text-[#403424]/50 font-medium bg-[#eff2e7] px-2 py-1 rounded">{checkoutData.date}</span>
+                                    <h3 className="font-bold text-indigo-600 flex items-center gap-2"><Store size={16} /> {branch.name}</h3>
+                                    <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-1 rounded">{checkoutData.date}</span>
                                  </div>
                                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                                     {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
@@ -701,114 +701,114 @@ const Dashboard: React.FC = () => {
             <div className="space-y-6">
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                   <div className="flex flex-col">
-                     <div className="flex items-center gap-2 text-[#403424] font-bold text-lg uppercase tracking-wide"><TrendingUp className="text-[#95a77c]" /> Business Intelligence</div>
+                     <div className="flex items-center gap-2 text-slate-800 font-bold text-lg uppercase tracking-wide"><TrendingUp className="text-indigo-600" /> Business Intelligence</div>
                      {autoTimeMessage && <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium mt-1 ml-1 animate-fade-in"><Moon size={10} /> {autoTimeMessage}</div>}
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
-                     <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm overflow-x-auto max-w-full">
-                        <button onClick={() => setDashboardBranch('ALL')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === 'ALL' ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>All Branches</button>
+                     <div className="flex bg-white border border-slate-200 rounded-lg p-1 shadow-sm overflow-x-auto max-w-full">
+                        <button onClick={() => setDashboardBranch('ALL')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === 'ALL' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>All Branches</button>
                         {branches.map(b => (
-                           <button key={b.id} onClick={() => setDashboardBranch(b.id)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === b.id ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>{b.name}</button>
+                           <button key={b.id} onClick={() => setDashboardBranch(b.id)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${dashboardBranch === b.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{b.name}</button>
                         ))}
                      </div>
-                     <div className="flex bg-white border border-[#403424]/10 rounded-lg p-1 shadow-sm overflow-x-auto">
+                     <div className="flex bg-white border border-slate-200 rounded-lg p-1 shadow-sm overflow-x-auto">
                         {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
-                           <button key={range} onClick={() => setTimeRange(range)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${timeRange === range ? 'bg-[#eff2e7] text-[#403424]' : 'text-[#403424]/50 hover:bg-[#f9faf7]'}`}>{range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}</button>
+                           <button key={range} onClick={() => setTimeRange(range)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${timeRange === range ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}</button>
                         ))}
                      </div>
                   </div>
                </div>
 
                {/* Consolidated Financial Overview (Compact) */}
-               <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-2">Financial Overview</h3>
+               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-2">Financial Overview</h3>
                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                   {/* 1. Total Revenue */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Total Revenue</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Total Revenue</p>
                         <div className="p-1.5 bg-slate-50 rounded-md text-slate-600"><Wallet size={16} /></div>
                      </div>
-                     <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.total.toLocaleString()}</h3>
+                     <h3 className="text-lg font-bold text-slate-800 leading-none">₹{revenueBreakdown.total.toLocaleString()}</h3>
                   </div>
 
                   {/* 2. Cash Sales */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Cash Sales</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Cash Sales</p>
                         <div className="p-1.5 bg-emerald-50 rounded-md text-emerald-600"><Banknote size={16} /></div>
                      </div>
-                     <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.cash.toLocaleString()}</h3>
+                     <h3 className="text-lg font-bold text-slate-800 leading-none">₹{revenueBreakdown.cash.toLocaleString()}</h3>
                   </div>
 
                   {/* 3. Online Sales */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Online Sales</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Online Sales</p>
                         <div className="p-1.5 bg-blue-50 rounded-md text-blue-600"><QrCode size={16} /></div>
                      </div>
                      <div className="flex flex-col">
-                        <h3 className="text-lg font-bold text-[#403424] leading-none">₹{revenueBreakdown.online.toLocaleString()}</h3>
-                        <span className="text-[9px] text-[#403424]/40 mt-1">UPI & Card</span>
+                        <h3 className="text-lg font-bold text-slate-800 leading-none">₹{revenueBreakdown.online.toLocaleString()}</h3>
+                        <span className="text-[9px] text-slate-400 mt-1">UPI & Card</span>
                      </div>
                   </div>
 
                   {/* 4. Avg Daily Sales */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Daily Sales</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Avg Daily Sales</p>
                         <div className="p-1.5 bg-emerald-50 rounded-md text-emerald-600"><IndianRupee size={16} /></div>
                      </div>
-                     <h3 className="text-lg font-bold text-[#403424] leading-none">₹{Math.round(salesStats.avgDailySales).toLocaleString()}</h3>
+                     <h3 className="text-lg font-bold text-slate-800 leading-none">₹{Math.round(salesStats.avgDailySales).toLocaleString()}</h3>
                   </div>
 
                   {/* 5. Avg Daily Orders */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Daily Orders</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Avg Daily Orders</p>
                         <div className="p-1.5 bg-blue-50 rounded-md text-blue-600"><Receipt size={16} /></div>
                      </div>
-                     <h3 className="text-lg font-bold text-[#403424] leading-none">{Math.round(salesStats.avgDailyVolume)}</h3>
+                     <h3 className="text-lg font-bold text-slate-800 leading-none">{Math.round(salesStats.avgDailyVolume)}</h3>
                   </div>
 
                   {/* 6. Avg Order Value */}
-                  <div className="bg-white p-3 rounded-xl border border-[#403424]/10 shadow-sm flex flex-col justify-between h-full">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full">
                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-[10px] font-bold text-[#403424]/60 uppercase tracking-wide leading-tight">Avg Order Value</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-tight">Avg Order Value</p>
                         <div className="p-1.5 bg-violet-50 rounded-md text-violet-600"><BarChart3 size={16} /></div>
                      </div>
-                     <h3 className="text-lg font-bold text-[#403424] leading-none">₹{Math.round(salesStats.avgOrderValue)}</h3>
+                     <h3 className="text-lg font-bold text-slate-800 leading-none">₹{Math.round(salesStats.avgOrderValue)}</h3>
                   </div>
                </div>
 
                {/* Revenue Trends (30 Day Spline Area) */}
-               <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Revenue Trends (Last 30 Days)</h3>
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
+               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-4">Revenue Trends (Last 30 Days)</h3>
+               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                   <div className="h-72">
                      <ReactApexChart options={revenueChartOptions} series={last30DaysData.series} type="area" height="100%" />
                   </div>
                </div>
 
                {/* Operational Stats */}
-               <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide mt-4">Operational Stats</h3>
+               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mt-4">Operational Stats</h3>
                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <StatCard title="Total Check-Outs" value={totalTaken} icon={<Package size={20} className="text-[#95a77c]" />} color="bg-white" />
+                  <StatCard title="Total Check-Outs" value={totalTaken} icon={<Package size={20} className="text-indigo-600" />} color="bg-white" />
                   <StatCard title="Returns" value={totalReturned} icon={<RotateCcw size={20} className="text-amber-500" />} color="bg-white" />
                   <StatCard title="Total Wastage" value={totalWaste} icon={<Trash2 size={20} className="text-red-500" />} color="bg-white" />
-                  <StatCard title="Net Consumed" value={totalSold} icon={<ShoppingBag size={20} className="text-[#95a77c]" />} color="bg-white" />
+                  <StatCard title="Net Consumed" value={totalSold} icon={<ShoppingBag size={20} className="text-emerald-500" />} color="bg-white" />
                </div>
 
                {/* Best Sellers & Category */}
                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-                     <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2"><Sparkles size={16} className="text-amber-500" /> Best Sellers (Menu Items)</h3>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                     <h3 className="text-sm font-bold text-slate-400 mb-4 flex items-center gap-2"><Sparkles size={16} className="text-amber-500" /> Best Sellers (Menu Items)</h3>
                      <div className="h-64">
                         {topMenuData.length > 0 ? (
                            <ReactApexChart options={bestSellerOptions} series={[{ name: 'Sales', data: topMenuData.map(d => d.value) }]} type="bar" height="100%" />
-                        ) : <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">No sales data available.</div>}
+                        ) : <div className="h-full flex items-center justify-center text-slate-300 text-sm">No sales data available.</div>}
                      </div>
                   </div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-                     <h3 className="text-sm font-bold text-[#403424]/70 mb-4">Inventory Category Share</h3>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                     <h3 className="text-sm font-bold text-slate-400 mb-4">Inventory Category Share</h3>
                      <div className="h-64">
                         <ReactApexChart options={categoryOptions} series={categoryData.map(d => d.value)} type="donut" height="100%" />
                      </div>
@@ -816,31 +816,31 @@ const Dashboard: React.FC = () => {
                </div>
 
                {/* Last 7 Days Table */}
-               <div className="bg-white rounded-xl shadow-sm border border-[#403424]/10 overflow-hidden">
-                  <div className="p-4 border-b border-[#403424]/10 flex items-center gap-2 bg-[#f9faf7]">
-                     <CalendarDays size={16} className="text-[#95a77c]" />
-                     <h3 className="text-sm font-bold text-[#403424]/70 uppercase tracking-wide">Last 7 Days Performance</h3>
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
+                     <CalendarDays size={16} className="text-indigo-600" />
+                     <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide">Last 7 Days Performance</h3>
                   </div>
                   <div className="overflow-x-auto">
                      <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-[#403424]/50 bg-white border-b border-[#403424]/10 uppercase font-semibold">
-                           <tr><th className="p-3">Date</th><th className="p-3 text-center">Orders</th><th className="p-3 text-right">Cash</th><th className="p-3 text-right">Online</th><th className="p-3 text-right font-bold text-[#403424]">Total Revenue</th></tr>
+                        <thead className="text-xs text-slate-400 bg-white border-b border-slate-100 uppercase font-semibold">
+                           <tr><th className="p-3">Date</th><th className="p-3 text-center">Orders</th><th className="p-3 text-right">Cash</th><th className="p-3 text-right">Online</th><th className="p-3 text-right font-bold text-slate-700">Total Revenue</th></tr>
                         </thead>
-                        <tbody className="divide-y divide-[#403424]/5">
+                        <tbody className="divide-y divide-slate-50">
                            {last7DaysPerformance.map((row, idx) => (
-                              <tr key={idx} className="hover:bg-[#f9faf7] transition-colors">
-                                 <td className="p-3 font-medium text-[#403424]">{row.displayDate}</td><td className="p-3 text-center text-[#403424]/70">{row.orders}</td><td className="p-3 text-right text-emerald-600">₹{row.cash.toLocaleString()}</td><td className="p-3 text-right text-blue-600">₹{row.online.toLocaleString()}</td><td className="p-3 text-right font-bold text-[#403424]">₹{row.total.toLocaleString()}</td>
+                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                 <td className="p-3 font-medium text-slate-700">{row.displayDate}</td><td className="p-3 text-center text-slate-500">{row.orders}</td><td className="p-3 text-right text-emerald-600">₹{row.cash.toLocaleString()}</td><td className="p-3 text-right text-blue-600">₹{row.online.toLocaleString()}</td><td className="p-3 text-right font-bold text-slate-800">₹{row.total.toLocaleString()}</td>
                               </tr>
                            ))}
-                           {last7DaysPerformance.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-[#403424]/40 italic">No sales data for the last 7 days.</td></tr>}
+                           {last7DaysPerformance.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-slate-300 italic">No sales data for the last 7 days.</td></tr>}
                         </tbody>
                      </table>
                   </div>
                </div>
 
                {/* Reconciliation Chart */}
-               <div className="bg-white p-4 rounded-xl shadow-sm border border-[#403424]/10">
-                  <h3 className="text-sm font-bold text-[#403424]/70 mb-4 flex items-center gap-2"><Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation</h3>
+               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-sm font-bold text-slate-400 mb-4 flex items-center gap-2"><Scale size={16} className="text-indigo-600" /> Sales vs. Usage Reconciliation</h3>
                   <div className="h-64">
                      {reconciliationData.length > 0 ? (
                         <ReactApexChart
@@ -852,26 +852,26 @@ const Dashboard: React.FC = () => {
                            type="bar"
                            height="100%"
                         />
-                     ) : <div className="h-full flex items-center justify-center text-[#403424]/40 text-sm">No data for reconciliation.</div>}
+                     ) : <div className="h-full flex items-center justify-center text-slate-300 text-sm">No data for reconciliation.</div>}
                   </div>
-                  <p className="text-xs text-[#403424]/40 mt-2 text-center italic">Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.</p>
+                  <p className="text-xs text-slate-400 mt-2 text-center italic">Blue Bar (Stock) should match Green Bar (Sales). Higher Blue = Potential Loss.</p>
                </div>
             </div>
          )}
 
          {/* 4. Gemini Analyst Section */}
          {hasPermission('VIEW_ANALYTICS') && (
-            <div className="bg-[#403424] rounded-xl p-6 text-white shadow-lg mt-8">
+            <div className="bg-slate-900 rounded-xl p-6 text-white shadow-lg mt-8 border border-slate-700">
                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-white/10 rounded-full"><Sparkles className="text-[#95a77c]" size={24} /></div>
+                  <div className="p-3 bg-indigo-500/20 rounded-full"><Sparkles className="text-indigo-400" size={24} /></div>
                   <div className="flex-1">
                      <h3 className="text-lg font-semibold mb-2">Gemini Analyst</h3>
                      {!aiInsight ? (
-                        <p className="text-white/60 mb-4 text-sm">Get intelligent insights about consumption patterns, waste, and category popularity.</p>
+                        <p className="text-slate-400 mb-4 text-sm">Get intelligent insights about consumption patterns, waste, and category popularity.</p>
                      ) : (
-                        <div className="prose prose-invert max-w-none text-sm bg-white/5 p-4 rounded-lg mb-4"><pre className="whitespace-pre-wrap font-sans text-white/80">{aiInsight}</pre></div>
+                        <div className="prose prose-invert max-w-none text-sm bg-slate-800 p-4 rounded-lg mb-4"><pre className="whitespace-pre-wrap font-sans text-slate-300">{aiInsight}</pre></div>
                      )}
-                     <button onClick={handleAskAI} disabled={loadingAi} className="bg-[#95a77c] hover:bg-[#85966d] disabled:bg-[#95a77c]/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2">{loadingAi ? 'Analyzing...' : 'Generate Insights'}</button>
+                     <button onClick={handleAskAI} disabled={loadingAi} className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2">{loadingAi ? 'Analyzing...' : 'Generate Insights'}</button>
                   </div>
                </div>
             </div>
