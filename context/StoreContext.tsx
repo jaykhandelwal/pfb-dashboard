@@ -578,7 +578,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         return { data: allData };
                     };
 
-                    const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData] = await Promise.all([
+                    const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData, ledgerData] = await Promise.all([
                         fetchAll('transactions'), // Use fetchAll
                         fetchAll('orders'),       // Use fetchAll
                         supabase.from('skus').select('*').order('order', { ascending: true }),
@@ -594,7 +594,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         fetchAll('sales_records'), // Use fetchAll
                         supabase.from('app_settings').select('*'),
                         supabase.from('storage_units').select('*'),
-                        fetchAll('deleted_transactions') // Fetch explicitly from deleted table
+                        fetchAll('deleted_transactions'), // Fetch explicitly from deleted table
+                        fetchAll('ledger_entries') // Fetch ledger entries
                     ]);
 
                     if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
@@ -623,6 +624,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         const settingsMap = settingsData.data.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
                         setAppSettings(prev => ({ ...prev, ...settingsMap }));
                         save('appSettings', settingsMap);
+                    }
+
+                    // Ledger Entries
+                    if (ledgerData.data) {
+                        const mapped = ledgerData.data.map(mapLedgerEntryFromDB);
+                        setLedgerEntries(mapped);
+                        save('ledgerEntries', mapped);
                     }
 
                     setLastUpdated(Date.now());
@@ -775,6 +783,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         updated = prev.filter(b => b.id !== oldRecord.id);
                     }
                     save('branches', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 9. Ledger Entries
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'ledger_entries' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setLedgerEntries(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT') {
+                        const mapped = mapLedgerEntryFromDB(newRecord);
+                        if (prev.some(e => e.id === mapped.id)) return prev;
+                        updated = [mapped, ...prev];
+                    } else if (eventType === 'UPDATE') {
+                        updated = prev.map(e => e.id === newRecord.id ? mapLedgerEntryFromDB(newRecord) : e);
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(e => e.id !== oldRecord.id);
+                    }
+                    save('ledgerEntries', updated);
                     setLastUpdated(Date.now());
                     return updated;
                 });

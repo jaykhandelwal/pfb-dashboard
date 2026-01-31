@@ -91,7 +91,7 @@ const Attendance: React.FC = () => {
          const yesterdayRecord = attendanceRecords.find(r => r.userId === currentUser.id && r.date === yesterday);
 
          if (!yesterdayRecord) {
-            setWarningMsg(`You did not record attendance for yesterday (${yesterday}).`);
+            setWarningMsg(`Yesterday's attendance was not submitted.`);
          }
       };
 
