@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
     Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, RotateCcw, Filter, Calendar,
     CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon,
-    ChevronLeft, ChevronRight, ChevronDown, Users, Download, AlertCircle, FileUp, Copy, Check
+    ChevronLeft, ChevronRight, ChevronDown, Users, Download, AlertCircle, FileUp, Copy, Check, Paperclip
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
@@ -496,18 +496,20 @@ const Ledger: React.FC = () => {
                                                                 {formatLedgerDateTime(entry.timestamp).time}
                                                             </span>
                                                         </div>
-                                                        {/* Status Pills - moved from Description */}
+                                                        {/* Status Pills */}
                                                         {entry.status !== 'APPROVED' && (
                                                             <div className="flex flex-col gap-1 mt-0.5">
-                                                                <span className={`w-fit text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${entry.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                                                <span className={`w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded-md ${entry.status === 'REJECTED' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
                                                                     }`}>
                                                                     {entry.status === 'REJECTED' ? 'Rejected' : 'Pending'}
                                                                 </span>
-                                                                {entry.status === 'REJECTED' && (
-                                                                    <span className="text-[10px] text-slate-400">
-                                                                        {formatLedgerDateTime(entry.timestamp).date} {formatLedgerDateTime(entry.timestamp).time}
-                                                                    </span>
-                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {entry.status === 'APPROVED' && (
+                                                            <div className="flex flex-col gap-1 mt-0.5">
+                                                                <span className="w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                                    Approved
+                                                                </span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -521,19 +523,19 @@ const Ledger: React.FC = () => {
                                                         return (
                                                             <>
                                                                 <div
-                                                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0"
-                                                                    style={{ backgroundColor: cat?.color || '#6366f1' }}
+                                                                    className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0"
+                                                                    style={{ backgroundColor: `${cat?.color || '#6366f1'}20`, color: cat?.color || '#6366f1' }}
                                                                 >
-                                                                    <IconRenderer name={cat?.icon || 'Package'} size={16} />
+                                                                    <IconRenderer name={cat?.icon || 'Package'} size={18} />
                                                                 </div>
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="font-bold truncate text-sm">{entry.category}</span>
+                                                                    <span className="font-bold truncate text-sm text-slate-700">{entry.category}</span>
                                                                     <div className="flex items-center gap-1.5 mt-0.5">
                                                                         <div
-                                                                            className="w-2 h-2 rounded-full shrink-0"
+                                                                            className="w-1.5 h-1.5 rounded-full shrink-0"
                                                                             style={{ backgroundColor: method?.color || '#10b981' }}
                                                                         />
-                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate">
+                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">
                                                                             {entry.paymentMethod.replace('_', ' ')}
                                                                         </span>
                                                                     </div>
@@ -546,30 +548,34 @@ const Ledger: React.FC = () => {
                                             <td className="px-4 py-3 text-sm max-w-xs">
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-[#403424]">{entry.description}</span>
-                                                    </div>
-
-                                                    {/* Context Tags (Branch/Source) - moved from Date column */}
-                                                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                                        <span className="font-bold text-[#403424] text-base">{entry.description}</span>
                                                         {(() => {
                                                             const branch = branches.find(b => b.id === entry.branchId);
                                                             if (!branch) return null;
                                                             return (
-                                                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branch.name}`}>
+                                                                <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200 font-bold" title={`Branch: ${branch.name}`}>
                                                                     {branch.name}
                                                                 </span>
                                                             );
                                                         })()}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 border border-slate-200 uppercase">
+                                                            {entry.createdByName?.charAt(0) || 'U'}
+                                                        </div>
+                                                        <span className="text-xs text-slate-500 font-medium">{entry.createdByName}</span>
 
                                                         {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
-                                                            <div className="flex items-center gap-1">
-                                                                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`From: ${entry.sourceAccount}`}>
+                                                            <div className="flex items-center gap-1 ml-1">
+                                                                <span className="text-slate-300">•</span>
+                                                                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold" title={`From: ${entry.sourceAccount}`}>
                                                                     {entry.sourceAccount.split(' ')[0]}
                                                                 </span>
                                                                 {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
                                                                     <>
                                                                         <span className="text-[10px] text-slate-400">→</span>
-                                                                        <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded w-fit border border-purple-100 font-semibold truncate max-w-[100px]" title={`To: ${entry.destinationAccount}`}>
+                                                                        <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-bold" title={`To: ${entry.destinationAccount}`}>
                                                                             {entry.destinationAccount.split(' ')[0]}
                                                                         </span>
                                                                     </>
@@ -578,38 +584,27 @@ const Ledger: React.FC = () => {
                                                         )}
                                                     </div>
 
-                                                    {entry.rejectedReason && <div className="text-[10px] text-red-500 italic">Note: {entry.rejectedReason}</div>}
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] text-slate-400">By: {entry.createdByName}</span>
-                                                    </div>
+                                                    {entry.rejectedReason && <div className="text-[10px] text-red-500 italic mt-1 bg-red-50 p-1 rounded border border-red-100">Note: {entry.rejectedReason}</div>}
                                                 </div>
                                             </td>
-                                            <td className={`px-4 py-3 text-sm font-bold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
-                                                {entry.entryType === 'INCOME' ? '+' : '-'}₹{entry.amount.toLocaleString()}
+                                            <td className={`px-4 py-3 text-base font-bold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
+                                                ₹{entry.amount.toLocaleString()}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-4 py-3 text-center">
                                                 {entry.billUrls && entry.billUrls.length > 0 ? (
                                                     <button
                                                         onClick={() => { setImageModalUrls(entry.billUrls!); setImageModalIndex(0); }}
-                                                        className="relative group"
+                                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all"
+                                                        title="View Attachment"
                                                     >
-                                                        <img
-                                                            src={entry.billUrls[0]}
-                                                            alt="Bill"
-                                                            className="w-10 h-10 object-cover rounded border border-slate-200 hover:border-purple-400 transition-colors"
-                                                        />
-                                                        {entry.billUrls.length > 1 && (
-                                                            <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                                                                +{entry.billUrls.length - 1}
-                                                            </span>
-                                                        )}
+                                                        <Paperclip size={20} />
                                                     </button>
                                                 ) : (
                                                     <span className="text-slate-300">—</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="flex items-center justify-center gap-1.5">
+                                                <div className="flex items-center justify-center gap-1">
                                                     {/* Auditor Actions */}
                                                     {currentUser?.isLedgerAuditor && (!entry.status || entry.status === 'PENDING') && (
                                                         <>
@@ -622,13 +617,13 @@ const Ledger: React.FC = () => {
                                                             <div className="w-px h-6 bg-slate-200 mx-1"></div>
                                                         </>
                                                     )}
-                                                    <button onClick={() => handleEdit(entry)} className="p-2 text-[#403424]/60 hover:text-[#95a77c] hover:bg-slate-50 rounded-lg transition-colors" title="Edit">
+                                                    <button onClick={() => handleEdit(entry)} className="p-2 text-[#403424]/40 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" title="Edit">
                                                         <Edit2 size={18} />
                                                     </button>
-                                                    <button onClick={() => handleDelete(entry.id)} className="p-2 text-[#403424]/60 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                                    <button onClick={() => handleDelete(entry.id)} className="p-2 text-[#403424]/40 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                                                         <Trash2 size={18} />
                                                     </button>
-                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-2 text-[#403424]/60 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View Logs">
+                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-2 text-[#403424]/40 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="View Logs">
                                                         <History size={18} />
                                                     </button>
                                                 </div>
