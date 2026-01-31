@@ -916,6 +916,7 @@ const UserManagement: React.FC = () => {
                       // Fallback to "Stage X"
                       const stageConfig = viewingAttendanceFor?.stagedAttendanceConfig?.[index];
                       const stageName = stageConfig?.title || `Stage ${index + 1}`;
+                      const timestamp = previewRecord.imageTimestamps?.[index];
 
                       return (
                         <div key={index} className="flex flex-col items-center bg-white/5 p-3 rounded-xl backdrop-blur-sm border border-white/10">
@@ -927,9 +928,14 @@ const UserManagement: React.FC = () => {
                             />
                           </div>
                           <div className="text-center">
-                            <span className="block text-white font-bold text-sm bg-indigo-600/80 px-3 py-1 rounded-full backdrop-blur-md border border-indigo-400/30">
+                            <span className="block text-white font-bold text-sm bg-indigo-600/80 px-3 py-1 rounded-full backdrop-blur-md border border-indigo-400/30 mb-1">
                               {stageName}
                             </span>
+                            {timestamp && (
+                              <span className="block text-slate-300 text-xs font-mono bg-black/40 px-2 py-0.5 rounded">
+                                {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );

@@ -13,6 +13,7 @@ const Attendance: React.FC = () => {
    const [branchId, setBranchId] = useState<string>('');
    const [capturedImage, setCapturedImage] = useState<string | null>(null); // Current captured but not uploaded
    const [collectedImages, setCollectedImages] = useState<string[]>([]); // Uploaded URLs
+   const [collectedImageTimestamps, setCollectedImageTimestamps] = useState<number[]>([]); // Upload Timestamps
    const [currentStageIndex, setCurrentStageIndex] = useState(0);
 
    const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -71,6 +72,14 @@ const Attendance: React.FC = () => {
             // Safer: If remote has images, and we have empty/fewer, take remote.
             // If we have equal/more, keep ours (assuming we just uploaded and remote is catching up)
             return prev.length === 0 ? (remoteProgress.collectedImages || []) : prev;
+         });
+
+         setCollectedImageTimestamps(prev => {
+            const remoteTimestamps = remoteProgress.collectedImageTimestamps || [];
+            if (remoteTimestamps.length > prev.length) {
+               return remoteTimestamps;
+            }
+            return prev.length === 0 ? remoteTimestamps : prev;
          });
 
          setCurrentStageIndex(prev => {
@@ -246,6 +255,12 @@ const Attendance: React.FC = () => {
          const newImages = [...collectedImages];
          newImages[currentStageIndex] = uploadedUrl; // Place at specific index
          setCollectedImages(newImages);
+
+         const newTimestamps = [...collectedImageTimestamps];
+         const now = Date.now();
+         newTimestamps[currentStageIndex] = now;
+         setCollectedImageTimestamps(newTimestamps);
+
          setCapturedImage(null); // Clear capture to show "Next" or "Uploaded" state
 
          // Save Progress to User Profile
@@ -254,7 +269,8 @@ const Attendance: React.FC = () => {
             stagedAttendanceProgress: {
                date: today,
                currentStageIndex: currentStageIndex, // Still on this stage until they click "Next"
-               collectedImages: newImages
+               collectedImages: newImages,
+               collectedImageTimestamps: newTimestamps
             }
          });
 
@@ -279,7 +295,8 @@ const Attendance: React.FC = () => {
                stagedAttendanceProgress: {
                   date: today,
                   currentStageIndex: nextIndex,
-                  collectedImages: collectedImages
+                  collectedImages: collectedImages,
+                  collectedImageTimestamps: collectedImageTimestamps
                }
             });
          }
@@ -309,15 +326,19 @@ const Attendance: React.FC = () => {
       try {
          let uploadedUrls: string[] = [];
 
+         let finalTimestamps: number[] = [];
+
          if (isStaged) {
             // For staged, images are already uploaded one by one
             uploadedUrls = imagesToSubmit;
+            finalTimestamps = collectedImageTimestamps;
          } else {
             // For unstaged, upload now
             const uploadPromises = imagesToSubmit.map((img, idx) =>
                uploadImageToBunny(img, `attendance/${currentUser.id}/${today}/${idx}`)
             );
             uploadedUrls = await Promise.all(uploadPromises);
+            finalTimestamps = uploadedUrls.map(() => Date.now());
          }
 
          await addAttendance({
@@ -327,12 +348,14 @@ const Attendance: React.FC = () => {
             date: today,
             timestamp: Date.now(),
             imageUrl: uploadedUrls[0], // Primary image for backward compatibility
-            imageUrls: uploadedUrls
+            imageUrls: uploadedUrls,
+            imageTimestamps: finalTimestamps
          });
 
          setSuccessMsg(`Checked in successfully at ${new Date().toLocaleTimeString()}!`);
          setCapturedImage(null);
          setCollectedImages([]);
+         setCollectedImageTimestamps([]);
          setCurrentStageIndex(0);
 
          // Clear progress from User Profile
@@ -371,7 +394,12 @@ const Attendance: React.FC = () => {
             const newImages = [...collectedImages];
             delete newImages[currentStageIndex];
 
+            const newTimestamps = [...collectedImageTimestamps];
+            delete newTimestamps[currentStageIndex];
+
             setCollectedImages(newImages);
+            setCollectedImageTimestamps(newTimestamps);
+
             setCapturedImage(null); // Ensure camera view comes back
 
             // 3. Update User Profile to persist the deletion
@@ -379,8 +407,9 @@ const Attendance: React.FC = () => {
                ...currentUser,
                stagedAttendanceProgress: {
                   date: today,
-                  currentStageIndex: currentStageIndex,
-                  collectedImages: newImages
+                  currentStageIndex: currentStageIndex, // Keep current stage index
+                  collectedImages: newImages,
+                  collectedImageTimestamps: newTimestamps
                }
             });
 
@@ -490,12 +519,17 @@ const Attendance: React.FC = () => {
                                  }`}
                            >
                               {isCompleted && collectedImages[idx] ? (
-                                 <div className="w-full h-full relative">
+                                 <div className="w-full h-full relative group">
                                     <img src={collectedImages[idx]} className="w-full h-full object-cover" alt="" />
-                                    <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
-                                       <div className="bg-emerald-500 text-white rounded-full p-0.5">
+                                    <div className="absolute inset-0 bg-emerald-500/20 flex flex-col items-center justify-center">
+                                       <div className="bg-emerald-500 text-white rounded-full p-0.5 mb-1">
                                           <CheckCircle2 size={12} strokeWidth={3} />
                                        </div>
+                                       {collectedImageTimestamps[idx] && (
+                                          <span className="text-[10px] bg-black/50 text-white px-1 rounded backdrop-blur-sm">
+                                             {new Date(collectedImageTimestamps[idx]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          </span>
+                                       )}
                                     </div>
                                  </div>
                               ) : (

@@ -39,13 +39,14 @@ export interface User {
   isLedgerAuditor?: boolean;
   isStagedAttendanceEnabled?: boolean;
   stagedAttendanceConfig?: StagedAttendanceConfig[];
-  stagedAttendanceProgress?: StagedAttendanceProgress;
+  stagedAttendanceProgress?: StagedAttendanceProgress | null;
 }
 
 export interface StagedAttendanceProgress {
   date: string;
   currentStageIndex: number;
   collectedImages: string[];
+  collectedImageTimestamps?: number[];
 }
 
 export interface Branch {
@@ -255,6 +256,7 @@ export interface AttendanceRecord {
   timestamp: number;
   imageUrl?: string;
   imageUrls?: string[];
+  imageTimestamps?: number[];
 }
 
 export type AttendanceOverrideType = 'HOLIDAY' | 'ABSENT' | 'PENALTY_2_DAYS' | 'PRESENT';

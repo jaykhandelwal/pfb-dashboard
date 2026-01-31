@@ -111,7 +111,8 @@ const mapAttendanceFromDB = (data: any): AttendanceRecord => ({
     userName: data.user_name || data.userName,
     branchId: data.branch_id || data.branchId,
     imageUrl: data.image_url || data.imageUrl, // Keep for backward compatibility
-    imageUrls: data.image_urls || data.imageUrls || []
+    imageUrls: data.image_urls || data.imageUrls || [],
+    imageTimestamps: data.image_timestamps || data.imageTimestamps || []
 });
 
 const mapTemplateFromDB = (data: any): TaskTemplate => ({
@@ -249,7 +250,8 @@ const mapAttendanceToDB = (a: Partial<AttendanceRecord>) => ({
     date: a.date,
     timestamp: a.timestamp,
     image_url: a.imageUrl, // Primary/First image
-    image_urls: a.imageUrls // All images
+    image_urls: a.imageUrls, // All images
+    image_timestamps: a.imageTimestamps // All timestamps
 });
 
 const mapTemplateToDB = (t: TaskTemplate) => ({
@@ -1136,10 +1138,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // 1. Delete associated images from BunnyCDN
             const recordsToDelete = attendanceRecords.filter(a => a.userId === userId && a.date === date);
             for (const record of recordsToDelete) {
-                const images = [...(record.imageUrls || [])];
-                if (record.imageUrl) images.push(record.imageUrl);
+                // Use a Set to avoid duplicate deletion attempts (imageUrl is often also in imageUrls)
+                const uniqueImages = new Set<string>(record.imageUrls || []);
+                if (record.imageUrl) uniqueImages.add(record.imageUrl);
 
-                for (const imgUrl of images) {
+                for (const imgUrl of uniqueImages) {
                     await deleteImageFromBunny(imgUrl);
                 }
             }
@@ -1163,10 +1166,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // 4. Reset User Staged Attendance Progress IF it matches the cleared date
             const userToUpdate = users.find(u => u.id === userId);
+            // Check if progress exists and matches the date roughly, or just clear it if present?
+            // Safer to check date so we don't clear progress for a NEW day if admin clears OLD day.
+            // But usually progress date matches attendance date.
             if (userToUpdate && userToUpdate.stagedAttendanceProgress?.date === date) {
                 const updatedUser: User = {
                     ...userToUpdate,
-                    stagedAttendanceProgress: undefined
+                    stagedAttendanceProgress: null
                 };
                 await updateUser(updatedUser);
             }
