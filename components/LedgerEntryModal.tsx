@@ -127,8 +127,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         setTempBillPreviews(prev => prev.filter((_, i) => i !== index));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e?: React.FormEvent, statusOverride?: 'APPROVED' | 'REJECTED', rejectionReason?: string) => {
+        if (e) e.preventDefault();
         if (!formData.amount || !formData.description) return;
 
         setIsUploading(true);
@@ -184,7 +184,11 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? (appSettings.ledger_accounts?.find(a => a.name === formData.destinationAccount)?.id || availableAccounts.find(a => a.name === formData.destinationAccount)?.id) : undefined,
             createdBy: currentUser?.id || '',
             createdByName: currentUser?.name || 'Unknown',
-            billUrls: billUrls
+            billUrls: billUrls,
+            // Apply status override if present
+            status: statusOverride || (initialData?.status || 'PENDING'),
+            approvedBy: statusOverride === 'APPROVED' ? (currentUser?.name || 'Unknown') : (initialData?.approvedBy),
+            rejectedReason: statusOverride === 'REJECTED' ? rejectionReason : (initialData?.rejectedReason)
         };
 
         if (initialData) {
@@ -435,20 +439,69 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     </div>
 
                     <div className="pt-2">
-                        <button
-                            type="submit"
-                            disabled={isUploading}
-                            className="w-full py-3 bg-[#95a77c] text-white rounded-xl font-bold shadow-lg shadow-[#95a77c]/20 hover:shadow-xl hover:bg-[#7d8f68] transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
-                        >
-                            {isUploading ? (
-                                <span className="animate-pulse">Uploading...</span>
+                        <div className="pt-2 flex flex-col gap-2">
+                            {/* Auditor Actions for Pending Entries */}
+                            {currentUser?.isLedgerAuditor && initialData && (!initialData.status || initialData.status === 'PENDING') ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => handleSubmit(e, 'APPROVED')}
+                                        disabled={isUploading}
+                                        className="col-span-2 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-600/20 hover:shadow-xl hover:bg-emerald-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
+                                    >
+                                        Update & Approve
+                                        <CheckCircle2 size={18} />
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isUploading}
+                                        className="py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        Update Only
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const reason = prompt("Enter reason for rejection:");
+                                            if (reason) {
+                                                // Handle rejection directly via context if possible, or close and let parent handle?
+                                                // Since we are in modal, we should probably call context function relative to ID.
+                                                // But for consistency let's use the update flow OR just call context.
+                                                // context.updateLedgerEntryStatus is available.
+                                                // We need to import it first. 
+                                                // Actually, let's just close and trigger a rejection? 
+                                                // Better: Call simple context function.
+                                                // Since I need to import updateLedgerEntryStatus, I will assume it's exposed in useStore. 
+                                                // Wait, I need to check useStore destructuring.
+                                                // Let's rely on adding updateLedgerEntryStatus to destructuring in next step if missed, 
+                                                // OR reuse updateLedgerEntry with rejected status.
+                                                // Reusing updateLedgerEntry:
+                                                handleSubmit(undefined, 'REJECTED', reason);
+                                            }
+                                        }}
+                                        disabled={isUploading}
+                                        className="py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        Reject
+                                    </button>
+                                </div>
                             ) : (
-                                <>
-                                    {initialData ? 'Update Entry' : 'Save Entry'}
-                                    <CheckCircle2 size={18} />
-                                </>
+                                <button
+                                    type="submit"
+                                    disabled={isUploading}
+                                    className="w-full py-3 bg-[#95a77c] text-white rounded-xl font-bold shadow-lg shadow-[#95a77c]/20 hover:shadow-xl hover:bg-[#7d8f68] transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
+                                >
+                                    {isUploading ? (
+                                        <span className="animate-pulse">Uploading...</span>
+                                    ) : (
+                                        <>
+                                            {initialData ? 'Update Entry' : 'Save Entry'}
+                                            <CheckCircle2 size={18} />
+                                        </>
+                                    )}
+                                </button>
                             )}
-                        </button>
+                        </div>
                     </div>
                 </form>
             </div>

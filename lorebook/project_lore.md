@@ -179,13 +179,76 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 *   **Model:** `gemini-1.5-flash` (implied by typical usage, code says `gemini-pro` or similar - check generic usage).
 *   **Usage:** Generates text summaries of tabular data for the Dashboard.
 
-### 7.3. Supabase
-*   **Tables:** `skus`, `menu_items`, `transactions`, `orders`, `customers`, `coupons`, `users`, `storage_units`.
-*   **Security:** RLS (Row Level Security) enabled.
+### 7.3. Database Schema Reference
+This section serves as a reference for fresh installations. Using these schemas allows setting up the database without running sequential migrations.
 
-### 7.3. Supabase
-*   **Tables:** `skus`, `menu_items`, `transactions`, `orders`, `customers`, `coupons`, `users`, `storage_units`.
-*   **Security:** RLS (Row Level Security) enabled.
+#### 7.3.1. Extensions
+*   `uuid-ossp`: Required for generating UUIDs.
+    ```sql
+    create extension if not exists "uuid-ossp";
+    ```
+
+#### 7.3.2. Core Tables
+
+**1. ledger_entries** (Financial Transactions)
+*   `id` (uuid/text): Primary Key.
+*   `date` (text): ISO Date (YYYY-MM-DD).
+*   `branch_id` (text): Link to `branches`.
+*   `entry_type` (text): 'INCOME', 'EXPENSE', 'REIMBURSEMENT'.
+*   `category` (text): Display name.
+*   `category_id` (text): Link to `ledger_categories`.
+*   `amount` (numeric): Transaction value.
+*   `description` (text): Details.
+*   `payment_method` (text): Display name.
+*   `payment_method_id` (text): Link to `payment_methods`.
+*   `source_account` (text): From Account Name.
+*   `source_account_id` (text): From Account ID.
+*   `destination_account` (text): To Account Name (Reimbursement only).
+*   `destination_account_id` (text): To Account ID.
+*   `status` (text): 'PENDING', 'APPROVED', 'REJECTED'.
+*   `approved_by` (text): Name of auditor.
+*   `rejected_reason` (text): Reason if rejected.
+*   `bill_urls` (text[]): Array of evidence URLs (BunnyCDN).
+*   `linked_expense_ids` (text[]): For grouped entries.
+*   `created_by` (text): User ID.
+*   `created_by_name` (text): User Name.
+*   `timestamp` (bigint): Unix timestamp.
+
+**2. ledger_logs** (Audit Trail)
+*   `id` (uuid/text): Primary Key.
+*   `ledger_entry_id` (text): FK to `ledger_entries`.
+*   `action` (text): 'CREATE', 'UPDATE', 'APPROVE', 'REJECT', 'DELETE'.
+*   `performed_by` (text): User ID of actor.
+*   `performed_by_name` (text): User Name.
+*   `snapshot` (jsonb): Full copy of `LedgerEntry` at time of action.
+*   `created_at` (timestamptz): Auto-generated.
+
+**3. transactions** (Stock Movement)
+*   `id` (text): Primary Key.
+*   `date` (text): Operational Date.
+*   `type` (text): 'CHECK_IN', 'CHECK_OUT', 'WASTE', 'RESTOCK'.
+*   `sku_id` (text): FK to `skus`.
+*   `quantity` (numeric): Amount moved.
+*   `batch_id` (text): Grouping ID for bulk actions.
+
+**4. orders** (Sales)
+*   `id` (text): Primary Key.
+*   `customer_id` (text): FK to `customers`.
+*   `items` (jsonb): Array of `{skuId, qty, name, price}`.
+*   `total_amount` (numeric): Final bill.
+*   `payment_method` (text): 'Cash', 'UPI', etc.
+*   `timestamp` (bigint): Order time.
+
+**(Other Tables Standard)**: `skus`, `menu_items`, `customers`, `users`, `app_settings`.
+
+#### 7.3.3. RLS Policies
+The system uses a simple, permissive RLS model for internal tools.
+*   **Policy:** "Enable all access for Authenticated Users".
+*   *Implementation:*
+    ```sql
+    create policy "Enable all for auth" on [table_name] 
+    for all using (auth.role() = 'authenticated');
+    ```
 
 ### 7.4. Webhook Integrations
 *   **Attendance Webhook:**

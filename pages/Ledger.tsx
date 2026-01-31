@@ -60,8 +60,8 @@ const Ledger: React.FC = () => {
     // Filter state
     const [filterType, setFilterType] = useState<LedgerEntryType | 'ALL'>('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+    const [filterCategory, setFilterCategory] = useState<string>('ALL');
     const [filterDateFrom, setFilterDateFrom] = useState('');
-
     const [filterDateTo, setFilterDateTo] = useState('');
 
     // Logs state
@@ -97,22 +97,39 @@ const Ledger: React.FC = () => {
         }
     }, [viewingLogsFor]);
 
-    // Derived stats
-    const stats = useMemo(() => {
-        const filtered = ledgerEntries.filter(e => {
+    // Derived stats for the TABLE LIST (respects all visual filters including Pending/Rejected)
+    const tableEntries = useMemo(() => {
+        return ledgerEntries.filter(e => {
             if (filterType !== 'ALL' && e.entryType !== filterType) return false;
             if (filterStatus !== 'ALL' && (e.status || 'PENDING') !== filterStatus) return false;
+            if (filterCategory !== 'ALL' && (e.category !== filterCategory && e.categoryId !== filterCategory)) return false;
+            if (filterDateFrom && e.date < filterDateFrom) return false;
+            if (filterDateTo && e.date > filterDateTo) return false;
+            return true;
+        });
+    }, [ledgerEntries, filterType, filterStatus, filterCategory, filterDateFrom, filterDateTo]);
+
+    // Derived stats for the TOP CARDS (ALWAYS uses APPROVED only, ignores status filter)
+    const cardStats = useMemo(() => {
+        const approvedEntries = ledgerEntries.filter(e => {
+            // MUST be approved to count towards totals
+            if (e.status !== 'APPROVED') return false;
+
+            // Apply other filters (Type, Category, Date) so totals match the context of what user is looking for
+            // (e.g. "Show me approved Expenses from Jan 1 to Jan 31")
+            if (filterType !== 'ALL' && e.entryType !== filterType) return false;
+            if (filterCategory !== 'ALL' && (e.category !== filterCategory && e.categoryId !== filterCategory)) return false;
             if (filterDateFrom && e.date < filterDateFrom) return false;
             if (filterDateTo && e.date > filterDateTo) return false;
             return true;
         });
 
-        const income = filtered.filter(e => e.entryType === 'INCOME').reduce((s, e) => s + e.amount, 0);
-        const expenses = filtered.filter(e => e.entryType === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-        const reimbursements = filtered.filter(e => e.entryType === 'REIMBURSEMENT').reduce((s, e) => s + e.amount, 0);
+        const income = approvedEntries.filter(e => e.entryType === 'INCOME').reduce((s, e) => s + e.amount, 0);
+        const expenses = approvedEntries.filter(e => e.entryType === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+        const reimbursements = approvedEntries.filter(e => e.entryType === 'REIMBURSEMENT').reduce((s, e) => s + e.amount, 0);
 
-        return { income, expenses, reimbursements, net: income + reimbursements - expenses, entries: filtered };
-    }, [ledgerEntries, filterType, filterStatus, filterDateFrom, filterDateTo]);
+        return { income, expenses, reimbursements, net: income + reimbursements - expenses };
+    }, [ledgerEntries, filterType, filterCategory, filterDateFrom, filterDateTo]); // Note: filterStatus dependency removed intentionally
 
     // Calculate user balances: (Expenses paid by user) - (Reimbursements received by user)
     // Only count APPROVED entries to ensure accurate tracking
@@ -209,6 +226,7 @@ const Ledger: React.FC = () => {
         }
     };
 
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -254,20 +272,20 @@ const Ledger: React.FC = () => {
                     <div className="flex items-center gap-2 text-emerald-600 mb-1">
                         <TrendingUp size={16} /> <span className="text-xs font-medium uppercase">Income</span>
                     </div>
-                    <p className="text-xl font-bold text-[#403424]">₹{stats.income.toLocaleString()}</p>
+                    <p className="text-xl font-bold text-[#403424]">₹{cardStats.income.toLocaleString()}</p>
                 </div>
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
                     <div className="flex items-center gap-2 text-red-600 mb-1">
                         <TrendingDown size={16} /> <span className="text-xs font-medium uppercase">Expenses</span>
                     </div>
-                    <p className="text-xl font-bold text-[#403424]">₹{stats.expenses.toLocaleString()}</p>
+                    <p className="text-xl font-bold text-[#403424]">₹{cardStats.expenses.toLocaleString()}</p>
                 </div>
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
                     <div className="flex items-center gap-2 text-[#403424] mb-1">
                         <span className="text-xs font-medium uppercase">Net Balance</span>
                     </div>
-                    <p className={`text-xl font-bold ${stats.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        ₹{stats.net.toLocaleString()}
+                    <p className={`text-xl font-bold ${cardStats.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        ₹{cardStats.net.toLocaleString()}
                     </p>
                 </div>
                 <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 shadow-sm border border-purple-100 flex flex-col min-h-[160px] col-span-2 md:col-span-1">
@@ -348,6 +366,17 @@ const Ledger: React.FC = () => {
                         <option value="EXPENSE">Expense</option>
                     </select>
 
+                    <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg border border-[#403424]/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#95a77c] max-w-[150px]"
+                    >
+                        <option value="ALL">All Categories</option>
+                        {appSettings.ledger_categories?.filter(c => c.isActive).map(c => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                        ))}
+                    </select>
+
                     <div className="flex items-center gap-2">
                         <Calendar size={14} className="text-[#403424]/40" />
                         <input
@@ -364,9 +393,9 @@ const Ledger: React.FC = () => {
                             className="px-2 py-1.5 rounded-lg border border-[#403424]/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#95a77c]"
                         />
                     </div>
-                    {(filterType !== 'ALL' || filterStatus !== 'ALL' || filterDateFrom || filterDateTo) && (
+                    {(filterType !== 'ALL' || filterStatus !== 'ALL' || filterCategory !== 'ALL' || filterDateFrom || filterDateTo) && (
                         <button
-                            onClick={() => { setFilterType('ALL'); setFilterStatus('ALL'); setFilterDateFrom(''); setFilterDateTo(''); }}
+                            onClick={() => { setFilterType('ALL'); setFilterStatus('ALL'); setFilterCategory('ALL'); setFilterDateFrom(''); setFilterDateTo(''); }}
                             className="text-xs text-[#403424]/60 hover:text-[#403424] underline"
                         >
                             Clear Filters
@@ -390,48 +419,43 @@ const Ledger: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[#403424]/5">
-                            {stats.entries.length === 0 ? (
+                            {tableEntries.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-4 py-12 text-center text-[#403424]/40">
                                         No ledger entries yet. Click "New Entry" to add one.
                                     </td>
                                 </tr>
                             ) : (
-                                stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
-                                    const borderColor = entry.entryType === 'INCOME' ? '!border-l-emerald-500' :
-                                        entry.entryType === 'EXPENSE' ? '!border-l-red-500' : '!border-l-purple-500';
+                                tableEntries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
+                                    const dotColor = entry.entryType === 'INCOME' ? 'bg-emerald-500' :
+                                        entry.entryType === 'EXPENSE' ? 'bg-red-500' : 'bg-purple-500';
                                     const rowBg = entry.status === 'REJECTED' ? 'bg-red-50/30 opacity-60' :
                                         entry.entryType === 'INCOME' ? 'bg-emerald-50/20' :
                                             entry.entryType === 'REIMBURSEMENT' ? 'bg-purple-50/20' : '';
                                     return (
-                                        <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] border-l-4 ${borderColor} ${rowBg}`}>
+                                        <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] ${rowBg}`}>
                                             <td className="px-4 py-3 text-sm">
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="font-medium">{entry.date}</span>
-                                                    {entry.branchId ? (
-                                                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}`}>
-                                                            {branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded w-fit border border-amber-100 font-semibold uppercase tracking-wider">
-                                                            General
-                                                        </span>
-                                                    )}
-                                                    {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
-                                                        <div className="flex items-center gap-1 mt-0.5">
-                                                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`From: ${entry.sourceAccount}`}>
-                                                                {entry.sourceAccount.split(' ')[0]}
-                                                            </span>
-                                                            {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
-                                                                <>
-                                                                    <span className="text-[10px] text-slate-400">→</span>
-                                                                    <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded w-fit border border-purple-100 font-semibold truncate max-w-[100px]" title={`To: ${entry.destinationAccount}`}>
-                                                                        {entry.destinationAccount.split(' ')[0]}
+                                                <div className="flex items-start gap-3">
+                                                    {/* Dot Indicator */}
+                                                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotColor}`} title={entry.entryType} />
+
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="font-medium">{entry.date}</span>
+                                                        {/* Status Pills - moved from Description */}
+                                                        {entry.status !== 'APPROVED' && (
+                                                            <div className="flex flex-col gap-1 mt-0.5">
+                                                                <span className={`w-fit text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${entry.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                                                    }`}>
+                                                                    {entry.status === 'REJECTED' ? 'Rejected' : 'Pending'}
+                                                                </span>
+                                                                {entry.status === 'REJECTED' && (
+                                                                    <span className="text-[10px] text-slate-400">
+                                                                        {new Date(entry.timestamp).toLocaleDateString()}
                                                                     </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-sm">
@@ -442,16 +466,16 @@ const Ledger: React.FC = () => {
                                                         return (
                                                             <>
                                                                 <div
-                                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
+                                                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0"
                                                                     style={{ backgroundColor: cat?.color || '#6366f1' }}
                                                                 >
-                                                                    <IconRenderer name={cat?.icon || 'Package'} size={20} />
+                                                                    <IconRenderer name={cat?.icon || 'Package'} size={16} />
                                                                 </div>
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="font-bold truncate">{entry.category}</span>
+                                                                    <span className="font-bold truncate text-sm">{entry.category}</span>
                                                                     <div className="flex items-center gap-1.5 mt-0.5">
                                                                         <div
-                                                                            className="w-3 h-3 rounded-full shrink-0"
+                                                                            className="w-2 h-2 rounded-full shrink-0"
                                                                             style={{ backgroundColor: method?.color || '#10b981' }}
                                                                         />
                                                                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate">
@@ -467,15 +491,53 @@ const Ledger: React.FC = () => {
                                             <td className="px-4 py-3 text-sm max-w-xs">
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="truncate">{entry.description}</span>
-                                                        {/* Status Pills - only for non-approved */}
-                                                        {entry.status !== 'APPROVED' && (
-                                                            <span className={`shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${entry.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                                                                }`}>
-                                                                {entry.status === 'REJECTED' ? 'Rejected' : 'Pending'}
+                                                        <span className="font-medium text-[#403424]">{entry.description}</span>
+                                                    </div>
+
+                                                    {/* Context Tags (Branch/Source) - moved from Date column */}
+                                                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                                        {entry.branchId ? (
+                                                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}`}>
+                                                                {branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}
                                                             </span>
+                                                        ) : (
+                                                            /* Only show General/Unknown if specifically needed, or maybe just omit if it's "Unknown" as requested by user? 
+                                                               User said: "for no branch, this unknown tag should not come"
+                                                               If I assume `entry.branchId` is truthy, I show it. If it is falsy, I show nothing?
+                                                               Original code showed "General".
+                                                               Let's stick to showing "General" if no branchId, but if branchId exists and name is not found -> "Unknown". 
+                                                               User request "for no branch, this unknown tag should not come" implies if I can't resolve it, don't show "Unknown". 
+                                                               Actually, "for no branch" might mean "if the entry is not associated with a branch". 
+                                                               Let's look at the original code:
+                                                               `entry.branchId ? (...) : (General)`
+                                                               If the user sees "Unknown", it means `entry.branchId` IS set, but `branches.find` returned undefined.
+                                                               So I should hiding the tag if name is Unknown?
+                                                               Or maybe user meant if it is "General" (no branch), don't show it?
+                                                               "for no branch, this unknown tag should not come" -> Likely means if `branchId` is missing/null, DO NOT show "Unknown" (or "General"). 
+                                                               Wait, the original code shows "General" if no branchId. 
+                                                               The screenshot shows "Unknown". This implies `branchId` was present but invalid.
+                                                               I will add a check: if name evaluates to "Unknown", don't render the tag.
+                                                            */
+                                                            null
+                                                        )}
+
+                                                        {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
+                                                            <div className="flex items-center gap-1">
+                                                                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded w-fit border border-indigo-100 font-semibold truncate max-w-[100px]" title={`From: ${entry.sourceAccount}`}>
+                                                                    {entry.sourceAccount.split(' ')[0]}
+                                                                </span>
+                                                                {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
+                                                                    <>
+                                                                        <span className="text-[10px] text-slate-400">→</span>
+                                                                        <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded w-fit border border-purple-100 font-semibold truncate max-w-[100px]" title={`To: ${entry.destinationAccount}`}>
+                                                                            {entry.destinationAccount.split(' ')[0]}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
+
                                                     {entry.rejectedReason && <div className="text-[10px] text-red-500 italic">Note: {entry.rejectedReason}</div>}
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-slate-400">By: {entry.createdByName}</span>

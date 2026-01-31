@@ -1228,7 +1228,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!currentUser) return; // Should not happen if auth is enforced
 
         const newLog: LedgerLog = {
-            id: `log-${Date.now()}`,
+            id: crypto.randomUUID(),
             ledgerEntryId: entry.id,
             action,
             performedBy: currentUser.id,
@@ -1269,7 +1269,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const addLedgerEntry = async (entry: Omit<LedgerEntry, 'id'>) => {
         const newEntry: LedgerEntry = {
             ...entry,
-            id: `ledger-${Date.now()}`,
+            id: crypto.randomUUID(),
             status: 'PENDING' // Default status
         } as LedgerEntry;
 
@@ -1424,7 +1424,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // Create ledger entry
             const newEntry: LedgerEntry = {
-                id: `ledger-${Date.now()}-${index}`,
+                id: crypto.randomUUID(),
                 date: entry.date,
                 timestamp: new Date(entry.date).getTime(),
                 branchId,
