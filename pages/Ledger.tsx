@@ -86,6 +86,7 @@ const Ledger: React.FC = () => {
 
     // Logs state
     const [viewingLogsFor, setViewingLogsFor] = useState<string | 'ALL' | null>(null);
+    const [returnToAllLogs, setReturnToAllLogs] = useState(false);
 
 
     // Image Modal State
@@ -268,7 +269,7 @@ const Ledger: React.FC = () => {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => setViewingLogsFor('ALL')}
+                        onClick={() => { setViewingLogsFor('ALL'); setReturnToAllLogs(false); }}
                         className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
                         title="View All Audit Logs"
                     >
@@ -612,7 +613,7 @@ const Ledger: React.FC = () => {
                                                     <button onClick={() => handleDelete(entry.id)} className="p-2 text-[#403424]/40 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                                                         <Trash2 size={18} />
                                                     </button>
-                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-2 text-[#403424]/40 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="View Logs">
+                                                    <button onClick={() => { setViewingLogsFor(entry.id); setReturnToAllLogs(false); }} className="p-2 text-[#403424]/40 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="View Logs">
                                                         <History size={18} />
                                                     </button>
                                                 </div>
@@ -631,13 +632,86 @@ const Ledger: React.FC = () => {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
                         <div className="flex items-center justify-between p-4 border-b border-[#403424]/10">
-                            <h2 className="text-lg font-bold text-[#403424]">
-                                {viewingLogsFor === 'ALL' ? 'Global Ledger Audit Logs' : 'Entry Audit History'}
-                            </h2>
-                            <button onClick={() => setViewingLogsFor(null)} className="p-1 text-[#403424]/40 hover:text-[#403424]">
+                            <div className="flex items-center gap-3">
+                                {returnToAllLogs && (
+                                    <button
+                                        onClick={() => { setViewingLogsFor('ALL'); setReturnToAllLogs(false); }}
+                                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                                        title="Back to All Logs"
+                                    >
+                                        <ChevronLeft size={20} />
+                                    </button>
+                                )}
+                                <div>
+                                    <h2 className="text-lg font-bold text-[#403424]">
+                                        {viewingLogsFor === 'ALL' ? 'Global Ledger Audit Logs' : 'Entry Audit History'}
+                                    </h2>
+                                    {viewingLogsFor !== 'ALL' && (
+                                        <p className="text-xs text-slate-400 font-medium">
+                                            Transaction ID: <span className="font-mono">{viewingLogsFor}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <button onClick={() => { setViewingLogsFor(null); setReturnToAllLogs(false); }} className="p-1 text-[#403424]/40 hover:text-[#403424]">
                                 <X size={20} />
                             </button>
                         </div>
+
+                        {/* Transaction Snapshot (Only when viewing specific entry) */}
+                        {viewingLogsFor !== 'ALL' && viewingLogsFor && (
+                            <div className="bg-slate-50 border-b border-slate-200 p-4">
+                                {(() => {
+                                    const entry = ledgerEntries.find(e => e.id === viewingLogsFor);
+                                    if (!entry) return <div className="text-sm text-slate-400 italic">Transaction details not found (might have been deleted).</div>;
+
+                                    const typeColor = getTypeColor(entry.entryType);
+
+                                    return (
+                                        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                                            <div className="flex items-start gap-3">
+                                                <div className={`p-2 rounded-lg ${typeColor} bg-white shadow-sm border border-slate-100`}>
+                                                    {getTypeIcon(entry.entryType)}
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-[#403424]">{entry.category}</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entry.entryType === 'INCOME' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                                entry.entryType === 'EXPENSE' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                                    'bg-purple-50 text-purple-600 border-purple-100'
+                                                            }`}>
+                                                            {entry.entryType}
+                                                        </span>
+                                                        {entry.status && (
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${entry.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                                    entry.status === 'REJECTED' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                                        'bg-amber-50 text-amber-600 border-amber-100'
+                                                                }`}>
+                                                                {entry.status}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-slate-600 mt-0.5">{entry.description}</p>
+                                                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                                                        <span className="flex items-center gap-1"><Calendar size={12} /> {formatLedgerDateTime(entry.timestamp).date}</span>
+                                                        <span className="flex items-center gap-1"><Clock size={12} /> {formatLedgerDateTime(entry.timestamp).time}</span>
+                                                        <span className="flex items-center gap-1"><Users size={12} /> {entry.createdByName}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end">
+                                                <span className={`text-xl font-bold ${entry.entryType === 'INCOME' ? 'text-emerald-600' :
+                                                        entry.entryType === 'REIMBURSEMENT' ? 'text-purple-600' : 'text-red-600'
+                                                    }`}>
+                                                    ₹{entry.amount.toLocaleString()}
+                                                </span>
+                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">{entry.paymentMethod}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                         <div className="flex-1 overflow-auto p-0">
                             <table className="w-full">
                                 <thead className="bg-[#403424]/5 text-xs uppercase tracking-wider text-[#403424]/60 sticky top-0">
@@ -646,11 +720,12 @@ const Ledger: React.FC = () => {
                                         <th className="px-4 py-3 text-left">Action</th>
                                         <th className="px-4 py-3 text-left">Performed By</th>
                                         <th className="px-4 py-3 text-left">Details</th>
+                                        {viewingLogsFor === 'ALL' && <th className="px-4 py-3 text-center">Reference</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#403424]/5">
                                     {(ledgerLogs || []).length === 0 ? (
-                                        <tr><td colSpan={4} className="p-8 text-center text-slate-400">No logs found.</td></tr>
+                                        <tr><td colSpan={viewingLogsFor === 'ALL' ? 5 : 4} className="p-8 text-center text-slate-400">No logs found.</td></tr>
                                     ) : (
                                         ledgerLogs.map(log => (
                                             <tr key={log.id} className="hover:bg-slate-50">
@@ -679,6 +754,20 @@ const Ledger: React.FC = () => {
                                                     {log.action === 'APPROVE' && `Approved entry. Approver: ${log.snapshot.approvedBy}`}
                                                     {log.action === 'REJECT' && `Rejected. Reason: ${log.snapshot.rejectedReason}`}
                                                 </td>
+                                                {viewingLogsFor === 'ALL' && (
+                                                    <td className="px-4 py-3 text-center">
+                                                        <button
+                                                            onClick={() => {
+                                                                setViewingLogsFor(log.ledgerEntryId);
+                                                                setReturnToAllLogs(true);
+                                                            }}
+                                                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                                            title="View Transaction History"
+                                                        >
+                                                            <ChevronRight size={16} />
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))
                                     )}
