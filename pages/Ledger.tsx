@@ -663,7 +663,22 @@ const Ledger: React.FC = () => {
                             <div className="bg-slate-50 border-b border-slate-200 p-4">
                                 {(() => {
                                     const entry = ledgerEntries.find(e => e.id === viewingLogsFor);
-                                    if (!entry) return <div className="text-sm text-slate-400 italic">Transaction details not found (might have been deleted).</div>;
+                                    if (!entry) {
+                                        const logsForId = ledgerLogs.filter(l => l.ledgerEntryId === viewingLogsFor).sort((a, b) => b.timestamp - a.timestamp);
+                                        const latestSnapshot = logsForId[0]?.snapshot;
+
+                                        if (!latestSnapshot) return <div className="text-sm text-slate-400 italic">Transaction details not found.</div>;
+
+                                        return (
+                                            <div className="flex flex-col gap-1">
+                                                <div className="text-sm font-semibold text-red-600 flex items-center gap-1.5 leading-none mb-1">
+                                                    <Trash2 size={14} /> DELETED RECORD
+                                                </div>
+                                                <div className="text-slate-900 font-bold text-lg leading-tight">{latestSnapshot.category}</div>
+                                                <div className="text-slate-500 text-sm">Deleted entry for ₹{latestSnapshot.amount?.toLocaleString()} ({latestSnapshot.paymentMethod || 'N/A'})</div>
+                                            </div>
+                                        );
+                                    }
 
                                     const typeColor = getTypeColor(entry.entryType);
 
@@ -677,15 +692,15 @@ const Ledger: React.FC = () => {
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-bold text-[#403424]">{entry.category}</span>
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entry.entryType === 'INCOME' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                                                entry.entryType === 'EXPENSE' ? 'bg-red-50 text-red-600 border-red-100' :
-                                                                    'bg-purple-50 text-purple-600 border-purple-100'
+                                                            entry.entryType === 'EXPENSE' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                                'bg-purple-50 text-purple-600 border-purple-100'
                                                             }`}>
                                                             {entry.entryType}
                                                         </span>
                                                         {entry.status && (
                                                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${entry.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                                                    entry.status === 'REJECTED' ? 'bg-red-50 text-red-600 border-red-100' :
-                                                                        'bg-amber-50 text-amber-600 border-amber-100'
+                                                                entry.status === 'REJECTED' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                                    'bg-amber-50 text-amber-600 border-amber-100'
                                                                 }`}>
                                                                 {entry.status}
                                                             </span>
@@ -701,7 +716,7 @@ const Ledger: React.FC = () => {
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className={`text-xl font-bold ${entry.entryType === 'INCOME' ? 'text-emerald-600' :
-                                                        entry.entryType === 'REIMBURSEMENT' ? 'text-purple-600' : 'text-red-600'
+                                                    entry.entryType === 'REIMBURSEMENT' ? 'text-purple-600' : 'text-red-600'
                                                     }`}>
                                                     ₹{entry.amount.toLocaleString()}
                                                 </span>
@@ -750,9 +765,9 @@ const Ledger: React.FC = () => {
                                                     {/* Simple diff or snapshot summary */}
                                                     {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category} ${log.snapshot.entryType === 'REIMBURSEMENT' && log.snapshot.destinationAccount ? `(Transfer: ${log.snapshot.sourceAccount?.split(' ')[0]} -> ${log.snapshot.destinationAccount?.split(' ')[0]})` : ''}`}
                                                     {log.action === 'UPDATE' && `Updated entry. Amount: ${log.snapshot.amount}, Status: ${log.snapshot.status}`}
-                                                    {log.action === 'DELETE' && `Deleted entry of ${log.snapshot.amount}`}
+                                                    {log.action === 'DELETE' && `Deleted ${log.snapshot.category} entry of ${log.snapshot.amount}: ${log.snapshot.description || 'No description'}`}
                                                     {log.action === 'APPROVE' && `Approved entry. Approver: ${log.snapshot.approvedBy}`}
-                                                    {log.action === 'REJECT' && `Rejected. Reason: ${log.snapshot.rejectedReason}`}
+                                                    {log.action === 'REJECT' && `Rejected ${log.snapshot.category} (${log.snapshot.amount}). Reason: ${log.snapshot.rejectedReason || 'No reason specified'}`}
                                                 </td>
                                                 {viewingLogsFor === 'ALL' && (
                                                     <td className="px-4 py-3 text-center">

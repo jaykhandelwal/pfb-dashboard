@@ -845,16 +845,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return cloudSuccess;
     };
 
+    const addTransactionLog = async (batchId: string, action: string, snapshot: any = null) => {
+        if (!currentUser) return;
+
+        const newLog = {
+            id: crypto.randomUUID(),
+            batch_id: batchId,
+            action,
+            performed_by: currentUser.id,
+            performed_by_name: currentUser.name,
+            snapshot,
+            date: getLocalISOString(),
+            timestamp: Date.now()
+        };
+
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('transaction_logs').insert(newLog);
+            } catch (e) { console.error('Transaction Log sync failed:', e); }
+        }
+    };
+
     const deleteTransactionBatch = async (batchId: string, deletedBy: string) => {
         const toDelete = transactions.filter(t => t.batchId === batchId);
         const remaining = transactions.filter(t => t.batchId !== batchId);
+
+        // Record log before state changes
+        if (toDelete.length > 0) {
+            await addTransactionLog(batchId, 'DELETE', toDelete);
+        }
 
         setTransactions(remaining);
         save('transactions', remaining);
 
         const deletedWithMeta = toDelete.map(t => ({ ...t, deletedAt: new Date().toISOString(), deletedBy }));
-        setDeletedTransactions(prev => [...prev, ...deletedWithMeta]);
-        save('deletedTransactions', [...deletedTransactions, ...deletedWithMeta]);
+        const updatedDeleted = [...deletedTransactions, ...deletedWithMeta];
+
+        setDeletedTransactions(updatedDeleted);
+        save('deletedTransactions', updatedDeleted);
 
         if (isSupabaseConfigured()) {
             // Attempt to archive to deleted_transactions
