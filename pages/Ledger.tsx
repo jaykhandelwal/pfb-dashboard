@@ -499,7 +499,7 @@ const Ledger: React.FC = () => {
                                                         {/* Status Pills */}
                                                         {entry.status !== 'APPROVED' && (
                                                             <div className="flex flex-col gap-1 mt-0.5">
-                                                                <span className={`w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded-md ${entry.status === 'REJECTED' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                                <span className={`w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded ${entry.status === 'REJECTED' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600'
                                                                     }`}>
                                                                     {entry.status === 'REJECTED' ? 'Rejected' : 'Pending'}
                                                                 </span>
@@ -507,7 +507,7 @@ const Ledger: React.FC = () => {
                                                         )}
                                                         {entry.status === 'APPROVED' && (
                                                             <div className="flex flex-col gap-1 mt-0.5">
-                                                                <span className="w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                                <span className="w-fit text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-600">
                                                                     Approved
                                                                 </span>
                                                             </div>
@@ -519,26 +519,16 @@ const Ledger: React.FC = () => {
                                                 <div className="flex items-center gap-3">
                                                     {(() => {
                                                         const cat = appSettings.ledger_categories?.find(c => c.id === entry.categoryId || c.name === entry.category);
-                                                        const method = appSettings.payment_methods?.find(m => m.id === entry.paymentMethodId || m.name === entry.paymentMethod);
                                                         return (
                                                             <>
                                                                 <div
                                                                     className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0"
-                                                                    style={{ backgroundColor: `${cat?.color || '#6366f1'}20`, color: cat?.color || '#6366f1' }}
+                                                                    style={{ backgroundColor: `${cat?.color || '#6366f1'}15`, color: cat?.color || '#6366f1' }}
                                                                 >
                                                                     <IconRenderer name={cat?.icon || 'Package'} size={18} />
                                                                 </div>
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="font-bold truncate text-sm text-slate-700">{entry.category}</span>
-                                                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                                                        <div
-                                                                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                                                                            style={{ backgroundColor: method?.color || '#10b981' }}
-                                                                        />
-                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">
-                                                                            {entry.paymentMethod.replace('_', ' ')}
-                                                                        </span>
-                                                                    </div>
+                                                                    <span className="font-bold truncate text-sm text-[#403424]">{entry.category}</span>
                                                                 </div>
                                                             </>
                                                         );
@@ -553,38 +543,37 @@ const Ledger: React.FC = () => {
                                                             const branch = branches.find(b => b.id === entry.branchId);
                                                             if (!branch) return null;
                                                             return (
-                                                                <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200 font-bold" title={`Branch: ${branch.name}`}>
+                                                                <span className="text-[10px] bg-slate-50 text-slate-400 px-2 py-0.5 rounded-full border border-slate-100 font-bold" title={`Branch: ${branch.name}`}>
                                                                     {branch.name}
                                                                 </span>
                                                             );
                                                         })()}
                                                     </div>
 
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 border border-slate-200 uppercase">
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400 border border-slate-200 uppercase">
                                                             {entry.createdByName?.charAt(0) || 'U'}
                                                         </div>
-                                                        <span className="text-xs text-slate-500 font-medium">{entry.createdByName}</span>
+                                                        <span className="text-xs text-slate-400 font-medium">{entry.createdByName}</span>
 
-                                                        {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
-                                                            <div className="flex items-center gap-1 ml-1">
-                                                                <span className="text-slate-300">•</span>
-                                                                <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold" title={`From: ${entry.sourceAccount}`}>
-                                                                    {entry.sourceAccount.split(' ')[0]}
-                                                                </span>
-                                                                {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
-                                                                    <>
-                                                                        <span className="text-[10px] text-slate-400">→</span>
-                                                                        <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-bold" title={`To: ${entry.destinationAccount}`}>
-                                                                            {entry.destinationAccount.split(' ')[0]}
-                                                                        </span>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                        <span className="text-slate-200 text-xs">•</span>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded border border-slate-100 font-bold uppercase tracking-tight">
+                                                                {entry.sourceAccount || 'Company Account'}
+                                                            </span>
+                                                            {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
+                                                                <>
+                                                                    <span className="text-[10px] text-slate-300">→</span>
+                                                                    <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded border border-slate-100 font-bold uppercase tracking-tight">
+                                                                        {entry.destinationAccount}
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
 
-                                                    {entry.rejectedReason && <div className="text-[10px] text-red-500 italic mt-1 bg-red-50 p-1 rounded border border-red-100">Note: {entry.rejectedReason}</div>}
+                                                    {entry.rejectedReason && <div className="text-[10px] text-red-400 italic mt-1 bg-red-50/50 px-2 py-1 rounded">Note: {entry.rejectedReason}</div>}
                                                 </div>
                                             </td>
                                             <td className={`px-4 py-3 text-base font-bold text-right ${entry.entryType === 'INCOME' ? 'text-emerald-600' : entry.entryType === 'EXPENSE' ? 'text-red-600' : 'text-blue-600'}`}>
@@ -594,10 +583,10 @@ const Ledger: React.FC = () => {
                                                 {entry.billUrls && entry.billUrls.length > 0 ? (
                                                     <button
                                                         onClick={() => { setImageModalUrls(entry.billUrls!); setImageModalIndex(0); }}
-                                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all"
+                                                        className="text-xl hover:scale-110 transition-transform"
                                                         title="View Attachment"
                                                     >
-                                                        <Paperclip size={20} />
+                                                        📎
                                                     </button>
                                                 ) : (
                                                     <span className="text-slate-300">—</span>
