@@ -398,8 +398,8 @@ const Ledger: React.FC = () => {
                                 </tr>
                             ) : (
                                 stats.entries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
-                                    const borderColor = entry.entryType === 'INCOME' ? 'border-l-emerald-500' :
-                                        entry.entryType === 'EXPENSE' ? 'border-l-red-500' : 'border-l-purple-500';
+                                    const borderColor = entry.entryType === 'INCOME' ? '!border-l-emerald-500' :
+                                        entry.entryType === 'EXPENSE' ? '!border-l-red-500' : '!border-l-purple-500';
                                     const rowBg = entry.status === 'REJECTED' ? 'bg-red-50/30 opacity-60' :
                                         entry.entryType === 'INCOME' ? 'bg-emerald-50/20' :
                                             entry.entryType === 'REIMBURSEMENT' ? 'bg-purple-50/20' : '';

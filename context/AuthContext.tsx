@@ -267,6 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         permissions: updatedUser.permissions,
         default_branch_id: updatedUser.defaultBranchId,
         default_page: updatedUser.defaultPage,
+        is_ledger_auditor: updatedUser.isLedgerAuditor,
         is_staged_attendance_enabled: updatedUser.isStagedAttendanceEnabled,
         staged_attendance_config: updatedUser.stagedAttendanceConfig,
         staged_attendance_progress: updatedUser.stagedAttendanceProgress
