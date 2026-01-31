@@ -21,6 +21,26 @@ const getLocalISOString = (date: Date = new Date()): string => {
 
 // IconRenderer is now imported from ../services/iconLibrary
 
+const formatLedgerDateTime = (timestamp: number) => {
+    const d = new Date(timestamp);
+
+    // Date format: 31 Jan '26
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = d.toLocaleString('en-US', { month: 'short' });
+    const year = d.getFullYear().toString().slice(-2);
+    const dateStr = `${day} ${month} '${year}`;
+
+    // Time format: 6:34PM
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const timeStr = `${hours}:${minutes}${ampm}`;
+
+    return { date: dateStr, time: timeStr };
+};
+
 const Ledger: React.FC = () => {
     const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
     const { currentUser, users } = useAuth();
@@ -101,7 +121,17 @@ const Ledger: React.FC = () => {
     const tableEntries = useMemo(() => {
         return ledgerEntries.filter(e => {
             if (filterType !== 'ALL' && e.entryType !== filterType) return false;
-            if (filterStatus !== 'ALL' && (e.status || 'PENDING') !== filterStatus) return false;
+
+            // Filter by status: 
+            // - If ALL: show everything except REJECTED
+            // - If REJECTED: show only REJECTED
+            // - If PENDING: show only PENDING
+            if (filterStatus === 'ALL') {
+                if (e.status === 'REJECTED') return false;
+            } else {
+                if ((e.status || 'PENDING') !== filterStatus) return false;
+            }
+
             if (filterCategory !== 'ALL' && (e.category !== filterCategory && e.categoryId !== filterCategory)) return false;
             if (filterDateFrom && e.date < filterDateFrom) return false;
             if (filterDateTo && e.date > filterDateTo) return false;
@@ -340,11 +370,27 @@ const Ledger: React.FC = () => {
                         }`}
                 >
                     <Clock size={14} />
-                    Pending Approval
+                    Pending
                     {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length > 0 && (
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${filterStatus === 'PENDING' ? 'bg-white/20' : 'bg-amber-100'
                             }`}>
                             {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length}
+                        </span>
+                    )}
+                </button>
+                <button
+                    onClick={() => setFilterStatus('REJECTED')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${filterStatus === 'REJECTED'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
+                        }`}
+                >
+                    <XCircle size={14} />
+                    Rejected
+                    {ledgerEntries.filter(e => e.status === 'REJECTED').length > 0 && (
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${filterStatus === 'REJECTED' ? 'bg-white/20' : 'bg-red-100'
+                            }`}>
+                            {ledgerEntries.filter(e => e.status === 'REJECTED').length}
                         </span>
                     )}
                 </button>
@@ -436,11 +482,20 @@ const Ledger: React.FC = () => {
                                         <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] ${rowBg}`}>
                                             <td className="px-4 py-3 text-sm">
                                                 <div className="flex items-start gap-3">
-                                                    {/* Dot Indicator */}
-                                                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotColor}`} title={entry.entryType} />
+                                                    {/* Dot Indicator - only for pending */}
+                                                    {(!entry.status || entry.status === 'PENDING') && (
+                                                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotColor}`} title={entry.entryType} />
+                                                    )}
 
                                                     <div className="flex flex-col gap-1">
-                                                        <span className="font-medium">{entry.date}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-[#403424]">
+                                                                {formatLedgerDateTime(entry.timestamp).date}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400 font-medium">
+                                                                {formatLedgerDateTime(entry.timestamp).time}
+                                                            </span>
+                                                        </div>
                                                         {/* Status Pills - moved from Description */}
                                                         {entry.status !== 'APPROVED' && (
                                                             <div className="flex flex-col gap-1 mt-0.5">
@@ -450,7 +505,7 @@ const Ledger: React.FC = () => {
                                                                 </span>
                                                                 {entry.status === 'REJECTED' && (
                                                                     <span className="text-[10px] text-slate-400">
-                                                                        {new Date(entry.timestamp).toLocaleDateString()}
+                                                                        {formatLedgerDateTime(entry.timestamp).date} {formatLedgerDateTime(entry.timestamp).time}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -496,30 +551,15 @@ const Ledger: React.FC = () => {
 
                                                     {/* Context Tags (Branch/Source) - moved from Date column */}
                                                     <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                                                        {entry.branchId ? (
-                                                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}`}>
-                                                                {branches.find(b => b.id === entry.branchId)?.name || 'Unknown'}
-                                                            </span>
-                                                        ) : (
-                                                            /* Only show General/Unknown if specifically needed, or maybe just omit if it's "Unknown" as requested by user? 
-                                                               User said: "for no branch, this unknown tag should not come"
-                                                               If I assume `entry.branchId` is truthy, I show it. If it is falsy, I show nothing?
-                                                               Original code showed "General".
-                                                               Let's stick to showing "General" if no branchId, but if branchId exists and name is not found -> "Unknown". 
-                                                               User request "for no branch, this unknown tag should not come" implies if I can't resolve it, don't show "Unknown". 
-                                                               Actually, "for no branch" might mean "if the entry is not associated with a branch". 
-                                                               Let's look at the original code:
-                                                               `entry.branchId ? (...) : (General)`
-                                                               If the user sees "Unknown", it means `entry.branchId` IS set, but `branches.find` returned undefined.
-                                                               So I should hiding the tag if name is Unknown?
-                                                               Or maybe user meant if it is "General" (no branch), don't show it?
-                                                               "for no branch, this unknown tag should not come" -> Likely means if `branchId` is missing/null, DO NOT show "Unknown" (or "General"). 
-                                                               Wait, the original code shows "General" if no branchId. 
-                                                               The screenshot shows "Unknown". This implies `branchId` was present but invalid.
-                                                               I will add a check: if name evaluates to "Unknown", don't render the tag.
-                                                            */
-                                                            null
-                                                        )}
+                                                        {(() => {
+                                                            const branch = branches.find(b => b.id === entry.branchId);
+                                                            if (!branch) return null;
+                                                            return (
+                                                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded w-fit border border-slate-200 font-semibold truncate max-w-[100px]" title={`Branch: ${branch.name}`}>
+                                                                    {branch.name}
+                                                                </span>
+                                                            );
+                                                        })()}
 
                                                         {entry.sourceAccount && entry.sourceAccount !== 'Company Account' && (
                                                             <div className="flex items-center gap-1">
@@ -569,27 +609,27 @@ const Ledger: React.FC = () => {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="flex items-center justify-center gap-1">
+                                                <div className="flex items-center justify-center gap-1.5">
                                                     {/* Auditor Actions */}
                                                     {currentUser?.isLedgerAuditor && (!entry.status || entry.status === 'PENDING') && (
                                                         <>
-                                                            <button onClick={() => handleApproval(entry.id, 'APPROVED')} className="p-1.5 text-emerald-300 hover:text-emerald-600 transition-colors" title="Approve">
-                                                                <CheckCircle2 size={16} />
+                                                            <button onClick={() => handleApproval(entry.id, 'APPROVED')} className="p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-100 shadow-sm" title="Approve">
+                                                                <CheckCircle2 size={20} />
                                                             </button>
-                                                            <button onClick={() => handleApproval(entry.id, 'REJECTED')} className="p-1.5 text-red-300 hover:text-red-600 transition-colors" title="Reject">
-                                                                <XCircle size={16} />
+                                                            <button onClick={() => handleApproval(entry.id, 'REJECTED')} className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 shadow-sm" title="Reject">
+                                                                <XCircle size={20} />
                                                             </button>
-                                                            <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
+                                                            <div className="w-px h-6 bg-slate-200 mx-1"></div>
                                                         </>
                                                     )}
-                                                    <button onClick={() => handleEdit(entry)} className="p-1.5 text-[#403424]/40 hover:text-[#95a77c] transition-colors" title="Edit">
-                                                        <Edit2 size={14} />
+                                                    <button onClick={() => handleEdit(entry)} className="p-2 text-[#403424]/60 hover:text-[#95a77c] hover:bg-slate-50 rounded-lg transition-colors" title="Edit">
+                                                        <Edit2 size={18} />
                                                     </button>
-                                                    <button onClick={() => handleDelete(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-red-500 transition-colors" title="Delete">
-                                                        <Trash2 size={14} />
+                                                    <button onClick={() => handleDelete(entry.id)} className="p-2 text-[#403424]/60 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                                        <Trash2 size={18} />
                                                     </button>
-                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-1.5 text-[#403424]/40 hover:text-blue-500 transition-colors" title="View Logs">
-                                                        <History size={14} />
+                                                    <button onClick={() => setViewingLogsFor(entry.id)} className="p-2 text-[#403424]/60 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View Logs">
+                                                        <History size={18} />
                                                     </button>
                                                 </div>
                                             </td>

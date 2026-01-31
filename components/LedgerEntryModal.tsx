@@ -480,9 +480,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                             }
                                         }}
                                         disabled={isUploading}
-                                        className="py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                                        className="py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-600/20 hover:shadow-xl hover:bg-red-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                     >
-                                        Reject
+                                        Reject Entry
                                     </button>
                                 </div>
                             ) : (
