@@ -361,7 +361,7 @@ const Reconciliation: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
                             <div>
-                                <div className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest mb-1">Human-Readable Debug Audit</div>
+                                <div className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest mb-1">Debug Audit</div>
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                     <Package className="text-slate-400" size={20} /> {activeAuditItem.sku.name}
                                 </h3>
