@@ -445,7 +445,7 @@ interface StoreContextType {
     deleteTaskTemplate: (id: string) => Promise<void>;
 
     addAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
-    setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null) => Promise<void>;
+    setAttendanceStatus: (userId: string, date: string, type: AttendanceOverrideType | null, notes?: string) => Promise<void>;
 
     addStorageUnit: (unit: Omit<StorageUnit, 'id'>) => Promise<void>;
     updateStorageUnit: (unit: StorageUnit) => Promise<void>;
@@ -1133,12 +1133,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAttendanceRecords([newR, ...attendanceRecords]); save('attendanceRecords', [newR, ...attendanceRecords]);
         if (isSupabaseConfigured()) await supabase.from('attendance').insert(mapAttendanceToDB(newR));
     };
-    const setAttendanceStatus = async (userId: string, date: string, type: any) => {
+    const setAttendanceStatus = async (userId: string, date: string, type: any, notes?: string) => {
         // Upsert logic override
         if (type) {
             // Remove any existing override for this date first (to update clean)
             const cleanedOverrides = attendanceOverrides.filter(o => !(o.userId === userId && o.date === date));
-            const override = { id: `over-${Date.now()}`, userId, date, type, markedBy: 'Admin' };
+            const override: AttendanceOverride = {
+                id: `over-${Date.now()}`,
+                userId,
+                date,
+                type,
+                markedBy: 'Admin',
+                notes: notes
+            };
             setAttendanceOverrides([...cleanedOverrides, override]); // Save immediately to state
             save('attendanceOverrides', [...cleanedOverrides, override]); // Persist local
 

@@ -267,6 +267,7 @@ export interface AttendanceOverride {
   date: string;
   type: AttendanceOverrideType;
   markedBy: string;
+  notes?: string;
 }
 
 export interface StorageUnit {

@@ -23,6 +23,7 @@ const UserManagement: React.FC = () => {
 
   // Day Action Modal
   const [selectedDayAction, setSelectedDayAction] = useState<{ date: string, formattedDate: string } | null>(null);
+  const [statusNote, setStatusNote] = useState('');
 
   const handleAddNew = () => {
     setSelectedUser({
@@ -240,6 +241,10 @@ const UserManagement: React.FC = () => {
     const dateStr = `${attendanceStats.currentYear}-${(attendanceStats.currentMonthIndex + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
     const dateObj = new Date(attendanceStats.currentYear, attendanceStats.currentMonthIndex, day);
 
+    // Check for existing override
+    const existingOverride = attendanceStats.monthlyOverrides.find(o => o.date === dateStr);
+
+    setStatusNote(existingOverride?.notes || '');
     setSelectedDayAction({
       date: dateStr,
       formattedDate: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -259,8 +264,9 @@ const UserManagement: React.FC = () => {
       }
     }
 
-    await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type);
+    await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type, statusNote);
     setSelectedDayAction(null);
+    setStatusNote('');
   };
 
   // Helper to render calendar grid
@@ -297,6 +303,15 @@ const UserManagement: React.FC = () => {
           bgClass = 'bg-purple-100 border-purple-200 text-purple-700 font-bold ring-1 ring-purple-300';
         } else if (override.type === 'PRESENT') {
           bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 font-bold';
+        }
+
+        if (override.notes) {
+          content = (
+            <div className="flex flex-col items-center">
+              <span className="text-sm">{i}</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-0.5" title={override.notes}></div>
+            </div>
+          );
         }
       } else if (record) {
         // Present
@@ -823,6 +838,16 @@ const UserManagement: React.FC = () => {
                 <button onClick={() => setSelectedDayAction(null)}><X size={20} className="text-slate-400" /></button>
               </div>
               <div className="p-4 space-y-2">
+                <div className="mb-3">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Status Note / Reason</label>
+                  <textarea
+                    value={statusNote}
+                    onChange={(e) => setStatusNote(e.target.value)}
+                    placeholder="e.g. Sick Leave, Diwali Holiday, Uninformed..."
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none min-h-[60px]"
+                  />
+                </div>
+
                 <button
                   onClick={() => applyStatus('HOLIDAY')}
                   className="w-full p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-bold flex items-center gap-3 hover:bg-amber-100 transition-colors"
