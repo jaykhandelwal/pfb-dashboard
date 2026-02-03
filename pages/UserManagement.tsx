@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Permission, AttendanceOverrideType, AttendanceRecord } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe, Loader2 } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe, Loader2, MessageSquare } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
@@ -329,7 +329,9 @@ const UserManagement: React.FC = () => {
           content = (
             <div className="flex flex-col items-center">
               <span className="text-sm">{i}</span>
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-0.5" title={override.notes}></div>
+              <div className="absolute top-1 right-1 text-slate-500 opacity-70" title={override.notes}>
+                <MessageSquare size={10} fill="currentColor" />
+              </div>
             </div>
           );
         }
@@ -364,7 +366,7 @@ const UserManagement: React.FC = () => {
         <button
           key={i}
           onClick={() => handleDayClick(i)}
-          className={`aspect-square rounded-lg flex items-center justify-center border transition-all hover:brightness-95 active:scale-95 ${bgClass}`}
+          className={`aspect-square rounded-lg flex items-center justify-center border transition-all hover:brightness-95 active:scale-95 relative ${bgClass}`}
         >
           {content}
         </button>
