@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { User, Role, Permission, AttendanceOverrideType, AttendanceRecord } from '../types';
 import { ALL_PERMISSIONS, ROLE_PRESETS, APP_PAGES } from '../constants';
-import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, X, Save, KeyRound, CalendarDays, Clock, Check, XCircle, Store, ChevronLeft, ChevronRight, Image as ImageIcon, LayoutDashboard, Palmtree, AlertCircle, AlertTriangle, Camera, ArrowDown, ArrowUp, Globe, Loader2 } from 'lucide-react';
 
 const UserManagement: React.FC = () => {
   const { users, addUser, updateUser, deleteUser, currentUser } = useAuth();
@@ -24,6 +24,8 @@ const UserManagement: React.FC = () => {
   // Day Action Modal
   const [selectedDayAction, setSelectedDayAction] = useState<{ date: string, formattedDate: string } | null>(null);
   const [statusNote, setStatusNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSavedMsg, setShowSavedMsg] = useState(false);
 
   const handleAddNew = () => {
     setSelectedUser({
@@ -251,6 +253,18 @@ const UserManagement: React.FC = () => {
     });
   };
 
+  const handleNoteBlur = async () => {
+    if (!viewingAttendanceFor || !selectedDayAction) return;
+    const existingOverride = attendanceStats?.monthlyOverrides.find(o => o.date === selectedDayAction.date);
+    if (!existingOverride) return; // Only autosave if status is already set
+
+    setIsSaving(true);
+    await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, existingOverride.type, statusNote);
+    setIsSaving(false);
+    setShowSavedMsg(true);
+    setTimeout(() => setShowSavedMsg(false), 2000);
+  };
+
   const applyStatus = async (type: AttendanceOverrideType | null) => {
     if (!viewingAttendanceFor || !selectedDayAction) return;
 
@@ -264,9 +278,15 @@ const UserManagement: React.FC = () => {
       }
     }
 
+    setIsSaving(true);
     await setAttendanceStatus(viewingAttendanceFor.id, selectedDayAction.date, type, statusNote);
-    setSelectedDayAction(null);
-    setStatusNote('');
+    setIsSaving(false);
+    setShowSavedMsg(true);
+    setTimeout(() => {
+      setShowSavedMsg(false);
+      setSelectedDayAction(null);
+      setStatusNote('');
+    }, 800);
   };
 
   // Helper to render calendar grid
@@ -832,19 +852,28 @@ const UserManagement: React.FC = () => {
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
               <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                 <div>
-                  <h3 className="font-bold text-slate-800">Set Status</h3>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    Set Status
+                    {isSaving && <Loader2 size={14} className="animate-spin text-indigo-500" />}
+                    {showSavedMsg && <span className="text-[10px] text-emerald-600 font-bold animate-fade-in flex items-center gap-1"><Check size={10} /> Saved</span>}
+                  </h3>
                   <p className="text-xs text-slate-500">{selectedDayAction.formattedDate}</p>
                 </div>
-                <button onClick={() => setSelectedDayAction(null)}><X size={20} className="text-slate-400" /></button>
+                <button onClick={() => setSelectedDayAction(null)} disabled={isSaving}><X size={20} className="text-slate-400" /></button>
               </div>
               <div className="p-4 space-y-2">
                 <div className="mb-3">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Status Note / Reason</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Status Note / Reason</label>
+                    {isSaving ? <span className="text-[10px] text-indigo-500 animate-pulse font-medium">Saving...</span> : showSavedMsg && <span className="text-[10px] text-emerald-600 font-bold">Autosaved</span>}
+                  </div>
                   <textarea
                     value={statusNote}
                     onChange={(e) => setStatusNote(e.target.value)}
+                    onBlur={handleNoteBlur}
+                    disabled={isSaving}
                     placeholder="e.g. Sick Leave, Diwali Holiday, Uninformed..."
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none min-h-[60px]"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none min-h-[60px] disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
 
@@ -896,10 +925,22 @@ const UserManagement: React.FC = () => {
 
                 <button
                   onClick={() => applyStatus(null)}
-                  className="w-full p-3 rounded-lg border border-slate-200 bg-white text-slate-600 font-medium flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
+                  disabled={isSaving}
+                  className="w-full p-3 rounded-lg border border-slate-200 bg-white text-slate-600 font-medium flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Clear Status / Reset
                 </button>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setSelectedDayAction(null)}
+                    disabled={isSaving}
+                    className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-widest"
+                  >
+                    Close Modal
+                  </button>
+                  <p className="text-[9px] text-center text-slate-400 mt-1 italic">All status changes are autosaved instantly.</p>
+                </div>
               </div>
             </div>
           </div>
