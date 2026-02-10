@@ -180,7 +180,7 @@ const Operations: React.FC = () => {
 
         // 1. Legacy Plate
         if (anyItem.plate && anyItem.plate.skuId) {
-          addQty(anyItem.plate.skuId, anyItem.plate.quantity);
+          addQty(anyItem.plate.skuId, anyItem.plate.quantity * item.quantity);
         }
         // 2. Consumed Override
         else if (item.consumed) {

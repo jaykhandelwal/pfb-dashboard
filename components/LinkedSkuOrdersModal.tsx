@@ -62,7 +62,7 @@ const LinkedSkuOrdersModal: React.FC<LinkedSkuOrdersModalProps> = ({
 
                 // 2. Check 'plate' snapshot (Legacy/Specific format from user JSON)
                 if (!foundInSnapshot && anyItem.plate && anyItem.plate.skuId === sku.id) {
-                    orderSkuQty += anyItem.plate.quantity;
+                    orderSkuQty += anyItem.plate.quantity * orderItem.quantity;
                     foundInSnapshot = true;
                 }
 

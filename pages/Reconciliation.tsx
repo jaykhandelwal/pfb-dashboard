@@ -117,7 +117,7 @@ const Reconciliation: React.FC = () => {
 
                 // 1. Check 'plate' (Legacy direct link)
                 if (anyItem.plate && anyItem.plate.skuId) {
-                    processIng(anyItem.plate.skuId, anyItem.plate.quantity, item.name, item.menuItemId, variant, item.quantity);
+                    processIng(anyItem.plate.skuId, anyItem.plate.quantity * item.quantity, item.name, item.menuItemId, variant, item.quantity);
                 }
                 // 2. Check 'consumed' (Array or Object)
                 else if (item.consumed) {
