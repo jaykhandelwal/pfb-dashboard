@@ -15,13 +15,10 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
     const { transactions, orders, users } = useStore();
     const [activeTab, setActiveTab] = useState<Tab>('INVENTORY');
 
-    if (!isOpen || !sku) return null;
-
-    // maximize the modal height for better viewing
-    // Also prevent background scrolling if needed (handled by fixed overlay usually)
-
     // 1. Inventory History (Transactions)
+    // All hooks must be called before any early returns (React rules of hooks)
     const inventoryHistory = useMemo(() => {
+        if (!sku) return [];
         return transactions
             .filter(t => t.skuId === sku.id)
             .sort((a, b) => b.timestamp - a.timestamp)
@@ -32,10 +29,11 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
                     userName: user ? user.name : (t.userName || 'Unknown')
                 };
             });
-    }, [transactions, sku.id, users]);
+    }, [transactions, sku?.id, users]);
 
     // 2. Consumption History (Orders)
     const consumptionHistory = useMemo(() => {
+        if (!sku) return [];
         const history: { date: string; orderId: string; quantity: number; orderTotal: number; time: string }[] = [];
 
         orders.forEach(order => {
@@ -71,7 +69,10 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
         });
 
         return history.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
-    }, [orders, sku.id]);
+    }, [orders, sku?.id]);
+
+    // Early return AFTER all hooks
+    if (!isOpen || !sku) return null;
 
     const getTransactionIcon = (type: TransactionType) => {
         switch (type) {
