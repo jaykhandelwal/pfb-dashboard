@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { DailyReportItem, TransactionType, Todo, LedgerEntryType } from '../types';
+import { DailyReportItem, TransactionType, Todo, LedgerEntryType, SKU } from '../types';
 import { StatCard } from '../components/StatCard';
 import { TrendingUp, TrendingDown, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon, Snowflake } from 'lucide-react';
 import LedgerEntryModal from '../components/LedgerEntryModal';
@@ -10,6 +10,7 @@ import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
 import ReactApexChart from 'react-apexcharts';
 import { ApexOptions } from 'apexcharts';
+import SkuHistoryModal from '../components/SkuHistoryModal';
 
 // Updated palette for charts to match warm theme
 const COLORS = ['#95a77c', '#eab308', '#ef4444', '#8b5cf6', '#3b82f6', '#d97706'];
@@ -21,9 +22,10 @@ interface InventoryTileProps {
    quantity: number;
    piecesPerPacket: number;
    status?: 'NORMAL' | 'LOW' | 'CRITICAL';
+   onClick?: () => void;
 }
 
-const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, status = 'NORMAL' }) => {
+const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, piecesPerPacket, status = 'NORMAL', onClick }) => {
    // Guard against division by zero or NaN
    const packetSize = piecesPerPacket > 0 ? piecesPerPacket : 1;
    const safeQty = isNaN(quantity) ? 0 : quantity;
@@ -47,7 +49,8 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 
    return (
       <div
-         className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm ${bgClass}`}
+         onClick={onClick}
+         className={`rounded-lg border p-2 flex flex-col justify-between transition-all hover:shadow-sm cursor-pointer ${bgClass}`}
       >
          <div className="mb-0.5">
             <h3 className={`font-bold text-xs leading-tight truncate ${textClass}`}>
@@ -94,6 +97,7 @@ const Dashboard: React.FC = () => {
    const [aiInsight, setAiInsight] = useState<string | null>(null);
    const [loadingAi, setLoadingAi] = useState(false);
    const [activeOperationalView, setActiveOperationalView] = useState<'STOCK' | 'CHECKOUT' | null>(null);
+   const [selectedSku, setSelectedSku] = useState<SKU | null>(null);
 
    // Quick Action Modal State
    const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType }>({ isOpen: false });
@@ -663,7 +667,7 @@ const Dashboard: React.FC = () => {
                            let status: 'NORMAL' | 'LOW' | 'CRITICAL' = 'NORMAL';
                            if (balance < (pktSize * 3)) status = 'CRITICAL';
                            else if (balance < (pktSize * 10)) status = 'LOW';
-                           return <InventoryTile key={sku.id} skuName={sku.name} quantity={balance} piecesPerPacket={pktSize} status={status} />
+                           return <InventoryTile key={sku.id} skuName={sku.name} quantity={balance} piecesPerPacket={pktSize} status={status} onClick={() => setSelectedSku(sku)} />
                         })}
                      </div>
                   </div>
@@ -684,7 +688,7 @@ const Dashboard: React.FC = () => {
                                  </div>
                                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                                     {skus.filter(s => checkoutData.items[s.id] > 0).map(sku => (
-                                       <InventoryTile key={sku.id} skuName={sku.name} quantity={checkoutData.items[sku.id]} piecesPerPacket={sku.piecesPerPacket} />
+                                       <InventoryTile key={sku.id} skuName={sku.name} quantity={checkoutData.items[sku.id]} piecesPerPacket={sku.piecesPerPacket} onClick={() => setSelectedSku(sku)} />
                                     ))}
                                  </div>
                               </div>
@@ -912,6 +916,8 @@ const Dashboard: React.FC = () => {
             onClose={() => setLedgerModal({ ...ledgerModal, isOpen: false })}
             forcedType={ledgerModal.type}
          />
+         {/* Sku History Modal */}
+         <SkuHistoryModal sku={selectedSku} isOpen={!!selectedSku} onClose={() => setSelectedSku(null)} />
       </div>
    );
 };
