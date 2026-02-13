@@ -146,7 +146,7 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
                                             </div>
                                         </div>
                                         <div className={`font-mono font-bold text-lg ${t.type === TransactionType.RESTOCK || t.type === TransactionType.CHECK_IN || (t.type === TransactionType.ADJUSTMENT && t.quantityPieces > 0)
-                                                ? 'text-emerald-600' : 'text-slate-700'
+                                            ? 'text-emerald-600' : 'text-slate-700'
                                             } ${t.type === TransactionType.WASTE ? 'text-red-500' : ''
                                             } ${t.type === TransactionType.CHECK_OUT ? 'text-amber-600' : ''
                                             }`}>
