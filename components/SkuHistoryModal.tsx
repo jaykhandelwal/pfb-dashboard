@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Calendar, Package, ArrowUpRight, ArrowDownLeft, Trash2, ShoppingBag, History, RotateCcw } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { useAuth } from '../context/AuthContext';
 import { SKU, TransactionType } from '../types';
 
 interface SkuHistoryModalProps {
@@ -12,7 +13,8 @@ interface SkuHistoryModalProps {
 type Tab = 'INVENTORY' | 'CONSUMPTION';
 
 const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose }) => {
-    const { transactions, orders, users } = useStore();
+    const { transactions, orders } = useStore();
+    const { users } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('INVENTORY');
 
     // 1. Inventory History (Transactions)
