@@ -1,5 +1,6 @@
-
 # Pakaja Inventory & Analytics System
+
+[**See Project Roadmap ➔**](./roadmap.md)
 
 A comprehensive inventory management PWA (Progressive Web App) designed for Momo/Food carts. This application handles stock tracking, daily operations (check-in/check-out), wastage reporting, staff attendance, sales reconciliation, and customer loyalty.
 

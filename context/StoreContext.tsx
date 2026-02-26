@@ -407,6 +407,7 @@ interface StoreContextType {
     rejectLedgerEntry: (id: string, reason: string) => Promise<void>;
 
     addBatchTransactions: (txs: any[]) => Promise<boolean>;
+    updateTransaction: (tx: Transaction) => Promise<boolean>;
     deleteTransactionBatch: (batchId: string, deletedBy: string) => Promise<void>;
     resetData: () => void;
 
@@ -839,6 +840,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } catch (e) {
                 console.error("Supabase Sync Failed:", e);
                 if (appSettings.enable_debug_logging && !cloudSuccess) alert(`DEBUG EXCEPTION:\n${JSON.stringify(e, null, 2)}`);
+                cloudSuccess = false;
+            }
+        }
+        return cloudSuccess;
+    };
+
+    const updateTransaction = async (updatedTx: Transaction): Promise<boolean> => {
+        // Log it before update
+        const oldTx = transactions.find(t => t.id === updatedTx.id);
+        if (oldTx && currentUser) {
+            await addTransactionLog(updatedTx.batchId || updatedTx.id, 'UPDATE_QTY', oldTx);
+        }
+
+        const updatedList = transactions.map(t => t.id === updatedTx.id ? updatedTx : t);
+        setTransactions(updatedList);
+        save('transactions', updatedList);
+
+        let cloudSuccess = false;
+        if (isSupabaseConfigured()) {
+            try {
+                const { error } = await supabase.from('transactions').update({ quantity_pieces: updatedTx.quantityPieces }).eq('id', updatedTx.id);
+                if (error) throw error;
+                cloudSuccess = true;
+            } catch (e) {
+                console.error("Supabase Sync Failed on updateTransaction:", e);
                 cloudSuccess = false;
             }
         }
@@ -1515,7 +1541,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             customers, membershipRules, customerCoupons, attendanceRecords,
             attendanceOverrides, deletedTransactions, taskTemplates, storageUnits,
             appSettings, salesRecords, lastUpdated, isLiveConnected, isLoading,
-            addBatchTransactions, deleteTransactionBatch, resetData,
+            addBatchTransactions, updateTransaction, deleteTransactionBatch, resetData,
             addSku, updateSku, deleteSku, reorderSku,
             addBranch, updateBranch, deleteBranch,
             addMenuItem, updateMenuItem, deleteMenuItem,

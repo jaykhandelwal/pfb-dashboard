@@ -12,7 +12,7 @@ interface GroupedTransaction {
   timestamp: number;
   branchId: string;
   type: TransactionType;
-  items: { skuName: string; qty: number }[];
+  items: { id: string; skuId: string; skuName: string; qty: number }[];
   totalQty: number;
   hasImages: boolean;
   imageUrls: string[];
@@ -22,7 +22,7 @@ interface GroupedTransaction {
 }
 
 const Logs: React.FC = () => {
-  const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch } = useStore();
+  const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch, updateTransaction } = useStore();
   const { currentUser } = useAuth();
 
   const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
@@ -32,6 +32,9 @@ const Logs: React.FC = () => {
   const [dataScope, setDataScope] = useState<'ACTIVE' | 'DELETED'>('ACTIVE');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<'FOR_DATE' | 'LOGGED_ON'>('FOR_DATE');
+
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState<string>('');
 
   // Check if current user is Admin
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -76,6 +79,8 @@ const Logs: React.FC = () => {
       }
 
       groups[key].items.push({
+        id: t.id,
+        skuId: t.skuId,
         skuName: getSkuName(t.skuId),
         qty: t.quantityPieces
       });
@@ -206,6 +211,25 @@ const Logs: React.FC = () => {
     }
   };
 
+  const handleSaveEdit = async (txId: string) => {
+    const qty = parseInt(editQty, 10);
+    if (isNaN(qty) || qty < 0) {
+      alert("Please enter a valid quantity.");
+      return;
+    }
+
+    const tx = sourceTransactions.find(t => t.id === txId);
+    if (!tx) return;
+
+    const updatedTx = { ...tx, quantityPieces: qty };
+    const success = await updateTransaction(updatedTx);
+    if (success) {
+      setEditingItemId(null);
+    } else {
+      alert("Failed to update transaction.");
+    }
+  };
+
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {
       const newSet = new Set(prev);
@@ -310,12 +334,38 @@ const Logs: React.FC = () => {
         {/* Items Summary - Condensed or Expanded */}
         <td className="px-3 py-2 align-middle">
           {isExpanded ? (
-            <div className="flex flex-wrap gap-1.5 animate-fade-in">
+            <div className="flex flex-col gap-1.5 animate-fade-in items-start">
               {group.items.map((item, idx) => (
-                <span key={idx} className={`inline-flex items-center gap-1 border px-2 py-0.5 rounded text-xs ${isAdjustment ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
-                  <span className="font-semibold text-xs">{item.qty > 0 && isAdjustment ? '+' : ''}{item.qty}</span>
-                  <span className="text-[11px] truncate max-w-[150px]">{item.skuName}</span>
-                </span>
+                <div key={idx} className={`inline-flex items-center gap-2 border px-2 py-1 rounded text-xs w-auto ${isAdjustment ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
+                  {editingItemId === item.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={editQty}
+                        onChange={(e) => setEditQty(e.target.value)}
+                        className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-500 bg-white text-slate-800"
+                        autoFocus
+                      />
+                      <button onClick={(e) => { e.stopPropagation(); handleSaveEdit(item.id); }} className="text-emerald-600 hover:text-emerald-700 font-bold px-1">Save</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingItemId(null); }} className="text-slate-500 hover:text-slate-700 px-1">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 w-full justify-between">
+                      <div className="flex items-center gap-1">
+                        <span className="font-semibold text-xs">{item.qty > 0 && isAdjustment ? '+' : ''}{item.qty}</span>
+                        <span className="text-[11px] truncate max-w-[150px] ml-1">{item.skuName}</span>
+                      </div>
+                      {isAdmin && dataScope === 'ACTIVE' && (group.type === TransactionType.CHECK_OUT || group.type === TransactionType.CHECK_IN) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingItemId(item.id); setEditQty(item.qty.toString()); }}
+                          className="ml-3 text-blue-500 hover:text-blue-700 underline text-[10px]"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           ) : (
