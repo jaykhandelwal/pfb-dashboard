@@ -10,18 +10,23 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve with Nginx
-FROM nginx:alpine
+# Stage 2: Serve with Caddy (matches Coolify's expectations)
+FROM caddy:alpine
 
-# Remove default Nginx config
-RUN rm /etc/nginx/conf.d/default.conf
+# Copy built assets
+COPY --from=builder /app/dist /srv
 
-# Copy our Nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copy built assets from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Caddy config: proper static file serving with SPA fallback
+RUN echo ':3000 {' > /etc/caddy/Caddyfile && \
+    echo '    root * /srv' >> /etc/caddy/Caddyfile && \
+    echo '    encode gzip' >> /etc/caddy/Caddyfile && \
+    echo '    try_files {path} /index.html' >> /etc/caddy/Caddyfile && \
+    echo '    file_server' >> /etc/caddy/Caddyfile && \
+    echo '    header /assets/* Cache-Control "public, max-age=31536000, immutable"' >> /etc/caddy/Caddyfile && \
+    echo '    header /index.html Cache-Control "no-cache, no-store, must-revalidate"' >> /etc/caddy/Caddyfile && \
+    echo '    header /version.json Cache-Control "no-cache, no-store, must-revalidate"' >> /etc/caddy/Caddyfile && \
+    echo '}' >> /etc/caddy/Caddyfile
 
 EXPOSE 3000
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
