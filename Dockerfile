@@ -3,7 +3,6 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Coolify passes environment variables as build args automatically.
-# Vite needs VITE_* vars available during build to bake them into the JS bundle.
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_BUNNY_STORAGE_KEY
@@ -29,23 +28,19 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve with Caddy (matches Coolify's native setup)
-FROM caddy:alpine
+# Stage 2: Serve using the exact same package that works locally
+FROM node:20-alpine
+WORKDIR /app
 
-# Copy built assets
-COPY --from=builder /app/dist /srv
+# Only copy what's needed for serving
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/serve.json ./
+COPY --from=builder /app/dist ./dist
 
-# Caddy config: proper static file serving with SPA fallback
-RUN echo ':3000 {' > /etc/caddy/Caddyfile && \
-    echo '    root * /srv' >> /etc/caddy/Caddyfile && \
-    echo '    encode gzip' >> /etc/caddy/Caddyfile && \
-    echo '    try_files {path} /index.html' >> /etc/caddy/Caddyfile && \
-    echo '    file_server' >> /etc/caddy/Caddyfile && \
-    echo '    header /assets/* Cache-Control "public, max-age=31536000, immutable"' >> /etc/caddy/Caddyfile && \
-    echo '    header /index.html Cache-Control "no-cache, no-store, must-revalidate"' >> /etc/caddy/Caddyfile && \
-    echo '    header /version.json Cache-Control "no-cache, no-store, must-revalidate"' >> /etc/caddy/Caddyfile && \
-    echo '}' >> /etc/caddy/Caddyfile
+# Install only serve to keep the image small
+RUN npm install -g serve
 
 EXPOSE 3000
 
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+# Run exactly the same command as local `npm start`
+CMD ["serve", "-c", "serve.json", "-l", "3000", "dist"]
