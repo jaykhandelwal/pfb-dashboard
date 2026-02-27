@@ -43,4 +43,4 @@ RUN npm install -g serve
 EXPOSE 3000
 
 # Run exactly the same command as local `npm start`
-CMD ["serve", "-c", "serve.json", "-l", "3000"]
+CMD ["serve", "-c", "serve.json", "-l", "tcp://0.0.0.0:3000"]
