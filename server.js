@@ -215,7 +215,7 @@ if (fs.existsSync(staticPath)) {
   }));
 
   // Catch-all route for SPA routing
-  app.get('*', (req, res) => {
+  app.get(/.*/, (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(join(staticPath, 'index.html'));
   });
