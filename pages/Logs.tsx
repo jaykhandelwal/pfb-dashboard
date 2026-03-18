@@ -444,7 +444,7 @@ const Logs: React.FC = () => {
                 className="px-2 py-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                 title="Edit all values"
               >
-                Edit
+                Edit All
               </button>
             )}
 
