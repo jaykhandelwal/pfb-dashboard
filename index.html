@@ -24,50 +24,9 @@
 
   <link rel="manifest" href="/manifest.json" />
 
-  <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Mynerve&family=Stack+Sans+Text:wght@200..700&display=swap"
     rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f9faf7;
-      color: #403424;
-    }
-
-    /* Hide number input spin buttons */
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
-    }
-
-    input[type=number] {
-      -moz-appearance: textfield;
-      appearance: textfield;
-    }
-  </style>
-
-  <script>
-    // Critical: Unregister all Service Workers immediately to fix caching/white screen issues
-    // This runs before the app loads to ensure we don't get stuck with a broken cache
-    if ('serviceWorker' in navigator) {
-      // Unregister immediately
-      navigator.serviceWorker.getRegistrations().then(function (registrations) {
-        if (registrations.length === 0) {
-          console.log('[App] No Service Workers found to unregister.');
-        }
-        for (let registration of registrations) {
-          console.log('[App] Unregistering Service Worker:', registration.scope);
-          registration.unregister().then(function (success) {
-            console.log('[App] Unregister success:', success);
-            // Optional: Reload if we just killed a worker and the page might be stale?
-            // But we don't want boot loops.
-          });
-        }
-      });
-    }
-  </script>
 </head>
 
 <body>

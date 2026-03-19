@@ -28,19 +28,19 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve using the exact same package that works locally
+# Stage 2: Serve using the Express proxy
 FROM node:20-alpine
 WORKDIR /app
 
-# Only copy what's needed for serving
-COPY --from=builder /app/package.json /app/package-lock.json ./
-COPY --from=builder /app/serve.json ./
-COPY --from=builder /app/dist ./dist
+# Install production dependencies for the Express server
+COPY --from=builder /app/package.json /app/package-lock.json /app/.npmrc ./
+RUN npm ci --omit=dev --legacy-peer-deps
 
-# Install only serve to keep the image small
-RUN npm install -g serve
+# Copy the built app and the server script
+COPY --from=builder /app/dist ./dist
+COPY server.js ./
 
 EXPOSE 3000
 
-# Run exactly the same command as local `npm start`
-CMD ["serve", "-c", "serve.json", "-l", "tcp://0.0.0.0:3000"]
+# Start the Express server
+CMD ["node", "server.js"]
