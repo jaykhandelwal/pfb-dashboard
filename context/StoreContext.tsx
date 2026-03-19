@@ -462,6 +462,8 @@ interface StoreContextType {
 
     updateAppSetting: (key: string, value: any) => Promise<void>;
     fetchCustomerOrders: (customerId: string) => Promise<Order[]>;
+    toggleInconsistentTransaction: (date: string, branchId: string, reason?: string) => Promise<void>;
+    getInconsistentInfo: (date: string, branchId: string) => { isActive: boolean; reason: string } | null;
     isLoading: boolean;
 }
 
@@ -1262,6 +1264,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isSupabaseConfigured()) await supabase.from('app_settings').upsert({ key, value });
     };
 
+    // --- INCONSISTENT TRANSACTIONS ---
+    const getInconsistentList = (): { date: string; branchId: string; reason: string; isActive: boolean }[] => {
+        return (appSettings as any).inconsistent_transactions || [];
+    };
+
+    const toggleInconsistentTransaction = async (date: string, branchId: string, reason?: string) => {
+        const list = [...getInconsistentList()];
+        const idx = list.findIndex(e => e.date === date && e.branchId === branchId);
+
+        if (idx >= 0) {
+            // Toggle: if currently active, deactivate (preserve reason); if inactive, reactivate with new/existing reason
+            if (list[idx].isActive) {
+                list[idx] = { ...list[idx], isActive: false };
+            } else {
+                list[idx] = { ...list[idx], isActive: true, reason: reason || list[idx].reason };
+            }
+        } else {
+            // New entry — reason is required (enforced by UI modal)
+            list.push({ date, branchId, reason: reason || '', isActive: true });
+        }
+
+        await updateAppSetting('inconsistent_transactions', list);
+    };
+
+    const getInconsistentInfo = (date: string, branchId: string): { isActive: boolean; reason: string } | null => {
+        const entry = getInconsistentList().find(e => e.date === date && e.branchId === branchId);
+        if (!entry) return null;
+        return { isActive: entry.isActive, reason: entry.reason };
+    };
+
     const fetchCustomerOrders = async (customerId: string): Promise<Order[]> => {
         if (!isSupabaseConfigured()) {
             return orders.filter(o => o.customerId === customerId);
@@ -1554,7 +1586,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             addStorageUnit, updateStorageUnit, deleteStorageUnit,
             ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, addBulkLedgerEntries,
             ledgerLogs, fetchLedgerLogs, approveLedgerEntry, rejectLedgerEntry,
-            updateAppSetting, fetchCustomerOrders
+            updateAppSetting, fetchCustomerOrders,
+            toggleInconsistentTransaction, getInconsistentInfo
         }}>
             {children}
         </StoreContext.Provider>

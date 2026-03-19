@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType } from '../types';
-import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive, Clock, ChevronDown, ChevronRight, AlertTriangle, ArrowUpDown } from 'lucide-react';
+import { ShoppingBag, ArrowRightLeft, Trash2, Image as ImageIcon, Snowflake, Filter, X, ClipboardCheck, User as UserIcon, LayoutGrid, List, ZoomIn, Calendar, Store, ShieldAlert, Archive, Clock, ChevronDown, ChevronRight, AlertTriangle, ArrowUpDown, Flag, FlagOff } from 'lucide-react';
 
 interface GroupedTransaction {
   id: string;
@@ -25,7 +25,7 @@ const formatBulkEditText = (items: GroupedTransaction['items']) =>
   items.map(item => `${item.qty} | ${item.skuName}`).join('\n');
 
 const Logs: React.FC = () => {
-  const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch, updateTransaction } = useStore();
+  const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch, updateTransaction, toggleInconsistentTransaction, getInconsistentInfo } = useStore();
   const { currentUser } = useAuth();
 
   const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
@@ -43,6 +43,10 @@ const Logs: React.FC = () => {
 
   // Check if current user is Admin
   const isAdmin = currentUser?.role === 'ADMIN';
+
+  // Inconsistent reason modal state
+  const [inconsistentModal, setInconsistentModal] = useState<{ date: string; branchId: string; existingReason: string } | null>(null);
+  const [inconsistentReason, setInconsistentReason] = useState('');
 
   const getSkuName = (id: string) => skus.find(s => s.id === id)?.name || id;
   const getBranchName = (id: string) => {
@@ -332,16 +336,22 @@ const Logs: React.FC = () => {
   const renderTransactionRow = (group: GroupedTransaction, groupStatus?: 'complete' | 'missing_return' | 'only_return') => {
     const isExpanded = expandedRows.has(group.id);
     const isAdjustment = group.type === TransactionType.ADJUSTMENT;
+    const isCheckOutOrReturn = group.type === TransactionType.CHECK_OUT || group.type === TransactionType.CHECK_IN;
+    const inconsistentInfo = isCheckOutOrReturn ? getInconsistentInfo(group.date, group.branchId) : null;
+    const isInconsistent = inconsistentInfo?.isActive ?? false;
 
     // Status-based styling
     let rowBgClass = dataScope === 'DELETED' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50';
-    if (groupStatus === 'missing_return' && group.type === TransactionType.CHECK_OUT) {
+    if (isInconsistent) {
+      rowBgClass = 'bg-amber-50/60 hover:bg-amber-100/60';
+    } else if (groupStatus === 'missing_return' && group.type === TransactionType.CHECK_OUT) {
       rowBgClass = 'bg-red-50/50 hover:bg-red-100/50';
     } else if (groupStatus === 'complete') {
       rowBgClass = dataScope === 'DELETED' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50';
     }
 
     return (
+      <>
       <tr
         key={group.id}
         className={`transition-colors border-b border-slate-100 ${rowBgClass}`}
@@ -459,6 +469,31 @@ const Logs: React.FC = () => {
               </button>
             )}
 
+            {/* Inconsistent Toggle (Admin only, CHECK_OUT/CHECK_IN only) */}
+            {isAdmin && dataScope === 'ACTIVE' && isCheckOutOrReturn && (
+              <button
+                onClick={() => {
+                  if (isInconsistent) {
+                    // Turn off — no modal needed
+                    toggleInconsistentTransaction(group.date, group.branchId);
+                  } else {
+                    // Turn on — show modal for reason
+                    const existing = getInconsistentInfo(group.date, group.branchId);
+                    setInconsistentReason(existing?.reason || '');
+                    setInconsistentModal({ date: group.date, branchId: group.branchId, existingReason: existing?.reason || '' });
+                  }
+                }}
+                className={`p-1.5 rounded transition-colors ${
+                  isInconsistent
+                    ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-50 bg-amber-100'
+                    : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                }`}
+                title={isInconsistent ? 'Remove Inconsistent Flag' : 'Mark as Inconsistent'}
+              >
+                {isInconsistent ? <FlagOff size={14} /> : <Flag size={14} />}
+              </button>
+            )}
+
             {(dataScope === 'ACTIVE' && isAdmin && group.batchId) && (
               <button
                 onClick={() => handleDelete(group.batchId)}
@@ -471,6 +506,20 @@ const Logs: React.FC = () => {
           </div>
         </td>
       </tr>
+      {/* Inconsistent Notice Row */}
+      {isInconsistent && (
+        <tr className="bg-amber-50 border-b border-amber-200">
+          <td colSpan={dataScope === 'DELETED' ? 8 : 7} className="px-4 py-1.5">
+            <div className="flex items-center gap-2 text-amber-800 text-xs">
+              <AlertTriangle size={12} className="text-amber-600 flex-shrink-0" />
+              <span className="font-semibold">Inconsistent Data</span>
+              <span className="text-amber-600">—</span>
+              <span className="italic text-amber-700">{inconsistentInfo?.reason || 'No reason provided'}</span>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
     );
   };
 
@@ -621,6 +670,10 @@ const Logs: React.FC = () => {
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-red-100 border-2 border-red-400"></div>
             <span className="text-slate-600">Return Missing (Checkout without Return)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-amber-100 border-2 border-amber-400"></div>
+            <span className="text-slate-600">Inconsistent Data (Flagged manually)</span>
           </div>
         </div>
       )}
@@ -863,6 +916,70 @@ const Logs: React.FC = () => {
                 disabled={isSavingBulkEdit}
               >
                 {isSavingBulkEdit ? 'Saving...' : 'Save All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- INCONSISTENT REASON MODAL --- */}
+      {inconsistentModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setInconsistentModal(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                <Flag size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Mark as Inconsistent</h3>
+                <p className="text-xs text-slate-500">
+                  {inconsistentModal.date} · {getBranchName(inconsistentModal.branchId)}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 mb-3">
+              Both the checkout and return for this branch on this date will be flagged. Please provide a reason.
+            </p>
+
+            <textarea
+              value={inconsistentReason}
+              onChange={(e) => setInconsistentReason(e.target.value)}
+              placeholder="e.g. Counts don't match physical stock, items were misrecorded..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400 resize-none h-24"
+              autoFocus
+            />
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setInconsistentModal(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!inconsistentReason.trim()) {
+                    alert('Please provide a reason for marking as inconsistent.');
+                    return;
+                  }
+                  await toggleInconsistentTransaction(
+                    inconsistentModal.date,
+                    inconsistentModal.branchId,
+                    inconsistentReason.trim()
+                  );
+                  setInconsistentModal(null);
+                }}
+                disabled={!inconsistentReason.trim()}
+                className="px-4 py-2 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                Confirm Flag
               </button>
             </div>
           </div>
