@@ -18,6 +18,10 @@ A comprehensive inventory management PWA (Progressive Web App) designed for Momo
 *   **Analytics**: Visual charts for consumption, category splits, variance reports, and wastage trends.
 *   **AI Insights**: Integrated with **Google Gemini 2.5 Flash** to provide daily operational summaries and anomaly detection.
 *   **User Management**: Role-based access control (Admin, Manager, Staff) with secure alphanumeric access codes.
+*   **Ledger & Financials (Beta)**: Granular tracking of income, expenses, and reimbursements with image uploads for receipts.
+*   **Task Management**: Structured `todo` lists for staff operations via recurring templates.
+*   **Multi-Branch Support**: Context-aware operations mapping inventory and sales to specific physical locations.
+*   **System Audit & Logs**: Extensive logging system for application events and immutable ledger snapshots.
 
 ## 🛠 Tech Stack
 

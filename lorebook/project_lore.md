@@ -94,6 +94,12 @@ The Ledger feature provides a unified system for tracking non-POS financial tran
     *   Restricted to `ADMIN` role with specific `MANAGE_LEDGER` permission.
     *   "Ledger Auditor" role for approving staff transactions.
 
+### 3.4. Multi-Branch Support
+The application natively supports monitoring across geographically separated locations or carts.
+*   **Core Entities:** Every `Order`, `Transaction`, `LedgerEntry`, and `Attendance` record is strictly linked to a specific `branch_id`.
+*   **Switching:** Managers and Admins can switch their active context across branches, filtering the entire UI.
+*   **Isolation:** Prevent accidental mixing of stock levels and financials between discrete branches.
+
 ---
 
 ## 4. Key Algorithms & Automations
@@ -152,6 +158,15 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 *   **Check-In:** Staff takes a selfie.
 *   **Storage:** Image uploaded to BunnyCDN (`/attendance` folder).
 *   **Timestamp:** Logged for payroll accuracy.
+
+### 5.4. Task Management
+*   **Routines:** Handled via `Task Templates` (e.g., "Clean deep freezer" set to every Sunday).
+*   **Execution:** The system automatically generates daily `todos` for staff to check off natively within the app.
+*   **Tracking:** Each completed task tracks the execution timestamp and the assignee, ensuring rigorous operational procedures are followed.
+
+### 5.5. System Audit & Logs
+*   **Overview Logs:** A dedicated subsystem tracks high-level operational errors and system notifications.
+*   **Financial Security:** The `ledger_logs` maintain absolute snapshots of state during creation, approval, mutation, and deletion steps, ensuring true auditability.
 
 ---
 
