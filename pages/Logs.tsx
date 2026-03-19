@@ -245,11 +245,22 @@ const Logs: React.FC = () => {
     const nextQuantities: Record<string, number> = {};
     for (let index = 0; index < editingGroup.items.length; index += 1) {
       const item = editingGroup.items[index];
-      const [rawQty] = lines[index].split('|');
+      const [rawQty, ...labelParts] = lines[index].split('|');
       const qty = parseInt(rawQty.trim(), 10);
+      const enteredLabel = labelParts.join('|').trim();
 
       if (isNaN(qty) || qty < 0) {
         setBulkEditError(`Line ${index + 1} has an invalid quantity. Use a whole number before the "|" separator.`);
+        return;
+      }
+
+      if (!enteredLabel) {
+        setBulkEditError(`Line ${index + 1} is missing its label. Keep the actual item name after the "|" separator.`);
+        return;
+      }
+
+      if (enteredLabel !== item.skuName) {
+        setBulkEditError(`Line ${index + 1} label must stay exactly "${item.skuName}".`);
         return;
       }
 
@@ -819,7 +830,7 @@ const Logs: React.FC = () => {
 
             <div className="px-6 py-5">
               <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                Edit only the number before the <span className="font-mono">|</span> on each line and keep the line order unchanged.
+                Edit only the number before the <span className="font-mono">|</span>. Keep the item label and line order exactly as shown.
               </div>
               <textarea
                 value={bulkEditText}
