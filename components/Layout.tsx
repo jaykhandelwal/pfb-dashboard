@@ -3,14 +3,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake,
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils,
-  ChevronDown, ChevronRight, Settings, TrendingUp, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen
+  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
-import { Permission } from '../types';
+import { LedgerEntryType, Permission } from '../types';
 import { UselessDashboard } from './UselessDashboard';
 import { APP_VERSION } from '../version';
+import LedgerEntryModal from './LedgerEntryModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -23,6 +24,7 @@ type NavItem = {
   permission?: Permission;
   children?: NavItem[];
   id?: string; // Unique ID for collapsible sections
+  onClick?: () => void;
 };
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -38,6 +40,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Sync Status State
   const [syncStatus, setSyncStatus] = useState<string>('');
+  const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType }>({ isOpen: false });
 
   // Track expanded state of dropdowns - Default collapsed
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
@@ -77,6 +80,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navStructure: NavItem[] = [
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
+    { id: 'add-expense', label: 'Add Expense', icon: <TrendingDown size={20} />, onClick: () => setLedgerModal({ isOpen: true, type: 'EXPENSE' }) },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
     { path: '/attendance', label: 'Attendance', icon: <UserCheck size={20} />, permission: 'MANAGE_ATTENDANCE' },
   ];
@@ -203,6 +207,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         </div>
+      );
+    }
+
+    // If it's an action button (Leaf)
+    if (item.onClick) {
+      return (
+        <button
+          key={item.id || item.label}
+          type="button"
+          onClick={() => {
+            item.onClick?.();
+            handleMobileNavClick();
+          }}
+          className="flex items-center space-x-3 px-4 h-12 w-full rounded-lg transition-colors font-medium text-base text-[#403424] bg-white/70 border border-[#403424]/10 shadow-sm hover:bg-[#95a77c]/10"
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </button>
       );
     }
 
@@ -341,6 +363,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
+
+      <LedgerEntryModal
+        isOpen={ledgerModal.isOpen}
+        onClose={() => setLedgerModal(prev => ({ ...prev, isOpen: false }))}
+        forcedType={ledgerModal.type}
+      />
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto w-full bg-[#f9faf7] relative z-0">

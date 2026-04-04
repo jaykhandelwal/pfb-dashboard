@@ -8,6 +8,13 @@ import {
 import { LedgerAccount, LedgerCategoryDefinition, LedgerPaymentMethod } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ICON_CATEGORIES, ALL_ICONS, IconRenderer } from '../services/iconLibrary';
+import {
+    getLedgerOptionAllowedUsers,
+    hasLedgerOptionUserRestrictions,
+    sanitizeLedgerAllowedUserIds
+} from '../utils/ledgerAccess';
+
+type AccessMode = 'ALL' | 'SELECTED';
 
 const LedgerSettings: React.FC = () => {
     const { appSettings, updateAppSetting } = useStore();
@@ -26,11 +33,15 @@ const LedgerSettings: React.FC = () => {
     const [editingCategoryName, setEditingCategoryName] = useState('');
     const [editingCategoryColor, setEditingCategoryColor] = useState('');
     const [editingCategoryIcon, setEditingCategoryIcon] = useState('');
+    const [editingCategoryAccessMode, setEditingCategoryAccessMode] = useState<AccessMode>('ALL');
+    const [editingCategoryAllowedUserIds, setEditingCategoryAllowedUserIds] = useState<string[]>([]);
 
     const [editingMethodId, setEditingMethodId] = useState<string | null>(null);
     const [editingMethodName, setEditingMethodName] = useState('');
     const [editingMethodColor, setEditingMethodColor] = useState('');
     const [editingMethodIcon, setEditingMethodIcon] = useState('');
+    const [editingMethodAccessMode, setEditingMethodAccessMode] = useState<AccessMode>('ALL');
+    const [editingMethodAllowedUserIds, setEditingMethodAllowedUserIds] = useState<string[]>([]);
 
     const PRESET_COLORS = [
         '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -100,7 +111,8 @@ const LedgerSettings: React.FC = () => {
             name: normalizedName,
             isActive: true,
             color: PRESET_COLORS[0],
-            icon: 'Package'
+            icon: 'Package',
+            allowedUserIds: null
         }];
         setCategories(updatedCategories);
         updateAppSetting('ledger_categories', updatedCategories);
@@ -112,15 +124,27 @@ const LedgerSettings: React.FC = () => {
         setEditingCategoryName(cat.name);
         setEditingCategoryColor(cat.color || PRESET_COLORS[0]);
         setEditingCategoryIcon(cat.icon || PRESET_ICONS[0]);
+        setEditingCategoryAccessMode(hasLedgerOptionUserRestrictions(cat) ? 'SELECTED' : 'ALL');
+        setEditingCategoryAllowedUserIds(cat.allowedUserIds || []);
     };
 
     const saveEditingCategory = () => {
         if (!editingCategoryName.trim()) return;
+        const allowedUserIds = editingCategoryAccessMode === 'ALL'
+            ? null
+            : sanitizeLedgerAllowedUserIds(editingCategoryAllowedUserIds, users);
+
+        if (editingCategoryAccessMode === 'SELECTED' && (!allowedUserIds || allowedUserIds.length === 0)) {
+            alert('Select at least one user, or switch access back to All users.');
+            return;
+        }
+
         const updatedCategories = categories.map(c => c.id === editingCategoryId ? {
             ...c,
             name: editingCategoryName.trim(),
             color: editingCategoryColor,
-            icon: editingCategoryIcon
+            icon: editingCategoryIcon,
+            allowedUserIds
         } : c);
         setCategories(updatedCategories);
         updateAppSetting('ledger_categories', updatedCategories);
@@ -157,7 +181,8 @@ const LedgerSettings: React.FC = () => {
             name: normalizedName,
             isActive: true,
             color: PRESET_COLORS[1],
-            icon: 'CreditCard'
+            icon: 'CreditCard',
+            allowedUserIds: null
         }];
         setPaymentMethods(updatedMethods);
         updateAppSetting('payment_methods', updatedMethods);
@@ -169,15 +194,27 @@ const LedgerSettings: React.FC = () => {
         setEditingMethodName(method.name);
         setEditingMethodColor(method.color || PRESET_COLORS[1]);
         setEditingMethodIcon(method.icon || PRESET_ICONS[10]);
+        setEditingMethodAccessMode(hasLedgerOptionUserRestrictions(method) ? 'SELECTED' : 'ALL');
+        setEditingMethodAllowedUserIds(method.allowedUserIds || []);
     };
 
     const saveEditingMethod = () => {
         if (!editingMethodName.trim()) return;
+        const allowedUserIds = editingMethodAccessMode === 'ALL'
+            ? null
+            : sanitizeLedgerAllowedUserIds(editingMethodAllowedUserIds, users);
+
+        if (editingMethodAccessMode === 'SELECTED' && (!allowedUserIds || allowedUserIds.length === 0)) {
+            alert('Select at least one user, or switch access back to All users.');
+            return;
+        }
+
         const updatedMethods = paymentMethods.map(m => m.id === editingMethodId ? {
             ...m,
             name: editingMethodName.trim(),
             color: editingMethodColor,
-            icon: editingMethodIcon
+            icon: editingMethodIcon,
+            allowedUserIds
         } : m);
         setPaymentMethods(updatedMethods);
         updateAppSetting('payment_methods', updatedMethods);
@@ -196,6 +233,140 @@ const LedgerSettings: React.FC = () => {
             setPaymentMethods(updatedMethods);
             updateAppSetting('payment_methods', updatedMethods);
         }
+    };
+
+    const toggleSelectedCategoryUser = (userId: string) => {
+        setEditingCategoryAllowedUserIds(prev =>
+            prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+        );
+    };
+
+    const toggleSelectedMethodUser = (userId: string) => {
+        setEditingMethodAllowedUserIds(prev =>
+            prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+        );
+    };
+
+    const getUserInitials = (name: string) =>
+        name
+            .split(' ')
+            .filter(Boolean)
+            .slice(0, 2)
+            .map(part => part[0]?.toUpperCase() || '')
+            .join('') || 'U';
+
+    const renderAccessEditor = ({
+        accent,
+        mode,
+        setMode,
+        selectedUserIds,
+        onToggleUser
+    }: {
+        accent: 'indigo' | 'emerald';
+        mode: AccessMode;
+        setMode: (mode: AccessMode) => void;
+        selectedUserIds: string[];
+        onToggleUser: (userId: string) => void;
+    }) => {
+        const accentClasses = accent === 'indigo'
+            ? {
+                active: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+                inactive: 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-700',
+                selectedUser: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+                userIcon: 'bg-indigo-100 text-indigo-700',
+                helper: 'text-indigo-600'
+            }
+            : {
+                active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                inactive: 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200 hover:text-emerald-700',
+                selectedUser: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                userIcon: 'bg-emerald-100 text-emerald-700',
+                helper: 'text-emerald-600'
+            };
+
+        return (
+            <div className="space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase">
+                    <Users size={12} /> Access
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setMode('ALL')}
+                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-all ${mode === 'ALL' ? accentClasses.active : accentClasses.inactive}`}
+                    >
+                        All users
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMode('SELECTED')}
+                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-all ${mode === 'SELECTED' ? accentClasses.active : accentClasses.inactive}`}
+                    >
+                        Selected users
+                    </button>
+                </div>
+
+                {mode === 'ALL' ? (
+                    <p className="text-xs text-slate-500">
+                        Everyone can use this option, including users added later.
+                    </p>
+                ) : users.length === 0 ? (
+                    <p className="text-xs text-slate-500">No users available yet.</p>
+                ) : (
+                    <>
+                        <p className="text-xs text-slate-500">
+                            Pick the teammates who should see this option while creating ledger entries.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {users.map(user => {
+                                const isSelected = selectedUserIds.includes(user.id);
+                                return (
+                                    <button
+                                        key={user.id}
+                                        type="button"
+                                        onClick={() => onToggleUser(user.id)}
+                                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-all ${isSelected ? accentClasses.selectedUser : accentClasses.inactive}`}
+                                    >
+                                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black ${accentClasses.userIcon}`}>
+                                            {getUserInitials(user.name)}
+                                        </span>
+                                        <span className="max-w-[120px] truncate">{user.name}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className={`text-xs font-medium ${selectedUserIds.length > 0 ? accentClasses.helper : 'text-amber-600'}`}>
+                            {selectedUserIds.length > 0
+                                ? `${selectedUserIds.length} of ${users.length} users selected`
+                                : 'Choose at least one user or keep this option open to all users.'}
+                        </p>
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    const getAccessSummary = (option: LedgerCategoryDefinition | LedgerPaymentMethod) => {
+        if (!hasLedgerOptionUserRestrictions(option)) {
+            return {
+                title: 'All users',
+                subtitle: users.length > 0 ? `Visible to all ${users.length} users` : 'Visible to everyone by default'
+            };
+        }
+
+        const allowedUsers = getLedgerOptionAllowedUsers(option, users);
+        const preview = allowedUsers.slice(0, 2).map(user => user.name).join(', ');
+        const remaining = allowedUsers.length - Math.min(allowedUsers.length, 2);
+
+        return {
+            title: `${allowedUsers.length} ${allowedUsers.length === 1 ? 'user' : 'users'}`,
+            subtitle: allowedUsers.length === 0
+                ? 'No users selected'
+                : remaining > 0
+                    ? `${preview} +${remaining} more`
+                    : preview
+        };
     };
 
     // ACCOUNTS
@@ -340,6 +511,14 @@ const LedgerSettings: React.FC = () => {
                                                     ))}
                                                 </div>
                                             </div>
+
+                                            {renderAccessEditor({
+                                                accent: 'indigo',
+                                                mode: editingCategoryAccessMode,
+                                                setMode: setEditingCategoryAccessMode,
+                                                selectedUserIds: editingCategoryAllowedUserIds,
+                                                onToggleUser: toggleSelectedCategoryUser
+                                            })}
                                         </div>
                                     ) : (
                                         <>
@@ -351,8 +530,20 @@ const LedgerSettings: React.FC = () => {
                                                     <IconRenderer name={cat.icon || PRESET_ICONS[0]} size={20} />
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <span className={`font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
-                                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Category</span>
+                                                    {(() => {
+                                                        const accessSummary = getAccessSummary(cat);
+                                                        return (
+                                                            <>
+                                                                <span className={`font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
+                                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                                                    <span>Category</span>
+                                                                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                                                                    <span>{accessSummary.title}</span>
+                                                                </div>
+                                                                <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -469,6 +660,14 @@ const LedgerSettings: React.FC = () => {
                                                     ))}
                                                 </div>
                                             </div>
+
+                                            {renderAccessEditor({
+                                                accent: 'emerald',
+                                                mode: editingMethodAccessMode,
+                                                setMode: setEditingMethodAccessMode,
+                                                selectedUserIds: editingMethodAllowedUserIds,
+                                                onToggleUser: toggleSelectedMethodUser
+                                            })}
                                         </div>
                                     ) : (
                                         <>
@@ -480,8 +679,20 @@ const LedgerSettings: React.FC = () => {
                                                     <IconRenderer name={method.icon || PRESET_ICONS[10]} size={20} />
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <span className={`font-bold uppercase ${method.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{method.name}</span>
-                                                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Payment Method</span>
+                                                    {(() => {
+                                                        const accessSummary = getAccessSummary(method);
+                                                        return (
+                                                            <>
+                                                                <span className={`font-bold uppercase ${method.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{method.name}</span>
+                                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                                                    <span>Payment Method</span>
+                                                                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                                                                    <span>{accessSummary.title}</span>
+                                                                </div>
+                                                                <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

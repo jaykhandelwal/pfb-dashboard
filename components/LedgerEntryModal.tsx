@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { LedgerEntry, LedgerEntryType } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { IconRenderer } from '../services/iconLibrary';
+import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 
 interface LedgerEntryModalProps {
     isOpen: boolean;
@@ -52,6 +53,62 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     const [isUploading, setIsUploading] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
+    const activeCategories = useMemo(
+        () => appSettings.ledger_categories?.filter(category => category.isActive) || [],
+        [appSettings.ledger_categories]
+    );
+
+    const activePaymentMethods = useMemo(
+        () => appSettings.payment_methods?.filter(method => method.isActive) || [],
+        [appSettings.payment_methods]
+    );
+
+    const accessibleCategories = useMemo(
+        () => activeCategories.filter(category => isLedgerOptionAvailableToUser(category, currentUser?.id)),
+        [activeCategories, currentUser?.id]
+    );
+
+    const accessiblePaymentMethods = useMemo(
+        () => activePaymentMethods.filter(method => isLedgerOptionAvailableToUser(method, currentUser?.id)),
+        [activePaymentMethods, currentUser?.id]
+    );
+
+    const categoryOptions = useMemo(() => {
+        const selected = activeCategories.find(category =>
+            category.id === formData.categoryId || category.name === formData.category
+        );
+
+        if (selected && !accessibleCategories.some(category => category.id === selected.id)) {
+            return [selected, ...accessibleCategories];
+        }
+
+        return accessibleCategories;
+    }, [accessibleCategories, activeCategories, formData.category, formData.categoryId]);
+
+    const paymentMethodOptions = useMemo(() => {
+        const selected = activePaymentMethods.find(method =>
+            method.id === formData.paymentMethodId || method.name === formData.paymentMethod
+        );
+
+        if (selected && !accessiblePaymentMethods.some(method => method.id === selected.id)) {
+            return [selected, ...accessiblePaymentMethods];
+        }
+
+        return accessiblePaymentMethods;
+    }, [accessiblePaymentMethods, activePaymentMethods, formData.paymentMethod, formData.paymentMethodId]);
+
+    const accessIssue = useMemo(() => {
+        if (categoryOptions.length === 0) {
+            return 'No ledger categories are assigned to your user yet. Ask an admin to update Ledger Settings.';
+        }
+
+        if (paymentMethodOptions.length === 0) {
+            return 'No payment methods are assigned to your user yet. Ask an admin to update Ledger Settings.';
+        }
+
+        return null;
+    }, [categoryOptions.length, paymentMethodOptions.length]);
+
     // Load defaults or initial data
     useEffect(() => {
         if (isOpen) {
@@ -74,8 +131,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             } else {
                 // Set defaults
-                const defaultCategory = appSettings.ledger_categories?.find(c => c.isActive);
-                const defaultMethod = appSettings.payment_methods?.find(m => m.isActive);
+                const defaultCategory = accessibleCategories[0];
+                const defaultMethod = accessiblePaymentMethods[0];
                 const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
 
                 setFormData({
@@ -96,7 +153,28 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             }
         }
-    }, [isOpen, initialData, forcedType, appSettings, currentUser]);
+    }, [isOpen, initialData, forcedType, appSettings, currentUser, accessibleCategories, accessiblePaymentMethods]);
+
+    useEffect(() => {
+        if (!isOpen || initialData) return;
+
+        setFormData(prev => {
+            const selectedCategoryStillAccessible = accessibleCategories.some(category =>
+                category.id === prev.categoryId || category.name === prev.category
+            );
+            const selectedMethodStillAccessible = accessiblePaymentMethods.some(method =>
+                method.id === prev.paymentMethodId || method.name === prev.paymentMethod
+            );
+
+            return {
+                ...prev,
+                category: selectedCategoryStillAccessible ? prev.category : (accessibleCategories[0]?.name || ''),
+                categoryId: selectedCategoryStillAccessible ? prev.categoryId : (accessibleCategories[0]?.id || ''),
+                paymentMethod: selectedMethodStillAccessible ? prev.paymentMethod : (accessiblePaymentMethods[0]?.name || ''),
+                paymentMethodId: selectedMethodStillAccessible ? prev.paymentMethodId : (accessiblePaymentMethods[0]?.id || ''),
+            };
+        });
+    }, [isOpen, initialData, accessibleCategories, accessiblePaymentMethods]);
 
     useEffect(() => {
         if (!isOpen && newBillPreviews.length > 0) {
@@ -176,7 +254,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
 
     const handleSubmit = async (e?: React.FormEvent, statusOverride?: 'APPROVED' | 'REJECTED', rejectionReason?: string) => {
         if (e) e.preventDefault();
-        if (!formData.amount || !formData.description) return;
+        if (!formData.amount || !formData.description || accessIssue) return;
 
         setIsUploading(true);
 
@@ -246,6 +324,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             }
 
             onClose();
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'Unable to save ledger entry.');
         } finally {
             setIsUploading(false);
         }
@@ -333,6 +413,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     </button>
                 </div>
                 <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                    {accessIssue && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            {accessIssue}
+                        </div>
+                    )}
+
                     {/* Hidden Type Selector - Only if not forced */}
                     {!forcedType && (
                         <div className="flex justify-end -mb-2 relative z-20">
@@ -399,7 +485,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     {CustomDropdown({
                         label: "Category",
                         value: formData.categoryId || formData.category,
-                        options: appSettings.ledger_categories?.filter(c => c.isActive) || [],
+                        options: categoryOptions,
                         onSelect: (opt) => setFormData({ ...formData, category: opt.name, categoryId: opt.id }),
                         placeholder: "Select Category"
                     })}
@@ -421,8 +507,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         {CustomDropdown({
                             label: "Payment Method",
                             value: formData.paymentMethodId || formData.paymentMethod,
-                            options: appSettings.payment_methods?.filter(m => m.isActive) || [],
-                            onSelect: (opt) => setFormData({ ...formData, paymentMethod: opt.name, paymentMethodId: opt.id }), // Using name as value for now based on original code
+                            options: paymentMethodOptions,
+                            onSelect: (opt) => setFormData({ ...formData, paymentMethod: opt.name, paymentMethodId: opt.id }),
                             placeholder: "Select Method"
                         })}
 
@@ -509,7 +595,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                     <button
                                         type="button"
                                         onClick={(e) => handleSubmit(e, 'APPROVED')}
-                                        disabled={isUploading}
+                                        disabled={isUploading || !!accessIssue}
                                         className="col-span-2 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-600/20 hover:shadow-xl hover:bg-emerald-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                     >
                                         Update & Approve
@@ -517,7 +603,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                     </button>
                                     <button
                                         type="submit"
-                                        disabled={isUploading}
+                                        disabled={isUploading || !!accessIssue}
                                         className="py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
                                     >
                                         Update Only
@@ -542,7 +628,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                                 handleSubmit(undefined, 'REJECTED', reason);
                                             }
                                         }}
-                                        disabled={isUploading}
+                                        disabled={isUploading || !!accessIssue}
                                         className="py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-600/20 hover:shadow-xl hover:bg-red-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                     >
                                         Reject Entry
@@ -551,7 +637,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                             ) : (
                                 <button
                                     type="submit"
-                                    disabled={isUploading}
+                                    disabled={isUploading || !!accessIssue}
                                     className="w-full py-3 bg-[#95a77c] text-white rounded-xl font-bold shadow-lg shadow-[#95a77c]/20 hover:shadow-xl hover:bg-[#7d8f68] transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {isUploading ? (

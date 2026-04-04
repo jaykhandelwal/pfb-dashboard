@@ -17,6 +17,7 @@ import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { useAuth } from './AuthContext';
 import { deleteImageFromBunny } from '../services/bunnyStorage';
 import { sendLedgerWebhook, LedgerWebhookPayload } from '../services/webhookService';
+import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -542,10 +543,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
     const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-    const { currentUser, refreshUser, users, updateUser } = useAuth();
+    const { currentUser, users, updateUser } = useAuth();
 
     // Persistence Helper
     const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
+
+    const getLedgerAccessError = (label: 'Category' | 'Payment method', optionName: string) =>
+        `${label} "${optionName}" is not assigned to your user. Ask an admin to update Ledger Settings.`;
+
+    const ensureLedgerEntryOptionAccess = (entry: Pick<LedgerEntry, 'category' | 'categoryId' | 'paymentMethod' | 'paymentMethodId'>) => {
+        if (!currentUser) return;
+
+        const category = appSettings.ledger_categories?.find(option =>
+            option.id === entry.categoryId || option.name.toLowerCase() === entry.category.toLowerCase()
+        );
+        const paymentMethod = appSettings.payment_methods?.find(option =>
+            option.id === entry.paymentMethodId || option.name.toLowerCase() === entry.paymentMethod.toLowerCase()
+        );
+
+        if (category && !isLedgerOptionAvailableToUser(category, currentUser.id)) {
+            throw new Error(getLedgerAccessError('Category', category.name));
+        }
+
+        if (paymentMethod && !isLedgerOptionAvailableToUser(paymentMethod, currentUser.id)) {
+            throw new Error(getLedgerAccessError('Payment method', paymentMethod.name));
+        }
+    };
 
     useEffect(() => {
         const initializeStore = async () => {
@@ -1419,6 +1442,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const addLedgerEntry = async (entry: Omit<LedgerEntry, 'id'>) => {
+        ensureLedgerEntryOptionAccess(entry);
+
         const newEntry: LedgerEntry = {
             ...entry,
             id: crypto.randomUUID(),
@@ -1441,6 +1466,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
     const updateLedgerEntry = async (entry: LedgerEntry) => {
+        ensureLedgerEntryOptionAccess(entry);
+
         const updated = ledgerEntries.map(e => e.id === entry.id ? entry : e);
         setLedgerEntries(updated); save('ledgerEntries', updated);
 
@@ -1590,6 +1617,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const paymentMethod = appSettings.payment_methods?.find(
                 m => m.name.toLowerCase() === entry.paymentMethod.toLowerCase()
             );
+
+            if (category && !isLedgerOptionAvailableToUser(category, currentUser?.id)) {
+                errors.push(getLedgerAccessError('Category', category.name));
+            }
+
+            if (paymentMethod && !isLedgerOptionAvailableToUser(paymentMethod, currentUser?.id)) {
+                errors.push(getLedgerAccessError('Payment method', paymentMethod.name));
+            }
+
+            if (errors.length > 0) {
+                result.errors.push({ row: rowNum, message: errors.join('; ') });
+                result.failureCount++;
+                return;
+            }
 
             // Create ledger entry
             const newEntry: LedgerEntry = {

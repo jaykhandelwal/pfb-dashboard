@@ -284,6 +284,7 @@ export interface LedgerCategoryDefinition {
   isActive: boolean;
   color?: string;
   icon?: string;
+  allowedUserIds?: string[] | null;
 }
 
 export interface LedgerPaymentMethod {
@@ -292,6 +293,7 @@ export interface LedgerPaymentMethod {
   isActive: boolean;
   color?: string;
   icon?: string;
+  allowedUserIds?: string[] | null;
 }
 
 export interface LedgerAccount {

@@ -2,10 +2,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { DailyReportItem, TransactionType, Todo, LedgerEntryType, SKU } from '../types';
+import { DailyReportItem, TransactionType, Todo, SKU } from '../types';
 import { StatCard } from '../components/StatCard';
-import { TrendingUp, TrendingDown, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon, Snowflake } from 'lucide-react';
-import LedgerEntryModal from '../components/LedgerEntryModal';
+import { TrendingUp, ShoppingBag, RotateCcw, Trash2, Sparkles, Store, Package, Activity, Scale, IndianRupee, Receipt, BarChart3, ChevronDown, ChevronUp, Banknote, QrCode, Wallet, CalendarDays, CheckSquare, Plus, X, User as UserIcon, Check, Clock, Moon, Snowflake } from 'lucide-react';
 import { generateDailyInsights } from '../services/geminiService';
 import { getLocalISOString } from '../constants';
 import ReactApexChart from 'react-apexcharts';
@@ -98,9 +97,6 @@ const Dashboard: React.FC = () => {
    const [loadingAi, setLoadingAi] = useState(false);
    const [activeOperationalView, setActiveOperationalView] = useState<'STOCK' | 'CHECKOUT' | null>(null);
    const [selectedSku, setSelectedSku] = useState<SKU | null>(null);
-
-   // Quick Action Modal State
-   const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType }>({ isOpen: false });
 
    // Todo State
    const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -549,20 +545,6 @@ const Dashboard: React.FC = () => {
                <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
                <p className="text-sm text-slate-500">Overview & Quick Actions</p>
             </div>
-            <div className="flex gap-3">
-               <button
-                  onClick={() => setLedgerModal({ isOpen: true, type: 'EXPENSE' })}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-sm font-bold text-sm"
-               >
-                  <TrendingDown size={16} /> Add Expense
-               </button>
-               <button
-                  onClick={() => setLedgerModal({ isOpen: true, type: 'INCOME' })}
-                  className="flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm font-bold text-sm"
-               >
-                  <TrendingUp size={16} /> Add Earning
-               </button>
-            </div>
          </div>
 
          {/* 0. Tasks Summary (Beta) */}
@@ -909,13 +891,6 @@ const Dashboard: React.FC = () => {
                </div>
             </div>
          )}
-
-         {/* Ledger Quick Action Modal */}
-         <LedgerEntryModal
-            isOpen={ledgerModal.isOpen}
-            onClose={() => setLedgerModal({ ...ledgerModal, isOpen: false })}
-            forcedType={ledgerModal.type}
-         />
          {/* Sku History Modal */}
          <SkuHistoryModal sku={selectedSku} isOpen={!!selectedSku} onClose={() => setSelectedSku(null)} />
       </div>
