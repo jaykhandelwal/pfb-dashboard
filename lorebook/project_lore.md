@@ -50,9 +50,10 @@
     *   *Example:* Selling 1 "Veg Steam Full Plate" triggers the consumption of 10 pieces of "Veg Steam SKU".
     *   *Variants:* Supports "Half Plates" with distinct ingredient mappings (`halfIngredients`).
 3.  **Storage Unit:** Physical containers (Deep Freezers) with defined capacity (Litres). Used for Stock Ordering calculations.
-4.  **Transaction:** The immutable record of stock movement.
+4.  **Transaction:** The record of stock movement.
     *   Types: `RESTOCK` (Supplier In), `CHECK_OUT` (Freezer to Cart), `CHECK_IN` (Cart to Freezer), `WASTE` (Spoiled), `ADJUSTMENT` (Correction).
     *   *Crucial:* Daily "Sold" count is derived from `CheckOut - CheckIn - Waste`.
+    *   *Audit Trail:* Transactions can be bulk-edited or removed by Admins. Removed transactions are preserved in a `deleted_transactions` table for auditability.
 5.  **Order:** A point-of-sale event.
     *   Tracks `paymentMethod` (Cash/UPI/Card/Split), `platform` (POS/Zomato/Swiggy).
     *   Updates Customer `totalSpend` and `orderCount`.
@@ -152,7 +153,11 @@ The system recommends Restock quantities based on a sophisticated multi-factor h
 *   **Sorting Modes:** 
     *   `FOR_DATE`: Groups by Operational Date (Default).
     *   `LOGGED_ON`: Sorts strictly by timestamp of entry.
-*   **Visual Indicators:** Red highlighting used exclusively for "Missing Return" (Check-out without corresponding Check-in).
+*   **Visual Indicators:**
+    *   **Missing Return:** Red highlighting used exclusively for "Missing Return" (Check-out without corresponding Check-in).
+    *   **Inconsistent Data:** Amber highlighting for records flagged by Admins as "Inconsistent", along with a recorded custom reason.
+*   **Bulk Editing:** Admins can edit checkout/return quantities for a specific branch and date simultaneously using a bulk text-based editor. 
+*   **Audit & Deleted Archive:** Transactions can be removed by Admins. Deletions are moved permanently to a `deleted_transactions` archive viewable via a dedicated "Deleted / Audit Mode" in the Logs.
 
 ### 5.3. Attendance
 *   **Check-In:** Staff takes a selfie.
@@ -246,7 +251,12 @@ This section serves as a reference for fresh installations. Using these schemas 
 *   `quantity` (numeric): Amount moved.
 *   `batch_id` (text): Grouping ID for bulk actions.
 
-**4. orders** (Sales)
+**4. deleted_transactions** (Stock Movement Archive)
+*   Matches `transactions` schema, with tracking for deletions.
+*   `deleted_at` (text): Deletion timestamp.
+*   `deleted_by` (text): Name of the admin who removed the record.
+
+**5. orders** (Sales)
 *   `id` (text): Primary Key.
 *   `customer_id` (text): FK to `customers`.
 *   `items` (jsonb): Array of `{skuId, qty, name, price}`.
