@@ -16,6 +16,7 @@ import {
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { useAuth } from './AuthContext';
 import { deleteImageFromBunny } from '../services/bunnyStorage';
+import { sendLedgerWebhook, LedgerWebhookPayload } from '../services/webhookService';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -497,6 +498,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         enable_attendance_webhook: false,
         attendance_webhook_url: '',
+
+        enable_transaction_webhook: false,
+        transaction_webhook_url: '',
+        transaction_webhook_actions: {
+            CREATE: true,
+            UPDATE: true,
+            DELETE: true,
+            APPROVE: true,
+            REJECT: true,
+        },
 
         enable_attendance_webhook_debug: false,
         enable_debug_inventory: false,
@@ -1359,6 +1370,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    // --- LEDGER WEBHOOK HELPER ---
+    const fireLedgerWebhook = (entry: LedgerEntry, action: LedgerWebhookPayload['action']) => {
+        if (!appSettings.enable_transaction_webhook || !appSettings.transaction_webhook_url) return;
+        // Per-action check
+        const actions = appSettings.transaction_webhook_actions;
+        if (actions && !actions[action]) return;
+        sendLedgerWebhook(appSettings.transaction_webhook_url, {
+            event: 'LEDGER_ENTRY',
+            action,
+            entry: {
+                id: entry.id,
+                date: entry.date,
+                entry_type: entry.entryType,
+                category: entry.category,
+                amount: entry.amount,
+                description: entry.description,
+                payment_method: entry.paymentMethod,
+                source_account: entry.sourceAccount || '',
+                destination_account: entry.destinationAccount,
+                status: entry.status || 'PENDING',
+                branch_id: entry.branchId,
+                created_by: entry.createdBy || '',
+                created_by_name: entry.createdByName || 'Unknown',
+                approved_by: entry.approvedBy,
+                rejected_reason: entry.rejectedReason,
+                bill_urls: entry.billUrls,
+            },
+            performed_by: currentUser?.id || '',
+            performed_by_name: currentUser?.name || 'Unknown',
+            timestamp: Date.now(),
+            created_at: new Date().toISOString(),
+        });
+    };
+
     const addLedgerEntry = async (entry: Omit<LedgerEntry, 'id'>) => {
         const newEntry: LedgerEntry = {
             ...entry,
@@ -1371,6 +1416,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Log it
         await addLedgerLog(newEntry, 'CREATE');
+
+        // Webhook
+        fireLedgerWebhook(newEntry, 'CREATE');
 
         if (isSupabaseConfigured()) {
             try {
@@ -1385,6 +1433,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Log it
         await addLedgerLog(entry, 'UPDATE');
 
+        // Webhook
+        fireLedgerWebhook(entry, 'UPDATE');
+
         if (isSupabaseConfigured()) {
             try {
                 await supabase.from('ledger_entries').update(mapLedgerEntryToDB(entry)).eq('id', entry.id);
@@ -1396,6 +1447,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (entry) {
             // Log it before deleting (snapshotting the last state)
             await addLedgerLog(entry, 'DELETE');
+
+            // Webhook
+            fireLedgerWebhook(entry, 'DELETE');
         }
 
         const updated = ledgerEntries.filter(e => e.id !== id);
@@ -1413,24 +1467,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!entry) return;
 
         const updatedEntry = { ...entry, status: 'APPROVED' as const, approvedBy: currentUser.name };
-        await updateLedgerEntry(updatedEntry); // This will trigger UPDATE log
 
-        // Explicit APPROVE log? 
-        // updateLedgerEntry already logs 'UPDATE'. 
-        // But maybe we want specific 'APPROVE' action in logs.
-        // Let's call addLedgerLog explicitly with APPROVE and skip the UPDATE one? 
-        // No, updateLedgerEntry is called, so it logs UPDATE. 
-        // Let's modify logic:
-        // We shouldn't duplicate logs. 
-        // If I use updateLedgerEntry, it logs UPDATE.
-        // I will just add a separate APPROVE log for clarity if needed, or rely on UPDATE with status change.
-        // The requirement says "record that audit aswell". 
-        // I will add a specific APPROVE log *instead* of relying on UPDATE if possible, 
-        // OR just add it additionally. 
-        // Since updateLedgerEntry is generic, let's just use it but maybe allow overriding action?
-        // For now, I'll let it log UPDATE (which shows status change to APPROVED in snapshot) 
-        // AND I will add an explicit APPROVE log for easier filtering.
+        // Update state directly (not via updateLedgerEntry) to avoid duplicate UPDATE webhook/log
+        const updatedList = ledgerEntries.map(e => e.id === id ? updatedEntry : e);
+        setLedgerEntries(updatedList); save('ledgerEntries', updatedList);
+
         await addLedgerLog(updatedEntry, 'APPROVE');
+
+        // Webhook
+        fireLedgerWebhook(updatedEntry, 'APPROVE');
+
+        if (isSupabaseConfigured()) {
+            try {
+                await supabase.from('ledger_entries').update(mapLedgerEntryToDB(updatedEntry)).eq('id', id);
+            } catch (e) { console.error('Ledger approve sync failed:', e); }
+        }
     };
 
     const rejectLedgerEntry = async (id: string, reason: string) => {
@@ -1449,6 +1500,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLedgerEntries(updatedList); save('ledgerEntries', updatedList);
 
         await addLedgerLog(updatedEntry, 'REJECT');
+
+        // Webhook
+        fireLedgerWebhook(updatedEntry, 'REJECT');
 
         if (isSupabaseConfigured()) {
             try {

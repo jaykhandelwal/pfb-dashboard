@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText } from 'lucide-react';
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 import { APP_VERSION } from '../version';
 
@@ -16,6 +16,7 @@ const AppSettings: React.FC = () => {
    // Local state for input fields (to debounce or handle blur save)
    const [webhookUrl, setWebhookUrl] = useState(appSettings.whatsapp_webhook_url || '');
    const [attendanceWebhookUrl, setAttendanceWebhookUrl] = useState(appSettings.attendance_webhook_url || '');
+   const [transactionWebhookUrl, setTransactionWebhookUrl] = useState(appSettings.transaction_webhook_url || '');
    const [coolifyUrl, setCoolifyUrl] = useState(appSettings.coolify_instance_url || '');
    const [coolifyToken, setCoolifyToken] = useState(appSettings.coolify_api_token || '');
    const [coolifyTag, setCoolifyTag] = useState(appSettings.coolify_deployment_tag_or_uuid || '');
@@ -393,6 +394,96 @@ const AppSettings: React.FC = () => {
                                     </div>
                                     <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
                                        <Lock size={10} /> Photos will be sent as a JSON payload to this URL.
+                                    </p>
+                                 </div>
+                              </div>
+                           )}
+                        </div>
+
+                        {/* Ledger Transaction Webhook */}
+                        <div className="space-y-6 pt-6 border-t border-slate-100">
+                           <div className="flex items-center justify-between">
+                              <div className="flex gap-4">
+                                 <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center shrink-0">
+                                    <BookText size={20} />
+                                 </div>
+                                 <div>
+                                    <h4 className="font-bold text-slate-700">Ledger Transaction Webhook</h4>
+                                    <p className="text-sm text-slate-500">
+                                       Send ledger entry details (income, expense, reimbursement) and status changes to a remote server.
+                                    </p>
+                                 </div>
+                              </div>
+                              {savingKeys.includes('enable_transaction_webhook') ? (
+                                 <Loader2 size={24} className="text-teal-600 animate-spin" />
+                              ) : (
+                                 <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                       type="checkbox"
+                                       className="sr-only peer"
+                                       checked={appSettings.enable_transaction_webhook || false}
+                                       onChange={() => handleToggle('enable_transaction_webhook')}
+                                    />
+                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+                                 </label>
+                              )}
+                           </div>
+
+                           {appSettings.enable_transaction_webhook && (
+                              <div className="ml-14 animate-fade-in space-y-4">
+                                 <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Webhook URL</label>
+                                    <div className="flex gap-2">
+                                       <input
+                                          type="url"
+                                          value={transactionWebhookUrl}
+                                          onChange={(e) => setTransactionWebhookUrl(e.target.value)}
+                                          placeholder="https://api.example.com/ledger-hook"
+                                          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none font-mono text-slate-600"
+                                       />
+                                       <button
+                                          onClick={() => handleTextSave('transaction_webhook_url', transactionWebhookUrl)}
+                                          disabled={savingKeys.includes('transaction_webhook_url')}
+                                          className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50"
+                                       >
+                                          {savingKeys.includes('transaction_webhook_url') ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
+                                       </button>
+                                    </div>
+                                 </div>
+
+                                 {/* Per-Action Toggles */}
+                                 <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Trigger on Actions</label>
+                                    <div className="flex flex-wrap gap-2">
+                                       {(['CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT'] as const).map(action => {
+                                          const actions = appSettings.transaction_webhook_actions || { CREATE: true, UPDATE: true, DELETE: true, APPROVE: true, REJECT: true };
+                                          const isEnabled = actions[action];
+                                          const colorMap: Record<string, { on: string, off: string }> = {
+                                             CREATE: { on: 'bg-emerald-100 text-emerald-700 border-emerald-300', off: 'bg-slate-50 text-slate-400 border-slate-200' },
+                                             UPDATE: { on: 'bg-blue-100 text-blue-700 border-blue-300', off: 'bg-slate-50 text-slate-400 border-slate-200' },
+                                             DELETE: { on: 'bg-red-100 text-red-700 border-red-300', off: 'bg-slate-50 text-slate-400 border-slate-200' },
+                                             APPROVE: { on: 'bg-teal-100 text-teal-700 border-teal-300', off: 'bg-slate-50 text-slate-400 border-slate-200' },
+                                             REJECT: { on: 'bg-orange-100 text-orange-700 border-orange-300', off: 'bg-slate-50 text-slate-400 border-slate-200' },
+                                          };
+                                          return (
+                                             <button
+                                                key={action}
+                                                type="button"
+                                                onClick={async () => {
+                                                   const updated = { ...actions, [action]: !isEnabled };
+                                                   await updateAppSetting('transaction_webhook_actions', updated);
+                                                   setToastMsg(`${action} webhook ${!isEnabled ? 'enabled' : 'disabled'}`);
+                                                   setTimeout(() => setToastMsg(''), 2000);
+                                                }}
+                                                className={`px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all ${isEnabled ? colorMap[action].on : colorMap[action].off}`}
+                                             >
+                                                {isEnabled ? '✓ ' : ''}{action}
+                                             </button>
+                                          );
+                                       })}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-2">
+                                       Toggle which ledger actions trigger the webhook. Disabled actions will be silently skipped.
                                     </p>
                                  </div>
                               </div>

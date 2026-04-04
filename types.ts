@@ -310,6 +310,15 @@ export interface AppSettings {
   enable_whatsapp_webhook: boolean;
   whatsapp_webhook_url: string;
   debug_whatsapp_webhook: boolean;
+  enable_transaction_webhook: boolean;
+  transaction_webhook_url: string;
+  transaction_webhook_actions: {
+    CREATE: boolean;
+    UPDATE: boolean;
+    DELETE: boolean;
+    APPROVE: boolean;
+    REJECT: boolean;
+  };
   enable_attendance_webhook_debug: boolean;
   enable_debug_inventory: boolean;
   stock_ordering_litres_per_packet: number | string;

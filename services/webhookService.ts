@@ -223,3 +223,48 @@ export const sendWhatsAppInvoice = async (
     console.error("Error constructing webhook payload:", error);
   }
 };
+
+// --- LEDGER WEBHOOK ---
+
+export interface LedgerWebhookPayload {
+  event: "LEDGER_ENTRY";
+  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT";
+  entry: {
+    id: string;
+    date: string;
+    entry_type: string;
+    category: string;
+    amount: number;
+    description: string;
+    payment_method: string;
+    source_account: string;
+    destination_account?: string;
+    status: string;
+    branch_id?: string;
+    created_by: string;
+    created_by_name: string;
+    approved_by?: string;
+    rejected_reason?: string;
+    bill_urls?: string[];
+  };
+  performed_by: string;
+  performed_by_name: string;
+  timestamp: number;
+  created_at: string;
+}
+
+export const sendLedgerWebhook = async (
+  webhookUrl: string,
+  payload: LedgerWebhookPayload
+) => {
+  try {
+    // Fire & Forget
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((err) => console.error("Ledger Webhook Failed:", err));
+  } catch (error) {
+    console.error("Error sending ledger webhook:", error);
+  }
+};

@@ -1,0 +1,3 @@
+components/GlobalErrorBoundary.tsx(27,10): error TS2339: Property 'setState' does not exist on type 'GlobalErrorBoundary'.
+components/GlobalErrorBoundary.tsx(87,17): error TS2339: Property 'props' does not exist on type 'GlobalErrorBoundary'.
+components/LedgerEntryModal.tsx(120,74): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Blob | MediaSource'.
