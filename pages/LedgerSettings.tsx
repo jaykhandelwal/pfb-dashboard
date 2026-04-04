@@ -14,8 +14,6 @@ import {
     sanitizeLedgerAllowedUserIds
 } from '../utils/ledgerAccess';
 
-type AccessMode = 'ALL' | 'SELECTED';
-
 const LedgerSettings: React.FC = () => {
     const { appSettings, updateAppSetting } = useStore();
     const { users } = useAuth();
@@ -33,14 +31,12 @@ const LedgerSettings: React.FC = () => {
     const [editingCategoryName, setEditingCategoryName] = useState('');
     const [editingCategoryColor, setEditingCategoryColor] = useState('');
     const [editingCategoryIcon, setEditingCategoryIcon] = useState('');
-    const [editingCategoryAccessMode, setEditingCategoryAccessMode] = useState<AccessMode>('ALL');
     const [editingCategoryAllowedUserIds, setEditingCategoryAllowedUserIds] = useState<string[]>([]);
 
     const [editingMethodId, setEditingMethodId] = useState<string | null>(null);
     const [editingMethodName, setEditingMethodName] = useState('');
     const [editingMethodColor, setEditingMethodColor] = useState('');
     const [editingMethodIcon, setEditingMethodIcon] = useState('');
-    const [editingMethodAccessMode, setEditingMethodAccessMode] = useState<AccessMode>('ALL');
     const [editingMethodAllowedUserIds, setEditingMethodAllowedUserIds] = useState<string[]>([]);
 
     const PRESET_COLORS = [
@@ -124,18 +120,17 @@ const LedgerSettings: React.FC = () => {
         setEditingCategoryName(cat.name);
         setEditingCategoryColor(cat.color || PRESET_COLORS[0]);
         setEditingCategoryIcon(cat.icon || PRESET_ICONS[0]);
-        setEditingCategoryAccessMode(hasLedgerOptionUserRestrictions(cat) ? 'SELECTED' : 'ALL');
-        setEditingCategoryAllowedUserIds(cat.allowedUserIds || []);
+        setEditingCategoryAllowedUserIds(
+            hasLedgerOptionUserRestrictions(cat) ? (cat.allowedUserIds || []) : users.map(user => user.id)
+        );
     };
 
     const saveEditingCategory = () => {
         if (!editingCategoryName.trim()) return;
-        const allowedUserIds = editingCategoryAccessMode === 'ALL'
-            ? null
-            : sanitizeLedgerAllowedUserIds(editingCategoryAllowedUserIds, users);
+        const allowedUserIds = sanitizeLedgerAllowedUserIds(editingCategoryAllowedUserIds, users);
 
-        if (editingCategoryAccessMode === 'SELECTED' && (!allowedUserIds || allowedUserIds.length === 0)) {
-            alert('Select at least one user, or switch access back to All users.');
+        if (!allowedUserIds || allowedUserIds.length === 0) {
+            alert('Select at least one user for this category.');
             return;
         }
 
@@ -194,18 +189,17 @@ const LedgerSettings: React.FC = () => {
         setEditingMethodName(method.name);
         setEditingMethodColor(method.color || PRESET_COLORS[1]);
         setEditingMethodIcon(method.icon || PRESET_ICONS[10]);
-        setEditingMethodAccessMode(hasLedgerOptionUserRestrictions(method) ? 'SELECTED' : 'ALL');
-        setEditingMethodAllowedUserIds(method.allowedUserIds || []);
+        setEditingMethodAllowedUserIds(
+            hasLedgerOptionUserRestrictions(method) ? (method.allowedUserIds || []) : users.map(user => user.id)
+        );
     };
 
     const saveEditingMethod = () => {
         if (!editingMethodName.trim()) return;
-        const allowedUserIds = editingMethodAccessMode === 'ALL'
-            ? null
-            : sanitizeLedgerAllowedUserIds(editingMethodAllowedUserIds, users);
+        const allowedUserIds = sanitizeLedgerAllowedUserIds(editingMethodAllowedUserIds, users);
 
-        if (editingMethodAccessMode === 'SELECTED' && (!allowedUserIds || allowedUserIds.length === 0)) {
-            alert('Select at least one user, or switch access back to All users.');
+        if (!allowedUserIds || allowedUserIds.length === 0) {
+            alert('Select at least one user for this payment method.');
             return;
         }
 
@@ -257,14 +251,10 @@ const LedgerSettings: React.FC = () => {
 
     const renderAccessEditor = ({
         accent,
-        mode,
-        setMode,
         selectedUserIds,
         onToggleUser
     }: {
         accent: 'indigo' | 'emerald';
-        mode: AccessMode;
-        setMode: (mode: AccessMode) => void;
         selectedUserIds: string[];
         onToggleUser: (userId: string) => void;
     }) => {
@@ -290,33 +280,12 @@ const LedgerSettings: React.FC = () => {
                     <Users size={12} /> Access
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setMode('ALL')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-all ${mode === 'ALL' ? accentClasses.active : accentClasses.inactive}`}
-                    >
-                        All users
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setMode('SELECTED')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-all ${mode === 'SELECTED' ? accentClasses.active : accentClasses.inactive}`}
-                    >
-                        Selected users
-                    </button>
-                </div>
-
-                {mode === 'ALL' ? (
-                    <p className="text-xs text-slate-500">
-                        Everyone can use this option, including users added later.
-                    </p>
-                ) : users.length === 0 ? (
+                {users.length === 0 ? (
                     <p className="text-xs text-slate-500">No users available yet.</p>
                 ) : (
                     <>
                         <p className="text-xs text-slate-500">
-                            Pick the teammates who should see this option while creating ledger entries.
+                            Everyone starts selected. Click any teammate to remove or restore access for this option.
                         </p>
                         <div className="flex flex-wrap gap-2">
                             {users.map(user => {
@@ -338,8 +307,8 @@ const LedgerSettings: React.FC = () => {
                         </div>
                         <p className={`text-xs font-medium ${selectedUserIds.length > 0 ? accentClasses.helper : 'text-amber-600'}`}>
                             {selectedUserIds.length > 0
-                                ? `${selectedUserIds.length} of ${users.length} users selected`
-                                : 'Choose at least one user or keep this option open to all users.'}
+                                ? `${selectedUserIds.length} of ${users.length} users currently have access`
+                                : 'Choose at least one user for this option.'}
                         </p>
                     </>
                 )}
@@ -514,8 +483,6 @@ const LedgerSettings: React.FC = () => {
 
                                             {renderAccessEditor({
                                                 accent: 'indigo',
-                                                mode: editingCategoryAccessMode,
-                                                setMode: setEditingCategoryAccessMode,
                                                 selectedUserIds: editingCategoryAllowedUserIds,
                                                 onToggleUser: toggleSelectedCategoryUser
                                             })}
@@ -663,8 +630,6 @@ const LedgerSettings: React.FC = () => {
 
                                             {renderAccessEditor({
                                                 accent: 'emerald',
-                                                mode: editingMethodAccessMode,
-                                                setMode: setEditingMethodAccessMode,
                                                 selectedUserIds: editingMethodAllowedUserIds,
                                                 onToggleUser: toggleSelectedMethodUser
                                             })}
