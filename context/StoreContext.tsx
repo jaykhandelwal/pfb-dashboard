@@ -298,6 +298,14 @@ const mapStorageUnitToDB = (u: StorageUnit) => ({
     type: u.type,
 });
 
+const parseDateStringToLocalTimestamp = (dateString: string): number => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (!year || !month || !day) {
+        return Date.now();
+    }
+    return new Date(year, month - 1, day).getTime();
+};
+
 const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     id: data.id,
     date: data.date,
@@ -306,7 +314,7 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     entryType: data.entry_type || data.entryType,
     category: data.category,
     categoryId: data.category_id || data.categoryId,
-    amount: data.amount,
+    amount: Number.isFinite(Number(data.amount)) ? Number(data.amount) : 0,
     description: data.description,
     paymentMethod: data.payment_method || data.paymentMethod,
     paymentMethodId: data.payment_method_id || data.paymentMethodId,
@@ -321,6 +329,9 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     destinationAccountId: data.destination_account_id || data.destinationAccountId,
     reimbursementStatus: data.reimbursement_status || data.reimbursementStatus || 'N/A',
     linkedExpenseIds: data.linked_expense_ids || data.linkedExpenseIds || [],
+    deletedAt: data.deleted_at || data.deletedAt,
+    deletedBy: data.deleted_by || data.deletedBy,
+    deletedByName: data.deleted_by_name || data.deletedByName,
     billUrls: (() => {
         // Handle backward compatibility: bill_url (string) -> billUrls (array)
         const urls = data.bill_urls || data.billUrls;
@@ -353,6 +364,9 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     destination_account_id: e.destinationAccountId,
     reimbursement_status: e.reimbursementStatus || 'N/A',
     linked_expense_ids: e.linkedExpenseIds || [],
+    deleted_at: e.deletedAt,
+    deleted_by: e.deletedBy,
+    deleted_by_name: e.deletedByName,
     bill_urls: e.billUrls || []
 });
 
@@ -1443,8 +1457,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
     const deleteLedgerEntry = async (id: string) => {
+        if (!currentUser) return;
         const entry = ledgerEntries.find(e => e.id === id);
-        if (entry) {
+        if (entry && !entry.deletedAt) {
             // Log it before deleting (snapshotting the last state)
             await addLedgerLog(entry, 'DELETE');
 
@@ -1452,11 +1467,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             fireLedgerWebhook(entry, 'DELETE');
         }
 
-        const updated = ledgerEntries.filter(e => e.id !== id);
+        const deletedAt = new Date().toISOString();
+        const updated = ledgerEntries.map(e => e.id === id ? {
+            ...e,
+            deletedAt,
+            deletedBy: currentUser.id,
+            deletedByName: currentUser.name,
+        } : e);
         setLedgerEntries(updated); save('ledgerEntries', updated);
         if (isSupabaseConfigured()) {
             try {
-                await supabase.from('ledger_entries').delete().eq('id', id);
+                await supabase
+                    .from('ledger_entries')
+                    .update({
+                        deleted_at: deletedAt,
+                        deleted_by: currentUser.id,
+                        deleted_by_name: currentUser.name,
+                    })
+                    .eq('id', id);
             } catch (e) { console.error('Ledger delete sync failed:', e); }
         }
     };
@@ -1527,6 +1555,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         entries.forEach((entry, index) => {
             const rowNum = index + 1;
             const errors: string[] = [];
+            const normalizedAmount = Number(entry.amount);
 
             // Validate required fields
             if (!entry.date) errors.push('Date is required');
@@ -1538,7 +1567,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
 
             if (!entry.category) errors.push('Category is required');
-            if (!entry.amount || isNaN(entry.amount) || entry.amount <= 0) errors.push('Amount must be a positive number');
+            if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) errors.push('Amount must be a positive number');
             if (!entry.description) errors.push('Description is required');
             if (!entry.paymentMethod) errors.push('Payment method is required');
 
@@ -1550,13 +1579,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 result.errors.push({ row: rowNum, message: errors.join('; ') });
                 result.failureCount++;
                 return;
-            }
-
-            // Resolve branch ID from name
-            let branchId: string | undefined;
-            if (entry.branchName) {
-                const branch = branches.find(b => b.name.toLowerCase() === entry.branchName!.toLowerCase());
-                if (branch) branchId = branch.id;
             }
 
             // Resolve category ID
@@ -1573,12 +1595,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const newEntry: LedgerEntry = {
                 id: crypto.randomUUID(),
                 date: entry.date,
-                timestamp: new Date(entry.date).getTime(),
-                branchId,
+                timestamp: parseDateStringToLocalTimestamp(entry.date),
                 entryType: entry.entryType,
                 category: category?.name || entry.category,
                 categoryId: category?.id,
-                amount: entry.amount,
+                amount: normalizedAmount,
                 description: entry.description.trim(),
                 paymentMethod: paymentMethod?.name || entry.paymentMethod,
                 paymentMethodId: paymentMethod?.id,

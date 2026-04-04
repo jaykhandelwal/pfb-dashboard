@@ -380,6 +380,9 @@ export interface LedgerEntry {
   reimbursementStatus?: 'PENDING' | 'REIMBURSED' | 'N/A';
   linkedExpenseIds?: string[];
   billUrls?: string[];
+  deletedAt?: string;
+  deletedBy?: string;
+  deletedByName?: string;
 }
 
 export interface LedgerLog {

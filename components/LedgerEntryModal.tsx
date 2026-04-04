@@ -22,13 +22,18 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     initialData,
     forcedType
 }) => {
-    const { addLedgerEntry, updateLedgerEntry, appSettings } = useStore();
+    const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
+
+    const getLocalDateInputValue = () => {
+        const now = new Date();
+        const offset = now.getTimezoneOffset() * 60000;
+        return new Date(now.getTime() - offset).toISOString().split('T')[0];
+    };
 
     // Form State
     const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
-        branchId: currentUser?.defaultBranchId || '',
+        date: getLocalDateInputValue(),
         entryType: 'EXPENSE' as LedgerEntryType,
         category: '',
         categoryId: '',
@@ -41,8 +46,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         destinationAccountId: '',
     });
 
-    const [billFiles, setBillFiles] = useState<File[]>([]);
-    const [tempBillPreviews, setTempBillPreviews] = useState<string[]>([]);
+    const [existingBillUrls, setExistingBillUrls] = useState<string[]>([]);
+    const [newBillFiles, setNewBillFiles] = useState<File[]>([]);
+    const [newBillPreviews, setNewBillPreviews] = useState<string[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
@@ -52,7 +58,6 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             if (initialData) {
                 setFormData({
                     date: initialData.date,
-                    branchId: initialData.branchId || '',
                     entryType: initialData.entryType,
                     category: initialData.category,
                     categoryId: initialData.categoryId || '',
@@ -64,8 +69,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     destinationAccount: initialData.destinationAccount || '',
                     destinationAccountId: initialData.destinationAccountId || '',
                 });
-                setTempBillPreviews(initialData.billUrls || []);
-                setBillFiles([]);
+                setExistingBillUrls(initialData.billUrls || []);
+                setNewBillFiles([]);
+                setNewBillPreviews([]);
             } else {
                 // Set defaults
                 const defaultCategory = appSettings.ledger_categories?.find(c => c.isActive);
@@ -73,8 +79,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
 
                 setFormData({
-                    date: new Date().toISOString().split('T')[0],
-                    branchId: currentUser?.defaultBranchId || '',
+                    date: getLocalDateInputValue(),
                     entryType: forcedType || 'EXPENSE',
                     category: defaultCategory?.name || '',
                     categoryId: defaultCategory?.id || '',
@@ -86,11 +91,20 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     destinationAccount: '',
                     destinationAccountId: '',
                 });
-                setTempBillPreviews([]);
-                setBillFiles([]);
+                setExistingBillUrls([]);
+                setNewBillFiles([]);
+                setNewBillPreviews([]);
             }
         }
     }, [isOpen, initialData, forcedType, appSettings, currentUser]);
+
+    useEffect(() => {
+        if (!isOpen && newBillPreviews.length > 0) {
+            newBillPreviews.forEach(url => URL.revokeObjectURL(url));
+            setNewBillFiles([]);
+            setNewBillPreviews([]);
+        }
+    }, [isOpen, newBillPreviews]);
 
     // Available Accounts Logic
     const availableAccounts = useMemo(() => {
@@ -113,18 +127,51 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            const newFiles = Array.from(e.target.files);
-            setBillFiles(prev => [...prev, ...newFiles]);
+            const newFiles = Array.from(e.target.files) as File[];
+            setNewBillFiles(prev => [...prev, ...newFiles]);
 
             // Create previews
             const newPreviews = newFiles.map(file => URL.createObjectURL(file));
-            setTempBillPreviews(prev => [...prev, ...newPreviews]);
+            setNewBillPreviews(prev => [...prev, ...newPreviews]);
         }
     };
 
-    const removeFile = (index: number) => {
-        setBillFiles(prev => prev.filter((_, i) => i !== index));
-        setTempBillPreviews(prev => prev.filter((_, i) => i !== index));
+    const removeExistingBill = (index: number) => {
+        setExistingBillUrls(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const removeNewBill = (index: number) => {
+        setNewBillFiles(prev => prev.filter((_, i) => i !== index));
+        setNewBillPreviews(prev => {
+            const previewToRemove = prev[index];
+            if (previewToRemove) {
+                URL.revokeObjectURL(previewToRemove);
+            }
+            return prev.filter((_, i) => i !== index);
+        });
+    };
+
+    const areArraysEqual = (left: string[] = [], right: string[] = []) => (
+        left.length === right.length && left.every((value, index) => value === right[index])
+    );
+
+    const hasEntryChanged = (original: LedgerEntry, next: LedgerEntry) => {
+        return (
+            original.date !== next.date ||
+            (original.branchId || '') !== (next.branchId || '') ||
+            original.entryType !== next.entryType ||
+            original.category !== next.category ||
+            (original.categoryId || '') !== (next.categoryId || '') ||
+            original.amount !== next.amount ||
+            original.description !== next.description ||
+            original.paymentMethod !== next.paymentMethod ||
+            (original.paymentMethodId || '') !== (next.paymentMethodId || '') ||
+            (original.sourceAccount || '') !== (next.sourceAccount || '') ||
+            (original.sourceAccountId || '') !== (next.sourceAccountId || '') ||
+            (original.destinationAccount || '') !== (next.destinationAccount || '') ||
+            (original.destinationAccountId || '') !== (next.destinationAccountId || '') ||
+            !areArraysEqual(original.billUrls || [], next.billUrls || [])
+        );
     };
 
     const handleSubmit = async (e?: React.FormEvent, statusOverride?: 'APPROVED' | 'REJECTED', rejectionReason?: string) => {
@@ -134,20 +181,10 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         setIsUploading(true);
 
         // Upload new files
-        let billUrls: string[] = initialData?.billUrls || [];
-        // If we are editing, we keep existing URLs unless explicitly removed (but we don't have remove logic for existing URLs in the UI presented in the original file, assuming standard append behavior or full replace if simplistic. 
-        // Logic from Ledger.tsx:
-        // let billUrls: string[] = editingEntry?.billUrls || [];
-        // So we just append new ones. Wait, if I remove a preview associated with a file, I removed the file.
-        // But what about existing URLs? The UI in Ledger.tsx didn't seem to show a way to remove existing URLs easily in the preview section?
-        // Actually, looking at Ledger.tsx code:
-        // NO, the original code didn't explicitly show removal of existing items in the snippet I saw.
-        // "Bill Upload State - now supports multiple images"
-        // I will assume for now we just append. I won't implement complex deletion of existing images to keep it safe, unless I see that logic.
-        // Actually, let's just stick to the snippet logic:
+        let billUrls: string[] = [...existingBillUrls];
 
-        if (billFiles.length > 0) {
-            const uploadPromises = billFiles.map(file => new Promise<string | null>((resolve) => {
+        if (newBillFiles.length > 0) {
+            const uploadPromises = newBillFiles.map(file => new Promise<string | null>((resolve) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onloadend = async () => {
@@ -166,39 +203,52 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             billUrls = [...billUrls, ...uploadedUrls.filter((u): u is string => u !== null)];
         }
 
-        const selectedAccount = appSettings.ledger_accounts?.find(a => a.name === formData.sourceAccount);
+        const selectedSourceAccount = availableAccounts.find(a => a.name === formData.sourceAccount);
+        const selectedDestinationAccount = availableAccounts.find(a => a.name === formData.destinationAccount);
+        const parsedAmount = parseFloat(formData.amount);
         const entryData = {
             date: formData.date,
             timestamp: Date.now(),
-            branchId: formData.branchId || undefined,
+            branchId: undefined,
             entryType: formData.entryType,
             category: formData.category,
             categoryId: formData.categoryId,
-            amount: parseFloat(formData.amount),
+            amount: parsedAmount,
             description: formData.description.trim(),
             paymentMethod: formData.paymentMethod,
             paymentMethodId: formData.paymentMethodId,
             sourceAccount: formData.sourceAccount || 'Company Account',
-            sourceAccountId: selectedAccount?.id,
+            sourceAccountId: selectedSourceAccount?.id,
             destinationAccount: formData.entryType === 'REIMBURSEMENT' ? formData.destinationAccount : undefined,
-            destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? (appSettings.ledger_accounts?.find(a => a.name === formData.destinationAccount)?.id || availableAccounts.find(a => a.name === formData.destinationAccount)?.id) : undefined,
-            createdBy: currentUser?.id || '',
-            createdByName: currentUser?.name || 'Unknown',
-            billUrls: billUrls,
-            // Apply status override if present
-            status: statusOverride || (initialData?.status || 'PENDING'),
-            approvedBy: statusOverride === 'APPROVED' ? (currentUser?.name || 'Unknown') : (initialData?.approvedBy),
-            rejectedReason: statusOverride === 'REJECTED' ? rejectionReason : (initialData?.rejectedReason)
+            destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? selectedDestinationAccount?.id : undefined,
+            createdBy: initialData?.createdBy || currentUser?.id || '',
+            createdByName: initialData?.createdByName || currentUser?.name || 'Unknown',
+            billUrls,
         };
 
-        if (initialData) {
-            await updateLedgerEntry({ ...entryData, id: initialData.id });
-        } else {
-            await addLedgerEntry(entryData);
-        }
+        try {
+            if (initialData) {
+                const updatedEntry: LedgerEntry = {
+                    ...initialData,
+                    ...entryData,
+                    id: initialData.id,
+                };
 
-        setIsUploading(false);
-        onClose();
+                if (hasEntryChanged(initialData, updatedEntry)) {
+                    await updateLedgerEntry(updatedEntry);
+                }
+
+                if (statusOverride) {
+                    await updateLedgerEntryStatus(initialData.id, statusOverride, rejectionReason);
+                }
+            } else {
+                await addLedgerEntry(entryData);
+            }
+
+            onClose();
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const getTypeColor = (type: LedgerEntryType) => {
@@ -423,12 +473,25 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                 <UploadCloud size={20} className="text-[#403424]/40" />
                             </label>
 
-                            {tempBillPreviews.map((url, index) => (
+                            {existingBillUrls.map((url, index) => (
                                 <div key={index} className="relative w-16 h-16 rounded-lg border border-[#403424]/10 group flex-shrink-0">
                                     <img src={url} alt="Preview" className="w-full h-full object-cover rounded-lg" />
                                     <button
                                         type="button"
-                                        onClick={() => removeFile(index)}
+                                        onClick={() => removeExistingBill(index)}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+
+                            {newBillPreviews.map((url, index) => (
+                                <div key={`${url}-${index}`} className="relative w-16 h-16 rounded-lg border border-[#403424]/10 group flex-shrink-0">
+                                    <img src={url} alt="Preview" className="w-full h-full object-cover rounded-lg" />
+                                    <button
+                                        type="button"
+                                        onClick={() => removeNewBill(index)}
                                         className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
                                         <X size={12} />

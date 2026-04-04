@@ -41,8 +41,13 @@ const formatLedgerDateTime = (timestamp: number) => {
     return { date: dateStr, time: timeStr };
 };
 
+const normalizeLedgerAmount = (amount: unknown): number => {
+    const numericAmount = Number(amount);
+    return Number.isFinite(numericAmount) ? numericAmount : 0;
+};
+
 const Ledger: React.FC = () => {
-    const { branches, ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
+    const { ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
     const { currentUser, users } = useAuth();
 
     const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
@@ -70,6 +75,18 @@ const Ledger: React.FC = () => {
 
         return merged;
     }, [appSettings.ledger_accounts, users]);
+
+    const accountLookup = useMemo(() => {
+        const byId = new Map<string, typeof availableAccounts[number]>();
+        const byName = new Map<string, typeof availableAccounts[number]>();
+
+        availableAccounts.forEach(account => {
+            byId.set(account.id, account);
+            byName.set(account.name, account);
+        });
+
+        return { byId, byName };
+    }, [availableAccounts]);
 
     // Form state
     const [showForm, setShowForm] = useState(false);
@@ -118,9 +135,14 @@ const Ledger: React.FC = () => {
         }
     }, [viewingLogsFor]);
 
+    const activeLedgerEntries = useMemo(
+        () => ledgerEntries.filter(entry => !entry.deletedAt),
+        [ledgerEntries]
+    );
+
     // Derived stats for the TABLE LIST (respects all visual filters including Pending/Rejected)
     const tableEntries = useMemo(() => {
-        return ledgerEntries.filter(e => {
+        return activeLedgerEntries.filter(e => {
             if (filterType !== 'ALL' && e.entryType !== filterType) return false;
 
             // Filter by status: 
@@ -138,59 +160,72 @@ const Ledger: React.FC = () => {
             if (filterDateTo && e.date > filterDateTo) return false;
             return true;
         });
-    }, [ledgerEntries, filterType, filterStatus, filterCategory, filterDateFrom, filterDateTo]);
+    }, [activeLedgerEntries, filterType, filterStatus, filterCategory, filterDateFrom, filterDateTo]);
+
+    const approvedEntriesForTotals = useMemo(() => {
+        return activeLedgerEntries.filter(entry => {
+            if (entry.status !== 'APPROVED') return false;
+            if (filterType !== 'ALL' && entry.entryType !== filterType) return false;
+            if (filterCategory !== 'ALL' && (entry.category !== filterCategory && entry.categoryId !== filterCategory)) return false;
+            if (filterDateFrom && entry.date < filterDateFrom) return false;
+            if (filterDateTo && entry.date > filterDateTo) return false;
+            return true;
+        });
+    }, [activeLedgerEntries, filterType, filterCategory, filterDateFrom, filterDateTo]);
 
     // Derived stats for the TOP CARDS (ALWAYS uses APPROVED only, ignores status filter)
     const cardStats = useMemo(() => {
-        const approvedEntries = ledgerEntries.filter(e => {
-            // MUST be approved to count towards totals
-            if (e.status !== 'APPROVED') return false;
-
-            // Apply other filters (Type, Category, Date) so totals match the context of what user is looking for
-            // (e.g. "Show me approved Expenses from Jan 1 to Jan 31")
-            if (filterType !== 'ALL' && e.entryType !== filterType) return false;
-            if (filterCategory !== 'ALL' && (e.category !== filterCategory && e.categoryId !== filterCategory)) return false;
-            if (filterDateFrom && e.date < filterDateFrom) return false;
-            if (filterDateTo && e.date > filterDateTo) return false;
-            return true;
-        });
-
-        const income = approvedEntries.filter(e => e.entryType === 'INCOME').reduce((s, e) => s + e.amount, 0);
-        const expenses = approvedEntries.filter(e => e.entryType === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-        const reimbursements = approvedEntries.filter(e => e.entryType === 'REIMBURSEMENT').reduce((s, e) => s + e.amount, 0);
+        const income = approvedEntriesForTotals
+            .filter(entry => entry.entryType === 'INCOME')
+            .reduce((sum, entry) => sum + normalizeLedgerAmount(entry.amount), 0);
+        const expenses = approvedEntriesForTotals
+            .filter(entry => entry.entryType === 'EXPENSE')
+            .reduce((sum, entry) => sum + normalizeLedgerAmount(entry.amount), 0);
+        const reimbursements = approvedEntriesForTotals
+            .filter(entry => entry.entryType === 'REIMBURSEMENT')
+            .reduce((sum, entry) => sum + normalizeLedgerAmount(entry.amount), 0);
 
         return { income, expenses, reimbursements, net: income + reimbursements - expenses };
-    }, [ledgerEntries, filterType, filterCategory, filterDateFrom, filterDateTo]); // Note: filterStatus dependency removed intentionally
+    }, [approvedEntriesForTotals]);
 
     // Calculate user balances: (Expenses paid by user) - (Reimbursements received by user)
     // Only count APPROVED entries to ensure accurate tracking
     const userBalances = useMemo(() => {
         const balances: Record<string, { name: string, expensesPaid: number, reimbursementsReceived: number }> = {};
+        const resolveAccount = (accountId?: string, accountName?: string) => {
+            if (accountId && accountLookup.byId.has(accountId)) {
+                return accountLookup.byId.get(accountId);
+            }
+            if (accountName && accountLookup.byName.has(accountName)) {
+                return accountLookup.byName.get(accountName);
+            }
+            return undefined;
+        };
 
-        ledgerEntries.forEach(entry => {
+        activeLedgerEntries.forEach(entry => {
             // Only count APPROVED entries for accurate balance tracking
             if (entry.status !== 'APPROVED') return;
+            const amount = normalizeLedgerAmount(entry.amount);
+            if (amount <= 0) return;
 
-            // Count EXPENSES where a user paid (sourceAccount is a user, not Company Account)
-            if (entry.entryType === 'EXPENSE' &&
-                entry.sourceAccount &&
-                entry.sourceAccount !== 'Company Account') {
-                const userName = entry.sourceAccount;
+            // Count EXPENSES where an actual user paid out of pocket.
+            const sourceAccount = resolveAccount(entry.sourceAccountId, entry.sourceAccount);
+            if (entry.entryType === 'EXPENSE' && sourceAccount?.type === 'USER') {
+                const userName = sourceAccount.name;
                 if (!balances[userName]) {
                     balances[userName] = { name: userName, expensesPaid: 0, reimbursementsReceived: 0 };
                 }
-                balances[userName].expensesPaid += entry.amount;
+                balances[userName].expensesPaid += amount;
             }
 
-            // Count REIMBURSEMENTS where user is the destination (received money back)
-            if (entry.entryType === 'REIMBURSEMENT' &&
-                entry.destinationAccount &&
-                entry.destinationAccount !== 'Company Account') {
-                const userName = entry.destinationAccount;
+            // Count REIMBURSEMENTS where an actual user received the money back.
+            const destinationAccount = resolveAccount(entry.destinationAccountId, entry.destinationAccount);
+            if (entry.entryType === 'REIMBURSEMENT' && destinationAccount?.type === 'USER') {
+                const userName = destinationAccount.name;
                 if (!balances[userName]) {
                     balances[userName] = { name: userName, expensesPaid: 0, reimbursementsReceived: 0 };
                 }
-                balances[userName].reimbursementsReceived += entry.amount;
+                balances[userName].reimbursementsReceived += amount;
             }
         });
 
@@ -198,7 +233,7 @@ const Ledger: React.FC = () => {
         return Object.values(balances)
             .map(b => ({ ...b, remaining: b.expensesPaid - b.reimbursementsReceived }))
             .filter(b => b.remaining > 0);
-    }, [ledgerEntries]);
+    }, [activeLedgerEntries, accountLookup]);
 
     // Total pending amount owed to all users
     const totalPendingOwed = useMemo(() => {
@@ -372,10 +407,10 @@ const Ledger: React.FC = () => {
                 >
                     <Clock size={14} />
                     Pending
-                    {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length > 0 && (
+                    {activeLedgerEntries.filter(e => !e.status || e.status === 'PENDING').length > 0 && (
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${filterStatus === 'PENDING' ? 'bg-white/20' : 'bg-amber-100'
                             }`}>
-                            {ledgerEntries.filter(e => !e.status || e.status === 'PENDING').length}
+                            {activeLedgerEntries.filter(e => !e.status || e.status === 'PENDING').length}
                         </span>
                     )}
                 </button>
@@ -388,10 +423,10 @@ const Ledger: React.FC = () => {
                 >
                     <XCircle size={14} />
                     Rejected
-                    {ledgerEntries.filter(e => e.status === 'REJECTED').length > 0 && (
+                    {activeLedgerEntries.filter(e => e.status === 'REJECTED').length > 0 && (
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${filterStatus === 'REJECTED' ? 'bg-white/20' : 'bg-red-100'
                             }`}>
-                            {ledgerEntries.filter(e => e.status === 'REJECTED').length}
+                            {activeLedgerEntries.filter(e => e.status === 'REJECTED').length}
                         </span>
                     )}
                 </button>
@@ -540,15 +575,6 @@ const Ledger: React.FC = () => {
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-bold text-[#403424] text-base">{entry.description}</span>
-                                                        {(() => {
-                                                            const branch = branches.find(b => b.id === entry.branchId);
-                                                            if (!branch) return null;
-                                                            return (
-                                                                <span className="text-[10px] bg-slate-50 text-slate-400 px-2 py-0.5 rounded-full border border-slate-100 font-bold" title={`Branch: ${branch.name}`}>
-                                                                    {branch.name}
-                                                                </span>
-                                                            );
-                                                        })()}
                                                     </div>
 
                                                     <div className="flex items-center gap-2 mt-0.5">
@@ -663,7 +689,7 @@ const Ledger: React.FC = () => {
                             <div className="bg-slate-50 border-b border-slate-200 p-4">
                                 {(() => {
                                     const entry = ledgerEntries.find(e => e.id === viewingLogsFor);
-                                    if (!entry) {
+                                    if (!entry || entry.deletedAt) {
                                         const logsForId = ledgerLogs.filter(l => l.ledgerEntryId === viewingLogsFor).sort((a, b) => b.timestamp - a.timestamp);
                                         const latestSnapshot = logsForId[0]?.snapshot;
 
@@ -894,8 +920,7 @@ const Ledger: React.FC = () => {
                                         <h4 className="text-xs font-bold text-slate-500 uppercase mb-1">Optional Fields</h4>
                                         <p className="text-xs text-slate-600">
                                             <code className="bg-slate-200 px-1 rounded">sourceAccount</code> (defaults to "Company Account"),
-                                            <code className="bg-slate-200 px-1 rounded ml-1">destinationAccount</code> (required for REIMBURSEMENT),
-                                            <code className="bg-slate-200 px-1 rounded ml-1">branchName</code>
+                                            <code className="bg-slate-200 px-1 rounded ml-1">destinationAccount</code> (required for REIMBURSEMENT)
                                         </p>
                                     </div>
                                     <div>
@@ -904,9 +929,9 @@ const Ledger: React.FC = () => {
                                             <button
                                                 onClick={() => {
                                                     const sample = importMode === 'CSV'
-                                                        ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount,branchName\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,,Main Branch\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,,\n2025-01-17,REIMBURSEMENT,Transport,500,Travel expense reimbursement,BANK_TRANSFER,Company Account,John,`
+                                                        ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,\n2025-01-17,REIMBURSEMENT,Transport,500,Travel expense reimbursement,BANK_TRANSFER,Company Account,John`
                                                         : JSON.stringify([
-                                                            { date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH", branchName: "Main Branch" },
+                                                            { date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH" },
                                                             { date: "2025-01-16", entryType: "INCOME", category: "Other", amount: 5000, description: "Client payment received", paymentMethod: "UPI" }
                                                         ], null, 2);
                                                     navigator.clipboard.writeText(sample);
@@ -921,7 +946,7 @@ const Ledger: React.FC = () => {
                                         </div>
                                         <pre className="bg-slate-800 text-slate-100 p-3 rounded text-xs overflow-x-auto max-h-32">
                                             {importMode === 'CSV'
-                                                ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount,branchName\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,,Main Branch\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,,`
+                                                ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,`
                                                 : JSON.stringify([{ date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH" }], null, 2)
                                             }
                                         </pre>
