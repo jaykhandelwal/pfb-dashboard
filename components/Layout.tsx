@@ -79,8 +79,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }
 
   const navStructure: NavItem[] = [
-    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
     { id: 'add-expense', label: 'Add Expense', icon: <TrendingDown size={20} />, onClick: () => setLedgerModal({ isOpen: true, type: 'EXPENSE' }) },
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
     { path: '/attendance', label: 'Attendance', icon: <UserCheck size={20} />, permission: 'MANAGE_ATTENDANCE' },
   ];
@@ -220,7 +220,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             item.onClick?.();
             handleMobileNavClick();
           }}
-          className="flex items-center space-x-3 px-4 h-12 w-full rounded-lg transition-colors font-medium text-base text-[#403424] bg-white/70 border border-[#403424]/10 shadow-sm hover:bg-[#95a77c]/10"
+          className="flex items-center space-x-3 px-4 h-12 w-full rounded-lg transition-colors font-medium text-base text-[#eef1e6] bg-[#403424] border border-[#403424] shadow-sm hover:bg-[#4b3d2c]"
         >
           {item.icon}
           <span>{item.label}</span>
