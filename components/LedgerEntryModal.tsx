@@ -9,6 +9,7 @@ import { uploadImageToBunny } from '../services/bunnyStorage';
 import { IconRenderer } from '../services/iconLibrary';
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 import { LEDGER_COMPANY_ACCOUNT_NAME, getLedgerAccounts } from '../utils/ledgerAccounts';
+import { findLedgerPaymentMethod, getLedgerPaymentMethods, normalizeLedgerPaymentMethod } from '../utils/ledgerPaymentMethods';
 
 interface LedgerEntryModalProps {
     isOpen: boolean;
@@ -60,6 +61,11 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     const activeAccounts = useMemo(
         () => getLedgerAccounts(appSettings, users).filter(account => account.isActive),
         [appSettings, users]
+    );
+
+    const paymentMethods = useMemo(
+        () => getLedgerPaymentMethods(appSettings),
+        [appSettings]
     );
 
     const accessibleCategories = useMemo(
@@ -355,7 +361,11 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         const defaultIcon = label === 'Category' ? 'Package' : 'Wallet';
         const getSubtitle = (option?: T) => {
             if (!option) return '';
-            if (option.paymentMethod) return `Method: ${option.paymentMethod}`;
+            if (option.paymentMethod) {
+                return findLedgerPaymentMethod(paymentMethods, option.paymentMethod)
+                    ? `Method: ${option.paymentMethod}`
+                    : `Update deleted method: ${option.paymentMethod}`;
+            }
             if (option.type === 'USER') return 'User account';
             return label;
         };
@@ -532,14 +542,25 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         const selectedAccount = availableAccounts.find(account =>
                             account.id === formData.sourceAccountId || account.name === formData.sourceAccount
                         );
+                        const paymentMethod = normalizeLedgerPaymentMethod(selectedAccount?.paymentMethod);
 
-                        if (!selectedAccount?.paymentMethod) {
+                        if (!paymentMethod) {
                             return null;
                         }
 
+                        const isDeletedPaymentMethod = !findLedgerPaymentMethod(paymentMethods, paymentMethod);
+
                         return (
-                            <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-teal-800">
-                                This account is tagged with the <span className="font-bold">{selectedAccount.paymentMethod}</span> payment method.
+                            <div className={`rounded-xl px-3 py-2 text-xs ${isDeletedPaymentMethod ? 'border border-amber-200 bg-amber-50 text-amber-900' : 'border border-teal-100 bg-teal-50 text-teal-800'}`}>
+                                {isDeletedPaymentMethod ? (
+                                    <>
+                                        This account still references deleted payment method <span className="font-bold">{paymentMethod}</span>. Update the account in Ledger Settings.
+                                    </>
+                                ) : (
+                                    <>
+                                        This account is tagged with the <span className="font-bold">{paymentMethod}</span> payment method.
+                                    </>
+                                )}
                             </div>
                         );
                     })()}

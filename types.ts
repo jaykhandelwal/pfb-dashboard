@@ -322,6 +322,7 @@ export interface AppSettings {
   deep_freezer_categories: string[];
   ledger_categories?: LedgerCategoryDefinition[];
   ledger_accounts?: LedgerAccount[];
+  ledger_payment_methods?: string[];
   coolify_api_token?: string;
   coolify_instance_url?: string;
   coolify_deployment_tag_or_uuid?: string;

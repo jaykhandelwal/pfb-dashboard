@@ -527,6 +527,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
         ledger_categories: Object.values(LedgerCategory).map(cat => ({ id: cat.toLowerCase().replace(/\s+/g, '_'), name: cat, isActive: true })),
         ledger_accounts: buildDefaultLedgerAccounts(),
+        ledger_payment_methods: [],
         coolify_api_token: '',
         coolify_instance_url: '',
         coolify_deployment_tag_or_uuid: '',

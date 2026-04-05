@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import {
     Settings, Plus, Trash2, X, Users, User, CreditCard, ToggleLeft, ToggleRight,
-    Edit2, Check, ShoppingCart, Home, Truck, Zap, Coffee, Tag, Package, Wallet, Banknote,
+    Edit2, Check, ShoppingCart, Home, Truck, Zap, Coffee, Tag, Package, Wallet, Banknote, AlertTriangle,
     Briefcase, Gift, Heart, Star, Wrench, Info, HelpCircle, Palette, Sticker, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { LedgerAccount, LedgerCategoryDefinition } from '../types';
@@ -14,6 +14,13 @@ import {
     sanitizeLedgerAllowedUserIds
 } from '../utils/ledgerAccess';
 import { LEDGER_COMPANY_ACCOUNT_ID, getLedgerAccounts } from '../utils/ledgerAccounts';
+import {
+    accountHasDeletedPaymentMethod,
+    findLedgerPaymentMethod,
+    getLedgerPaymentMethodKey,
+    getLedgerPaymentMethods,
+    normalizeLedgerPaymentMethod
+} from '../utils/ledgerPaymentMethods';
 
 const LedgerSettings: React.FC = () => {
     const { appSettings, updateAppSetting } = useStore();
@@ -22,6 +29,7 @@ const LedgerSettings: React.FC = () => {
     // Local state for edits
     const [categories, setCategories] = useState<LedgerCategoryDefinition[]>([]);
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
+    const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
 
     const [newCategory, setNewCategory] = useState('');
     const [newAccountName, setNewAccountName] = useState('');
@@ -54,6 +62,7 @@ const LedgerSettings: React.FC = () => {
     useEffect(() => {
         if (appSettings.ledger_categories) setCategories(appSettings.ledger_categories);
         setAccounts(getLedgerAccounts(appSettings, users));
+        setPaymentMethods(getLedgerPaymentMethods(appSettings));
     }, [appSettings, users]);
 
     // CATEGORIES
@@ -131,6 +140,76 @@ const LedgerSettings: React.FC = () => {
         await updateAppSetting('ledger_accounts', updatedAccounts);
     };
 
+    const persistPaymentMethods = async (updatedPaymentMethods: string[]) => {
+        setPaymentMethods(updatedPaymentMethods);
+        await updateAppSetting('ledger_payment_methods', updatedPaymentMethods);
+    };
+
+    const ensurePaymentMethodOption = async (candidate: string) => {
+        const normalized = normalizeLedgerPaymentMethod(candidate);
+
+        if (!normalized) {
+            return undefined;
+        }
+
+        const existing = findLedgerPaymentMethod(paymentMethods, normalized);
+        if (existing) {
+            return existing;
+        }
+
+        const updatedPaymentMethods = [...paymentMethods, normalized];
+        await persistPaymentMethods(updatedPaymentMethods);
+        return normalized;
+    };
+
+    const resolveAccountPaymentMethod = async (nextValue: string, previousValue?: string) => {
+        const normalizedNext = normalizeLedgerPaymentMethod(nextValue);
+
+        if (!normalizedNext) {
+            return undefined;
+        }
+
+        const existing = findLedgerPaymentMethod(paymentMethods, normalizedNext);
+        if (existing) {
+            return existing;
+        }
+
+        if (getLedgerPaymentMethodKey(previousValue) === getLedgerPaymentMethodKey(normalizedNext)) {
+            return normalizedNext;
+        }
+
+        return ensurePaymentMethodOption(normalizedNext);
+    };
+
+    const getDeletedPaymentMethodLabel = (account: Pick<LedgerAccount, 'paymentMethod'>) => {
+        const paymentMethod = normalizeLedgerPaymentMethod(account.paymentMethod);
+
+        if (!paymentMethod) {
+            return null;
+        }
+
+        return findLedgerPaymentMethod(paymentMethods, paymentMethod) ? null : paymentMethod;
+    };
+
+    const getPaymentMethodUsageCount = (paymentMethod: string) =>
+        accounts.filter(account => getLedgerPaymentMethodKey(account.paymentMethod) === getLedgerPaymentMethodKey(paymentMethod)).length;
+
+    const deletePaymentMethod = async (paymentMethod: string) => {
+        const usageCount = getPaymentMethodUsageCount(paymentMethod);
+        const usageMessage = usageCount > 0
+            ? ` ${usageCount} account${usageCount === 1 ? '' : 's'} still use it and will show an error until updated.`
+            : '';
+
+        if (!confirm(`Delete payment method "${paymentMethod}" from the selector?${usageMessage}`)) {
+            return;
+        }
+
+        const updatedPaymentMethods = paymentMethods.filter(
+            method => getLedgerPaymentMethodKey(method) !== getLedgerPaymentMethodKey(paymentMethod)
+        );
+        await persistPaymentMethods(updatedPaymentMethods);
+    };
+
     const toggleSelectedCategoryUser = (userId: string) => {
         setEditingCategoryAllowedUserIds(prev =>
             prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
@@ -180,12 +259,17 @@ const LedgerSettings: React.FC = () => {
             return;
         }
 
+        const paymentMethod = await resolveAccountPaymentMethod(
+            editingAccountPaymentMethod,
+            accountBeingEdited.paymentMethod
+        );
+
         const updatedAccounts = accounts.map(account => account.id === editingAccountId ? {
             ...account,
             name: editingAccountName.trim(),
             color: editingAccountColor,
             icon: editingAccountIcon,
-            paymentMethod: editingAccountPaymentMethod.trim() || undefined,
+            paymentMethod,
             allowedUserIds,
         } : account);
 
@@ -424,6 +508,66 @@ const LedgerSettings: React.FC = () => {
         );
     };
 
+    const renderPaymentMethodInput = ({
+        accent,
+        value,
+        previousValue,
+        onChange,
+        placeholder,
+        label,
+        compact = false,
+        className = '',
+        onKeyDown
+    }: {
+        accent: 'slate' | 'emerald';
+        value: string;
+        previousValue?: string;
+        onChange: (value: string) => void;
+        placeholder: string;
+        label?: string;
+        compact?: boolean;
+        className?: string;
+        onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+    }) => {
+        const normalizedValue = normalizeLedgerPaymentMethod(value);
+        const existingMethod = findLedgerPaymentMethod(paymentMethods, normalizedValue);
+        const matchesDeletedPreviousMethod = Boolean(normalizedValue)
+            && !existingMethod
+            && getLedgerPaymentMethodKey(previousValue) === getLedgerPaymentMethodKey(normalizedValue);
+
+        return (
+            <label className={`flex flex-col gap-1 ${className}`}>
+                {label && <span className="text-xs font-semibold text-slate-500">{label}</span>}
+                <input
+                    type="text"
+                    list="ledger-payment-method-options"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder={placeholder}
+                    className={`w-full rounded-xl border bg-white focus:outline-none focus:ring-2 ${compact ? 'px-3 py-2' : 'px-4 py-3'} ${accent === 'emerald' ? 'border-slate-200 focus:ring-emerald-500' : 'border-slate-200 focus:ring-slate-800'}`}
+                />
+                {matchesDeletedPreviousMethod ? (
+                    <span className="text-xs font-medium text-amber-700">
+                        This deleted payment method will stay invalid until you replace it.
+                    </span>
+                ) : normalizedValue && !existingMethod ? (
+                    <span className="text-xs font-medium text-emerald-600">
+                        This new payment method will be added to the selector when you save the account.
+                    </span>
+                ) : paymentMethods.length > 0 ? (
+                    <span className="text-xs text-slate-400">
+                        Select from saved payment methods or type a new one.
+                    </span>
+                ) : (
+                    <span className="text-xs text-slate-400">
+                        No payment methods saved yet. Type one here to create the first option.
+                    </span>
+                )}
+            </label>
+        );
+    };
+
     const getAccessSummary = (option: LedgerCategoryDefinition | LedgerAccount) => {
         if ('type' in option && option.type === 'USER') {
             const linkedUser = users.find(user => user.id === option.linkedUserId);
@@ -467,6 +611,8 @@ const LedgerSettings: React.FC = () => {
             return;
         }
 
+        const paymentMethod = await resolveAccountPaymentMethod(newAccountPaymentMethod);
+
         const newAcc: LedgerAccount = {
             id,
             name,
@@ -475,7 +621,7 @@ const LedgerSettings: React.FC = () => {
             color: PRESET_COLORS[1],
             icon: 'CreditCard',
             allowedUserIds: null,
-            paymentMethod: newAccountPaymentMethod.trim() || undefined,
+            paymentMethod,
         };
         const updatedAccounts = [...accounts, newAcc];
         await persistAccounts(updatedAccounts);
@@ -500,8 +646,17 @@ const LedgerSettings: React.FC = () => {
         }
     };
 
+    const accountsWithDeletedPaymentMethods = accounts.filter(account =>
+        accountHasDeletedPaymentMethod(account, paymentMethods)
+    );
+
     return (
         <div className="pb-16 max-w-6xl mx-auto">
+            <datalist id="ledger-payment-method-options">
+                {paymentMethods.map(method => (
+                    <option key={method} value={method} />
+                ))}
+            </datalist>
             <div className="mb-6 flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -511,136 +666,117 @@ const LedgerSettings: React.FC = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Categories */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            Expense Categories
-                            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{categories.length}</span>
-                        </h3>
-                    </div>
-                    <div className="flex gap-2 mb-6">
-                        <input
-                            type="text"
-                            value={newCategory}
-                            onChange={(e) => setNewCategory(e.target.value)}
-                            placeholder="Add New Category (e.g. Rent)"
-                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                        />
-                        <button
-                            onClick={handleAddCategory}
-                            className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
-                        >
-                            <Plus size={24} />
-                        </button>
-                    </div>
-                    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                        {categories.map((cat) => (
-                            <div key={cat.id} className={`group flex flex-col p-3 rounded-xl border transition-all ${cat.isActive ? 'bg-white border-slate-200 hover:border-indigo-300' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                                <div className="flex items-center justify-between w-full">
-                                    {editingCategoryId === cat.id ? (
-                                        <div className="flex-1 flex flex-col gap-4 mr-4">
-                                            <div className="flex gap-2">
-                                                <input
-                                                    value={editingCategoryName}
-                                                    onChange={(e) => setEditingCategoryName(e.target.value)}
-                                                    className="flex-1 px-2 py-1 border-b-2 border-indigo-500 focus:outline-none bg-transparent font-bold capitalize"
-                                                    autoFocus
-                                                />
-                                                <button onClick={saveEditingCategory} className="text-emerald-500 hover:bg-emerald-50 p-1 rounded-lg">
-                                                    <Check size={18} />
-                                                </button>
-                                                <button onClick={() => setEditingCategoryId(null)} className="text-slate-400 hover:bg-slate-50 p-1 rounded-lg">
-                                                    <X size={18} />
-                                                </button>
-                                            </div>
-
-                                            {renderAccessEditor({
-                                                accent: 'indigo',
-                                                selectedUserIds: editingCategoryAllowedUserIds,
-                                                onToggleUser: toggleSelectedCategoryUser
-                                            })}
-
-                                            {renderColorPicker({
-                                                accent: 'indigo',
-                                                selectedColor: editingCategoryColor,
-                                                panelKey: 'category-color',
-                                                onSelect: setEditingCategoryColor
-                                            })}
-
-                                            {renderIconPicker({
-                                                accent: 'indigo',
-                                                selectedIcon: editingCategoryIcon,
-                                                panelKey: 'category-icon',
-                                                onSelect: setEditingCategoryIcon
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center gap-3">
-                                                <div
-                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
-                                                    style={{ backgroundColor: cat.color || '#6366f1' }}
-                                                >
-                                                    <IconRenderer name={cat.icon || PRESET_ICONS[0]} size={20} />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    {(() => {
-                                                        const accessSummary = getAccessSummary(cat);
-                                                        return (
-                                                            <>
-                                                                <span className={`font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
-                                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                                                                    <span>Category</span>
-                                                                    <span className="h-1 w-1 rounded-full bg-slate-300" />
-                                                                    <span>{accessSummary.title}</span>
-                                                                </div>
-                                                                <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {!editingCategoryId && (
-                                                    <>
-                                                        <button onClick={() => startEditingCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button onClick={() => toggleCategory(cat.id)} className={`p-2 rounded-lg transition-all ${cat.isActive ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-500 hover:bg-emerald-50'}`}>
-                                                            {cat.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                                                        </button>
-                                                        <button onClick={() => deleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-4">
-                        Payment Methods Moved
+            {/* Categories */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        Expense Categories
+                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{categories.length}</span>
                     </h3>
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-                        <p className="text-sm text-emerald-900">
-                            Payment methods are now configured inside each payment account instead of living in a separate list.
-                        </p>
-                        <p className="text-xs text-emerald-700">
-                            Run the ledger migration once and any old payment-method settings will be folded into accounts. After that, everything is managed from the Payment Accounts section below.
-                        </p>
-                        <p className="text-xs text-emerald-700">
-                            User-linked accounts are always private to that specific user. Custom accounts can be shared with any set of users, just like payment methods used to be.
-                        </p>
-                    </div>
+                </div>
+                <div className="flex gap-2 mb-6">
+                    <input
+                        type="text"
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        placeholder="Add New Category (e.g. Rent)"
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                    />
+                    <button
+                        onClick={handleAddCategory}
+                        className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                    >
+                        <Plus size={24} />
+                    </button>
+                </div>
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {categories.map((cat) => (
+                        <div key={cat.id} className={`group flex flex-col p-3 rounded-xl border transition-all ${cat.isActive ? 'bg-white border-slate-200 hover:border-indigo-300' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                            <div className="flex items-center justify-between w-full">
+                                {editingCategoryId === cat.id ? (
+                                    <div className="flex-1 flex flex-col gap-4 mr-4">
+                                        <div className="flex gap-2">
+                                            <input
+                                                value={editingCategoryName}
+                                                onChange={(e) => setEditingCategoryName(e.target.value)}
+                                                className="flex-1 px-2 py-1 border-b-2 border-indigo-500 focus:outline-none bg-transparent font-bold capitalize"
+                                                autoFocus
+                                            />
+                                            <button onClick={saveEditingCategory} className="text-emerald-500 hover:bg-emerald-50 p-1 rounded-lg">
+                                                <Check size={18} />
+                                            </button>
+                                            <button onClick={() => setEditingCategoryId(null)} className="text-slate-400 hover:bg-slate-50 p-1 rounded-lg">
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+
+                                        {renderAccessEditor({
+                                            accent: 'indigo',
+                                            selectedUserIds: editingCategoryAllowedUserIds,
+                                            onToggleUser: toggleSelectedCategoryUser
+                                        })}
+
+                                        {renderColorPicker({
+                                            accent: 'indigo',
+                                            selectedColor: editingCategoryColor,
+                                            panelKey: 'category-color',
+                                            onSelect: setEditingCategoryColor
+                                        })}
+
+                                        {renderIconPicker({
+                                            accent: 'indigo',
+                                            selectedIcon: editingCategoryIcon,
+                                            panelKey: 'category-icon',
+                                            onSelect: setEditingCategoryIcon
+                                        })}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex items-center gap-3">
+                                            <div
+                                                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
+                                                style={{ backgroundColor: cat.color || '#6366f1' }}
+                                            >
+                                                <IconRenderer name={cat.icon || PRESET_ICONS[0]} size={20} />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                {(() => {
+                                                    const accessSummary = getAccessSummary(cat);
+                                                    return (
+                                                        <>
+                                                            <span className={`font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
+                                                            <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                                                <span>Category</span>
+                                                                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                                                                <span>{accessSummary.title}</span>
+                                                            </div>
+                                                            <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {!editingCategoryId && (
+                                                <>
+                                                    <button onClick={() => startEditingCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button onClick={() => toggleCategory(cat.id)} className={`p-2 rounded-lg transition-all ${cat.isActive ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-500 hover:bg-emerald-50'}`}>
+                                                        {cat.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                                                    </button>
+                                                    <button onClick={() => deleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 
@@ -654,38 +790,122 @@ const LedgerSettings: React.FC = () => {
                             </div>
                             Payment Accounts
                         </h3>
-                        <p className="text-slate-400 text-sm mt-1">Manage staff accounts, custom funding sources, visibility, and the payment method each account represents.</p>
+                        <p className="text-slate-400 text-sm mt-1">Manage staff accounts, funding sources, visibility, and optional payment-method labels.</p>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr),minmax(0,1.2fr),auto] gap-2 w-full md:w-auto">
-                        <input
-                            type="text"
-                            value={newAccountName}
-                            onChange={(e) => setNewAccountName(e.target.value)}
-                            placeholder="Petty Cash / Owner / etc."
-                            className="w-full md:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-slate-800 focus:outline-none"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddAccount()}
-                        />
-                        <input
-                            type="text"
-                            value={newAccountPaymentMethod}
-                            onChange={(e) => setNewAccountPaymentMethod(e.target.value)}
-                            placeholder="Method on this account (UPI / Cash / Card)"
-                            className="w-full md:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-slate-800 focus:outline-none"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddAccount()}
-                        />
-                        <button
-                            onClick={handleAddAccount}
-                            className="bg-slate-800 text-white px-6 py-3 rounded-xl hover:bg-slate-900 transition-all flex items-center gap-2 font-bold shadow-lg shadow-slate-200"
-                        >
-                            <Plus size={20} />
-                            Add Account
-                        </button>
+                    <div className="w-full md:w-auto">
+                        <div className="mb-2 flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Add custom account</span>
+                            <span className="text-xs text-slate-400">Second field is optional</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr),minmax(0,1.2fr),auto] gap-2 w-full md:w-auto">
+                            <label className="flex flex-col gap-1">
+                                <span className="text-xs font-semibold text-slate-500">Account name</span>
+                                <input
+                                    type="text"
+                                    aria-label="Account name"
+                                    value={newAccountName}
+                                    onChange={(e) => setNewAccountName(e.target.value)}
+                                    placeholder="Petty Cash / Owner / etc."
+                                    className="w-full md:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-slate-800 focus:outline-none"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddAccount()}
+                                />
+                            </label>
+                            {renderPaymentMethodInput({
+                                accent: 'slate',
+                                label: 'Payment method label',
+                                value: newAccountPaymentMethod,
+                                onChange: setNewAccountPaymentMethod,
+                                placeholder: 'Select or type a payment method',
+                                className: 'md:w-80',
+                                onKeyDown: (e) => e.key === 'Enter' && handleAddAccount()
+                            })}
+                            <div className="flex items-end">
+                                <button
+                                    onClick={handleAddAccount}
+                                    className="bg-slate-800 text-white px-6 py-3 rounded-xl hover:bg-slate-900 transition-all flex items-center gap-2 font-bold shadow-lg shadow-slate-200"
+                                >
+                                    <Plus size={20} />
+                                    Add Account
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 mb-6 text-sm text-slate-600">
-                    User-linked accounts are created automatically for every system user. They stay visible only to that specific user, and the admin panel below shows the same rule while still letting admins rename the account and edit its visuals.
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr),minmax(0,1fr)] gap-4 mb-6">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Payment method selector</p>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Accounts can select from this list, or type a new label when editing. New labels are added on save. Deleted labels stay on old accounts as warnings until you update them.
+                                </p>
+                            </div>
+                            <span className="self-start rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-500">
+                                {paymentMethods.length} saved
+                            </span>
+                        </div>
+
+                        {paymentMethods.length > 0 ? (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {paymentMethods.map(method => {
+                                    const usageCount = getPaymentMethodUsageCount(method);
+
+                                    return (
+                                        <div key={method} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-semibold text-slate-700">{method}</span>
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                    {usageCount} account{usageCount === 1 ? '' : 's'}
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => deletePaymentMethod(method)}
+                                                className="rounded-full p-1.5 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
+                                                aria-label={`Delete payment method ${method}`}
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="mt-4 text-sm text-slate-500">
+                                No payment methods saved yet. The first custom label you type on an account will create one.
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        <p className="font-semibold text-slate-700">How it works</p>
+                        <p className="mt-2">
+                            User accounts are created automatically and stay private to that user. Custom accounts can be shared. Payment methods are optional labels attached to accounts.
+                        </p>
+                        <p className="mt-2">
+                            Deleting a payment method does not erase it from existing accounts. Those accounts show a warning until an admin edits them and picks a current method.
+                        </p>
+                    </div>
                 </div>
+
+                {accountsWithDeletedPaymentMethods.length > 0 && (
+                    <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
+                                <AlertTriangle size={16} />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-amber-900">
+                                    {accountsWithDeletedPaymentMethods.length} account{accountsWithDeletedPaymentMethods.length === 1 ? '' : 's'} still reference deleted payment methods.
+                                </p>
+                                <p className="mt-1 text-xs text-amber-700">
+                                    Edit the affected accounts below and choose a current payment method or type a replacement label.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="space-y-3">
                     {accounts
@@ -696,6 +916,7 @@ const LedgerSettings: React.FC = () => {
                         })
                         .map((acc) => {
                             const accessSummary = getAccessSummary(acc);
+                            const deletedPaymentMethod = getDeletedPaymentMethodLabel(acc);
 
                             return (
                                 <div key={acc.id} className={`group rounded-2xl border p-4 transition-all ${acc.isActive ? 'bg-white border-slate-200 hover:border-slate-300' : 'bg-slate-50 border-slate-100 opacity-70'}`}>
@@ -708,12 +929,16 @@ const LedgerSettings: React.FC = () => {
                                                     className="flex-1 px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white font-bold"
                                                     autoFocus
                                                 />
-                                                <input
-                                                    value={editingAccountPaymentMethod}
-                                                    onChange={(e) => setEditingAccountPaymentMethod(e.target.value)}
-                                                    placeholder="Payment method on this account"
-                                                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                                                />
+                                                {renderPaymentMethodInput({
+                                                    accent: 'emerald',
+                                                    value: editingAccountPaymentMethod,
+                                                    previousValue: acc.paymentMethod,
+                                                    onChange: setEditingAccountPaymentMethod,
+                                                    placeholder: 'Select or type a payment method',
+                                                    compact: true,
+                                                    className: 'flex-1',
+                                                    onKeyDown: (e) => e.key === 'Enter' && saveEditingAccount()
+                                                })}
                                                 <div className="flex gap-2">
                                                     <button onClick={saveEditingAccount} className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-xl border border-emerald-200">
                                                         <Check size={18} />
@@ -723,6 +948,12 @@ const LedgerSettings: React.FC = () => {
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {deletedPaymentMethod && getLedgerPaymentMethodKey(editingAccountPaymentMethod) === getLedgerPaymentMethodKey(deletedPaymentMethod) && (
+                                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                                    This account still points to deleted payment method <span className="font-bold">{deletedPaymentMethod}</span>. Pick a current option or type a replacement before you save.
+                                                </div>
+                                            )}
 
                                             {acc.type === 'USER' ? (
                                                 <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -776,13 +1007,20 @@ const LedgerSettings: React.FC = () => {
                                                         {acc.paymentMethod && (
                                                             <>
                                                                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                                                                <span>Method: {acc.paymentMethod}</span>
+                                                                <span className={deletedPaymentMethod ? 'text-amber-700' : ''}>
+                                                                    {deletedPaymentMethod ? `Method deleted: ${deletedPaymentMethod}` : `Method: ${acc.paymentMethod}`}
+                                                                </span>
                                                             </>
                                                         )}
                                                     </div>
                                                     <p className="text-sm text-slate-500 mt-1">
                                                         {accessSummary.subtitle}
                                                     </p>
+                                                    {deletedPaymentMethod && (
+                                                        <p className="mt-2 text-xs text-amber-700">
+                                                            This account still references deleted payment method <span className="font-bold">{deletedPaymentMethod}</span>. Edit the account to update it.
+                                                        </p>
+                                                    )}
                                                     {acc.type === 'USER' && (
                                                         <p className="text-xs text-blue-600 mt-2">
                                                             This account is locked to the linked user and will not appear for other teammates.
