@@ -19,6 +19,7 @@ import { deleteImageFromBunny } from '../services/bunnyStorage';
 import { sendLedgerWebhook, LedgerWebhookPayload } from '../services/webhookService';
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 import { buildDefaultLedgerAccounts, getLedgerAccounts, LEDGER_COMPANY_ACCOUNT_NAME } from '../utils/ledgerAccounts';
+import { getOrderTotalAmount, normalizeOrderRecord } from '../utils/orderUtils';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -53,18 +54,8 @@ const mapTransactionFromDB = (t: any): Transaction => ({
 });
 
 const mapOrderFromDB = (data: any): Order => ({
-    ...data,
-    branchId: data.branch_id || data.branchId,
-    customerId: data.customer_id || data.customerId,
-    customerName: data.customer_name || data.customerName,
-    totalAmount: data.total_amount || data.totalAmount,
-    paymentMethod: data.payment_method || data.paymentMethod,
-    customAmount: data.custom_amount || data.customAmount,
-    customAmountReason: data.custom_amount_reason || data.customAmountReason,
-    customSkuItems: data.custom_sku_items || data.customSkuItems,
-    customSkuReason: data.custom_sku_reason || data.customSkuReason,
-    paymentSplit: data.payment_split || data.paymentSplit,
-    customerPhone: data.customer_phone || data.customerPhone
+    ...normalizeOrderRecord(data),
+    timestamp: getSafeTimestamp(data)
 });
 
 const mapSkuFromDB = (data: any): SKU => ({
@@ -185,7 +176,7 @@ const mapOrderToDB = (o: Order) => ({
     customer_id: o.customerId,
     customer_name: o.customerName,
     platform: o.platform,
-    total_amount: o.totalAmount,
+    total_amount: getOrderTotalAmount(o),
     status: o.status,
     payment_method: o.paymentMethod,
     payment_split: o.paymentSplit,
@@ -590,7 +581,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 load('salesRecords', setSalesRecords, []);
                 load('skus', setSkus, INITIAL_SKUS);
                 load('branches', setBranches, INITIAL_BRANCHES);
-                load('orders', setOrders, []);
+                load('orders', (data: any[]) => setOrders(Array.isArray(data) ? data.map(normalizeOrderRecord) : []), []);
                 load('todos', setTodos, []);
                 load('menuItems', setMenuItems, INITIAL_MENU_ITEMS);
                 load('menuCategories', setMenuCategories, INITIAL_MENU_CATEGORIES);
@@ -1134,22 +1125,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const reorderMenuCategory = async (id: string, direction: 'up' | 'down') => { };
 
     const addOrder = async (order: Order, redeemedCouponId?: string) => {
-        setOrders([order, ...orders]); save('orders', [order, ...orders]);
+        const normalizedOrder = normalizeOrderRecord(order);
+        const nextOrders = [normalizedOrder, ...orders];
+        setOrders(nextOrders);
+        save('orders', nextOrders);
         if (isSupabaseConfigured()) {
-            const dbOrder = mapOrderToDB(order);
+            const dbOrder = mapOrderToDB(normalizedOrder);
             const { error } = await supabase.from('orders').insert(dbOrder);
             if (error) console.error("Supabase Order Insert Error:", error);
         }
 
         // If coupon used, mark redeemed
         if (redeemedCouponId) {
-            const updatedCoupons = customerCoupons.map(c => c.id === redeemedCouponId ? { ...c, status: 'REDEEMED' as const, redeemedAt: Date.now(), redeemedOrderId: order.id } : c);
+            const updatedCoupons = customerCoupons.map(c => c.id === redeemedCouponId ? { ...c, status: 'REDEEMED' as const, redeemedAt: Date.now(), redeemedOrderId: normalizedOrder.id } : c);
             setCustomerCoupons(updatedCoupons); save('customerCoupons', updatedCoupons);
             if (isSupabaseConfigured()) {
                 await supabase.from('customer_coupons').update({
                     status: 'REDEEMED',
                     redeemed_at: new Date().toISOString(), // Use ISO for DB consistency 
-                    redeemed_order_id: order.id
+                    redeemed_order_id: normalizedOrder.id
                 }).eq('id', redeemedCouponId);
             }
         }

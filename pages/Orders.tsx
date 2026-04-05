@@ -7,6 +7,7 @@ import { Receipt, Filter, Calendar, Store, PlusCircle, Plus, Search, ShoppingCar
 import CustomerDetailsModal from '../components/CustomerDetailsModal';
 import { getLocalISOString } from '../constants';
 import { sendWhatsAppInvoice, WebhookContext, constructWebhookPayload, WebhookPayload, sendWebhookRequest } from '../services/webhookService';
+import { getOrderItemLineTotal, getOrderTotalAmount } from '../utils/orderUtils';
 
 const Orders: React.FC = () => {
     const { orders, skus, menuItems, branches, customers, addOrder, deleteOrder, menuCategories, appSettings, checkCustomerReward, customerCoupons } = useStore();
@@ -344,6 +345,21 @@ const Orders: React.FC = () => {
 
     // NEW: Render History Card
     const renderOrderCard = (order: Order) => {
+        const orderItems = Array.isArray(order.items) ? order.items : [];
+        const orderTotal = getOrderTotalAmount(order);
+        const customPiecesPreview = order.customSkuItems?.length
+            ? (() => {
+                const totalPieces = order.customSkuItems.reduce((sum, item) => sum + item.quantity, 0);
+                const preview = order.customSkuItems
+                    .slice(0, 2)
+                    .map(item => `${getSkuName(item.skuId)} x${item.quantity}`)
+                    .join(', ');
+                const remaining = order.customSkuItems.length - 2;
+
+                return `${preview}${remaining > 0 ? ` +${remaining} more` : ''} • ${totalPieces} pcs`;
+            })()
+            : null;
+
         // Check for used coupon via lookup
         const usedCoupon = customerCoupons.find(c => c.redeemedOrderId === order.id);
 
@@ -387,11 +403,26 @@ const Orders: React.FC = () => {
                         <Clock size={10} /> {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                     <div className="text-xs text-slate-600 space-y-1">
-                        {order.items.map((i, idx) => (
-                            <div key={idx} className="flex justify-between">
-                                <span className="truncate max-w-[150px]">{i.quantity}x {i.name} {i.variant === 'HALF' ? '(Half)' : ''}</span>
+                        {orderItems.map((i, idx) => (
+                            <div key={idx} className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <p className="leading-snug break-words">
+                                        {i.quantity}x {i.name} {i.variant === 'HALF' ? '(Half)' : ''}
+                                    </p>
+                                    {i.code_name === 'custom_pieces' && customPiecesPreview && (
+                                        <p className="text-[10px] text-slate-400 mt-0.5 break-words">
+                                            {customPiecesPreview}
+                                        </p>
+                                    )}
+                                </div>
+                                <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                                    ₹{getOrderItemLineTotal(i).toLocaleString()}
+                                </span>
                             </div>
                         ))}
+                        {orderItems.length === 0 && (
+                            <div className="text-slate-400 italic">No line items recorded</div>
+                        )}
                         {order.customAmount ? <div className="text-slate-500 italic">+ Custom Charge (₹{order.customAmount})</div> : ''}
                         {usedCoupon && (
                             <div className="flex items-center gap-1 text-[10px] text-pink-600 font-bold mt-1">
@@ -409,7 +440,7 @@ const Orders: React.FC = () => {
                                 {order.paymentMethod}
                             </span>
                         </div>
-                        <p className="text-lg font-bold text-slate-800">₹{order.totalAmount}</p>
+                        <p className="text-lg font-bold text-slate-800">₹{orderTotal.toLocaleString()}</p>
                     </div>
                     <div className="flex gap-2">
                         <button

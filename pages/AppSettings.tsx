@@ -5,6 +5,33 @@ import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCi
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 import { APP_VERSION } from '../version';
 
+const AUTO_REFRESH_INTERVAL_MS = 10000;
+const AUTO_REFRESH_TICK_MS = 200;
+const ACTIVE_DEPLOYMENT_STATUSES = new Set(['in_progress', 'queued', 'running', 'pending']);
+const SUCCESSFUL_DEPLOYMENT_STATUSES = new Set(['finished', 'success']);
+const FAILED_DEPLOYMENT_STATUSES = new Set(['failed', 'error']);
+
+const normalizeDeploymentStatus = (status?: string) => status?.toLowerCase() || '';
+const isActiveDeploymentStatus = (status?: string) => ACTIVE_DEPLOYMENT_STATUSES.has(normalizeDeploymentStatus(status));
+
+const getDeploymentStatusDotClass = (status?: string) => {
+   const normalizedStatus = normalizeDeploymentStatus(status);
+
+   if (SUCCESSFUL_DEPLOYMENT_STATUSES.has(normalizedStatus)) {
+      return 'bg-emerald-500';
+   }
+
+   if (FAILED_DEPLOYMENT_STATUSES.has(normalizedStatus)) {
+      return 'bg-red-500';
+   }
+
+   if (ACTIVE_DEPLOYMENT_STATUSES.has(normalizedStatus)) {
+      return 'bg-amber-500 animate-pulse';
+   }
+
+   return 'bg-slate-400';
+};
+
 const AppSettings: React.FC = () => {
    const { branches, appSettings, updateAppSetting, isLoading } = useStore();
    const { currentUser } = useAuth();
@@ -24,6 +51,15 @@ const AppSettings: React.FC = () => {
    const [isDeploying, setIsDeploying] = useState(false);
    const [recentDeployments, setRecentDeployments] = useState<any[]>([]);
    const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+   const [autoRefreshStartedAt, setAutoRefreshStartedAt] = useState<number | null>(null);
+   const [autoRefreshNow, setAutoRefreshNow] = useState(() => Date.now());
+
+   const canCheckDeploymentStatus = Boolean(coolifyUrl && coolifyToken && coolifyTag);
+   const hasRunningDeployment = recentDeployments.some((deployment) => isActiveDeploymentStatus(deployment.status));
+   const showAutoRefreshProgress = canCheckDeploymentStatus && hasRunningDeployment && !isCheckingStatus && autoRefreshStartedAt !== null;
+   const autoRefreshProgress = showAutoRefreshProgress && autoRefreshStartedAt !== null
+      ? Math.min(100, ((autoRefreshNow - autoRefreshStartedAt) / AUTO_REFRESH_INTERVAL_MS) * 100)
+      : 0;
 
    const handleToggle = async (key: string) => {
       // Prevent double clicks
@@ -88,7 +124,7 @@ const AppSettings: React.FC = () => {
                setToastMsg('No deployments found for this application.');
             } else {
                // Find latest SUCCESSFUL/FINISHED deployment
-               const latestSuccessful = deployments.find((d: any) => d.status === 'finished' || d.status === 'success');
+               const latestSuccessful = deployments.find((d: any) => SUCCESSFUL_DEPLOYMENT_STATUSES.has(normalizeDeploymentStatus(d.status)));
 
                if (latestSuccessful && latestSuccessful.extracted_version) {
                   console.log(`Comparing - Local: ${APP_VERSION} vs Remote: ${latestSuccessful.extracted_version}`);
@@ -123,6 +159,30 @@ const AppSettings: React.FC = () => {
       }
    }, []);
 
+   useEffect(() => {
+      if (!canCheckDeploymentStatus || !hasRunningDeployment || isCheckingStatus) {
+         setAutoRefreshStartedAt(null);
+         return;
+      }
+
+      const startedAt = Date.now();
+      setAutoRefreshStartedAt(startedAt);
+      setAutoRefreshNow(startedAt);
+
+      const tickTimer = window.setInterval(() => {
+         setAutoRefreshNow(Date.now());
+      }, AUTO_REFRESH_TICK_MS);
+
+      const refreshTimer = window.setTimeout(() => {
+         checkStatus(true);
+      }, AUTO_REFRESH_INTERVAL_MS);
+
+      return () => {
+         window.clearInterval(tickTimer);
+         window.clearTimeout(refreshTimer);
+      };
+   }, [canCheckDeploymentStatus, hasRunningDeployment, isCheckingStatus, recentDeployments]);
+
    const handleDeploy = async () => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
          setToastMsg('Please fill all Coolify settings first.');
@@ -139,6 +199,7 @@ const AppSettings: React.FC = () => {
             appSettings.coolify_force_build || false
          );
          setToastMsg('Deployment triggered successfully!');
+         await checkStatus(true);
       } catch (error: any) {
          console.error('Deployment failed:', error);
          alert(`Deployment failed: ${error.message}`);
@@ -648,12 +709,23 @@ const AppSettings: React.FC = () => {
                               </button>
 
                               <button
-                                 onClick={checkStatus}
-                                 disabled={isCheckingStatus || !coolifyUrl || !coolifyToken || !coolifyTag}
-                                 className="flex items-center gap-2 text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                                 onClick={() => checkStatus()}
+                                 disabled={isCheckingStatus || !canCheckDeploymentStatus}
+                                 className="relative overflow-hidden flex items-center gap-2 text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                                 title={showAutoRefreshProgress ? 'Auto-refreshing every 10 seconds while deployment is running.' : 'Check deployment status'}
                               >
-                                 <RefreshCw size={16} className={isCheckingStatus ? 'animate-spin' : ''} />
-                                 Check Status
+                                 {showAutoRefreshProgress && (
+                                    <span className="pointer-events-none absolute inset-x-2 bottom-1 h-0.5 rounded-full bg-slate-200/80">
+                                       <span
+                                          className="block h-full rounded-full bg-indigo-500/55 transition-[width] duration-200 ease-linear"
+                                          style={{ width: `${autoRefreshProgress}%` }}
+                                       />
+                                    </span>
+                                 )}
+                                 <span className="relative z-10 flex items-center gap-2">
+                                    <RefreshCw size={16} className={isCheckingStatus ? 'animate-spin' : ''} />
+                                    Check Status
+                                 </span>
                               </button>
                            </div>
 
@@ -667,14 +739,7 @@ const AppSettings: React.FC = () => {
                                     {recentDeployments.map((deployment, index) => (
                                        <div key={deployment.id || index} className="flex items-center justify-between px-4 py-3">
                                           <div className="flex items-center gap-3">
-                                             <div className={`w-2.5 h-2.5 rounded-full ${deployment.status === 'finished' || deployment.status === 'success'
-                                                ? 'bg-emerald-500'
-                                                : deployment.status === 'failed' || deployment.status === 'error'
-                                                   ? 'bg-red-500'
-                                                   : deployment.status === 'in_progress' || deployment.status === 'queued'
-                                                      ? 'bg-amber-500 animate-pulse'
-                                                      : 'bg-slate-400'
-                                                }`}></div>
+                                             <div className={`w-2.5 h-2.5 rounded-full ${getDeploymentStatusDotClass(deployment.status)}`}></div>
                                              <span className="text-sm font-medium text-slate-700">
                                                 {deployment.status?.toUpperCase() || 'UNKNOWN'}
                                              </span>

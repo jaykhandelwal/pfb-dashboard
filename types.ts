@@ -177,7 +177,15 @@ export interface OrderItem {
   price: number;
   quantity: number;
   variant?: 'FULL' | 'HALF';
-  consumed?: { skuId: string; quantity: number }[];
+  consumed?: { skuId: string; quantity: number }[] | null;
+  tag?: string;
+  code_name?: string;
+  isModal?: boolean;
+  plate?: {
+    price: number;
+    quantity: number;
+    skuId?: string;
+  };
 }
 
 export interface Order {

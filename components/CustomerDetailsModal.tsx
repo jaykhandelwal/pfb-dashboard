@@ -6,6 +6,7 @@ import {
 import { Customer, Order, MembershipRule } from '../types';
 import { useStore } from '../context/StoreContext';
 import { DUMMY_CUSTOMER_PHONE } from '../constants';
+import { getOrderTotalAmount } from '../utils/orderUtils';
 
 interface CustomerDetailsModalProps {
     customer: Customer;
@@ -32,7 +33,7 @@ const CustomerDetailsModal: React.FC<CustomerDetailsModalProps> = ({ customer, o
         if (orders.length === 0) return { avgAOV: 0, mostOrdered: [] };
 
         const totalOrders = orders.length;
-        const totalSpend = orders.reduce((sum, o) => sum + o.totalAmount, 0);
+        const totalSpend = orders.reduce((sum, o) => sum + getOrderTotalAmount(o), 0);
         const avgAOV = totalSpend / totalOrders;
 
         // Most Ordered Items frequency map
@@ -198,7 +199,7 @@ const CustomerDetailsModal: React.FC<CustomerDetailsModalProps> = ({ customer, o
                                                     <p className="text-[10px] text-slate-400 mt-0.5">{new Date(order.timestamp).toLocaleString()}</p>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="font-mono font-bold text-slate-800">₹{order.totalAmount}</p>
+                                                    <p className="font-mono font-bold text-slate-800">₹{getOrderTotalAmount(order).toLocaleString()}</p>
                                                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">{order.paymentMethod}</p>
                                                 </div>
                                             </div>

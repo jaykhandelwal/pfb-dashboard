@@ -10,6 +10,7 @@ import { getLocalISOString } from '../constants';
 import ReactApexChart from 'react-apexcharts';
 import { ApexOptions } from 'apexcharts';
 import SkuHistoryModal from '../components/SkuHistoryModal';
+import { getOrderTotalAmount } from '../utils/orderUtils';
 
 // Updated palette for charts to match warm theme
 const COLORS = ['#95a77c', '#eab308', '#ef4444', '#8b5cf6', '#3b82f6', '#d97706'];
@@ -260,7 +261,7 @@ const Dashboard: React.FC = () => {
          return matchesDate && matchesBranch;
       });
 
-      const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+      const totalRevenue = filteredOrders.reduce((sum, o) => sum + getOrderTotalAmount(o), 0);
       const totalOrderCount = filteredOrders.length;
 
       const avgDailySales = totalRevenue / daysDivisor;
@@ -282,15 +283,16 @@ const Dashboard: React.FC = () => {
       let online = 0;
 
       filteredOrders.forEach(o => {
+         const orderTotal = getOrderTotalAmount(o);
          if (o.paymentMethod === 'SPLIT') {
             o.paymentSplit?.forEach(split => {
                if (split.method === 'CASH') cash += split.amount;
                else online += split.amount;
             });
          } else if (o.paymentMethod === 'CASH') {
-            cash += o.totalAmount;
+            cash += orderTotal;
          } else {
-            online += o.totalAmount;
+            online += orderTotal;
          }
       });
 
@@ -384,10 +386,11 @@ const Dashboard: React.FC = () => {
 
       // Populate data
       orders.forEach(o => {
+         const orderTotal = getOrderTotalAmount(o);
          if (dataMap[o.date]) {
-            dataMap[o.date].total += o.totalAmount;
+            dataMap[o.date].total += orderTotal;
             if (dataMap[o.date].branches[o.branchId] !== undefined) {
-               dataMap[o.date].branches[o.branchId] += o.totalAmount;
+               dataMap[o.date].branches[o.branchId] += orderTotal;
             }
          }
       });
@@ -458,14 +461,15 @@ const Dashboard: React.FC = () => {
          );
          let totalRevenue = 0, cash = 0, online = 0;
          dayOrders.forEach(o => {
-            totalRevenue += o.totalAmount;
-            if (o.paymentMethod === 'CASH') cash += o.totalAmount;
+            const orderTotal = getOrderTotalAmount(o);
+            totalRevenue += orderTotal;
+            if (o.paymentMethod === 'CASH') cash += orderTotal;
             else if (o.paymentMethod === 'SPLIT') {
                o.paymentSplit?.forEach(s => {
                   if (s.method === 'CASH') cash += s.amount;
                   else online += s.amount;
                });
-            } else online += o.totalAmount;
+            } else online += orderTotal;
          });
          return {
             displayDate: new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
