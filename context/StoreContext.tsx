@@ -6,7 +6,7 @@ import {
     TaskTemplate, SalesRecord, AttendanceRecord, AttendanceOverride,
     StorageUnit, SKUCategory, SKUDietary, RewardResult, AttendanceOverrideType,
     TransactionType, LedgerEntry, LedgerLog, LedgerCategory, LedgerAccount,
-    LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult,
+    LedgerCategoryDefinition, BulkLedgerImportEntry, BulkImportResult,
     User
 } from '../types';
 import {
@@ -18,6 +18,7 @@ import { useAuth } from './AuthContext';
 import { deleteImageFromBunny } from '../services/bunnyStorage';
 import { sendLedgerWebhook, LedgerWebhookPayload } from '../services/webhookService';
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
+import { buildDefaultLedgerAccounts, getLedgerAccounts, LEDGER_COMPANY_ACCOUNT_NAME } from '../utils/ledgerAccounts';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -317,8 +318,6 @@ const mapLedgerEntryFromDB = (data: any): LedgerEntry => ({
     categoryId: data.category_id || data.categoryId,
     amount: Number.isFinite(Number(data.amount)) ? Number(data.amount) : 0,
     description: data.description,
-    paymentMethod: data.payment_method || data.paymentMethod,
-    paymentMethodId: data.payment_method_id || data.paymentMethodId,
     createdBy: data.created_by || data.createdBy,
     createdByName: data.created_by_name || data.createdByName,
     status: data.status || 'PENDING',
@@ -352,8 +351,6 @@ const mapLedgerEntryToDB = (e: LedgerEntry) => ({
     category_id: e.categoryId,
     amount: e.amount,
     description: e.description,
-    payment_method: e.paymentMethod,
-    payment_method_id: e.paymentMethodId,
     created_by: e.createdBy,
     created_by_name: e.createdByName,
     status: e.status,
@@ -529,8 +526,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
         ledger_categories: Object.values(LedgerCategory).map(cat => ({ id: cat.toLowerCase().replace(/\s+/g, '_'), name: cat, isActive: true })),
-        payment_methods: ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER'].map(m => ({ id: m.toLowerCase(), name: m, isActive: true })),
-        ledger_accounts: [{ id: 'company_account', name: 'Company Account', type: 'CUSTOM', isActive: true }],
+        ledger_accounts: buildDefaultLedgerAccounts(),
         coolify_api_token: '',
         coolify_instance_url: '',
         coolify_deployment_tag_or_uuid: '',
@@ -548,25 +544,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Persistence Helper
     const save = (key: string, data: any) => { localStorage.setItem(`pakaja_${key}`, JSON.stringify(data)); };
 
-    const getLedgerAccessError = (label: 'Category' | 'Payment method', optionName: string) =>
+    const getLedgerAccessError = (label: 'Category' | 'Payment account', optionName: string) =>
         `${label} "${optionName}" is not assigned to your user. Ask an admin to update Ledger Settings.`;
 
-    const ensureLedgerEntryOptionAccess = (entry: Pick<LedgerEntry, 'category' | 'categoryId' | 'paymentMethod' | 'paymentMethodId'>) => {
+    const ensureLedgerEntryOptionAccess = (
+        entry: Pick<LedgerEntry, 'category' | 'categoryId' | 'sourceAccount' | 'sourceAccountId' | 'destinationAccount' | 'destinationAccountId'>
+    ) => {
         if (!currentUser) return;
 
         const category = appSettings.ledger_categories?.find(option =>
             option.id === entry.categoryId || option.name.toLowerCase() === entry.category.toLowerCase()
         );
-        const paymentMethod = appSettings.payment_methods?.find(option =>
-            option.id === entry.paymentMethodId || option.name.toLowerCase() === entry.paymentMethod.toLowerCase()
-        );
+        const availableAccounts = getLedgerAccounts(appSettings, users);
+        const findAccount = (accountId?: string, accountName?: string) =>
+            availableAccounts.find(option =>
+                option.id === accountId || (!!accountName && option.name.toLowerCase() === accountName.toLowerCase())
+            );
+        const sourceAccount = findAccount(entry.sourceAccountId, entry.sourceAccount);
+        const destinationAccount = findAccount(entry.destinationAccountId, entry.destinationAccount);
 
         if (category && !isLedgerOptionAvailableToUser(category, currentUser.id)) {
             throw new Error(getLedgerAccessError('Category', category.name));
         }
 
-        if (paymentMethod && !isLedgerOptionAvailableToUser(paymentMethod, currentUser.id)) {
-            throw new Error(getLedgerAccessError('Payment method', paymentMethod.name));
+        if (sourceAccount && !isLedgerOptionAvailableToUser(sourceAccount, currentUser.id)) {
+            throw new Error(getLedgerAccessError('Payment account', sourceAccount.name));
+        }
+
+        if (destinationAccount && !isLedgerOptionAvailableToUser(destinationAccount, currentUser.id)) {
+            throw new Error(getLedgerAccessError('Payment account', destinationAccount.name));
         }
     };
 
@@ -1307,8 +1313,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const updateAppSetting = async (key: string, value: any) => {
-        const newSettings = { ...appSettings, [key]: value };
-        setAppSettings(newSettings); save('appSettings', newSettings);
+        setAppSettings(prev => {
+            const newSettings = { ...prev, [key]: value };
+            save('appSettings', newSettings);
+            return newSettings;
+        });
         if (isSupabaseConfigured()) await supabase.from('app_settings').upsert({ key, value });
     };
 
@@ -1423,9 +1432,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 category: entry.category,
                 amount: entry.amount,
                 description: entry.description,
-                payment_method: entry.paymentMethod,
-                source_account: entry.sourceAccount || '',
+                payment_account: entry.sourceAccount || '',
+                payment_account_id: entry.sourceAccountId,
                 destination_account: entry.destinationAccount,
+                destination_account_id: entry.destinationAccountId,
                 status: entry.status || 'PENDING',
                 branch_id: entry.branchId,
                 created_by: entry.createdBy || '',
@@ -1577,12 +1587,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const addBulkLedgerEntries = async (entries: BulkLedgerImportEntry[]): Promise<BulkImportResult> => {
         const result: BulkImportResult = { successCount: 0, failureCount: 0, errors: [] };
         const validEntries: LedgerEntry[] = [];
+        const availableAccounts = getLedgerAccounts(appSettings, users);
+        const resolveAccount = (...candidates: Array<string | undefined>) =>
+            availableAccounts.find(account =>
+                candidates.some(candidate => {
+                    const normalizedCandidate = candidate?.trim().toLowerCase();
+                    return !!normalizedCandidate && (
+                        account.id === candidate ||
+                        account.name.toLowerCase() === normalizedCandidate
+                    );
+                })
+            );
 
         // Validate and transform each entry
         entries.forEach((entry, index) => {
             const rowNum = index + 1;
             const errors: string[] = [];
             const normalizedAmount = Number(entry.amount);
+            const requestedPaymentAccount = entry.paymentAccount;
 
             // Validate required fields
             if (!entry.date) errors.push('Date is required');
@@ -1596,7 +1618,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (!entry.category) errors.push('Category is required');
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) errors.push('Amount must be a positive number');
             if (!entry.description) errors.push('Description is required');
-            if (!entry.paymentMethod) errors.push('Payment method is required');
+            if (!requestedPaymentAccount) errors.push('Payment account is required');
 
             if (entry.entryType === 'REIMBURSEMENT' && !entry.destinationAccount) {
                 errors.push('Destination account is required for REIMBURSEMENT');
@@ -1613,17 +1635,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 c => c.name.toLowerCase() === entry.category.toLowerCase()
             );
 
-            // Resolve payment method ID
-            const paymentMethod = appSettings.payment_methods?.find(
-                m => m.name.toLowerCase() === entry.paymentMethod.toLowerCase()
-            );
+            const sourceAccount = resolveAccount(entry.paymentAccount);
+            const destinationAccount = resolveAccount(entry.destinationAccount);
 
             if (category && !isLedgerOptionAvailableToUser(category, currentUser?.id)) {
                 errors.push(getLedgerAccessError('Category', category.name));
             }
 
-            if (paymentMethod && !isLedgerOptionAvailableToUser(paymentMethod, currentUser?.id)) {
-                errors.push(getLedgerAccessError('Payment method', paymentMethod.name));
+            if (sourceAccount && !isLedgerOptionAvailableToUser(sourceAccount, currentUser?.id)) {
+                errors.push(getLedgerAccessError('Payment account', sourceAccount.name));
+            }
+
+            if (destinationAccount && !isLedgerOptionAvailableToUser(destinationAccount, currentUser?.id)) {
+                errors.push(getLedgerAccessError('Payment account', destinationAccount.name));
             }
 
             if (errors.length > 0) {
@@ -1642,10 +1666,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 categoryId: category?.id,
                 amount: normalizedAmount,
                 description: entry.description.trim(),
-                paymentMethod: paymentMethod?.name || entry.paymentMethod,
-                paymentMethodId: paymentMethod?.id,
-                sourceAccount: entry.sourceAccount || 'Company Account',
-                destinationAccount: entry.entryType === 'REIMBURSEMENT' ? entry.destinationAccount : undefined,
+                sourceAccount: sourceAccount?.name || requestedPaymentAccount || LEDGER_COMPANY_ACCOUNT_NAME,
+                sourceAccountId: sourceAccount?.id,
+                destinationAccount: entry.entryType === 'REIMBURSEMENT'
+                    ? (destinationAccount?.name || entry.destinationAccount)
+                    : undefined,
+                destinationAccountId: entry.entryType === 'REIMBURSEMENT' ? destinationAccount?.id : undefined,
                 createdBy: currentUser?.id || '',
                 createdByName: currentUser?.name || 'Bulk Import',
                 status: 'PENDING',

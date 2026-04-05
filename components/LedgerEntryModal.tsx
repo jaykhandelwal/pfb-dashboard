@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    X, CheckCircle2, ChevronDown, UploadCloud, Image as ImageIcon,
-    Trash2, Plus
+    X, CheckCircle2, ChevronDown, UploadCloud
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { LedgerEntry, LedgerEntryType } from '../types';
+import { LedgerAccount, LedgerEntry, LedgerEntryType } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { IconRenderer } from '../services/iconLibrary';
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
+import { LEDGER_COMPANY_ACCOUNT_NAME, getLedgerAccounts } from '../utils/ledgerAccounts';
 
 interface LedgerEntryModalProps {
     isOpen: boolean;
@@ -40,9 +40,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         categoryId: '',
         amount: '',
         description: '',
-        paymentMethod: '',
-        paymentMethodId: '',
-        sourceAccount: 'Company Account',
+        sourceAccount: LEDGER_COMPANY_ACCOUNT_NAME,
+        sourceAccountId: '',
         destinationAccount: '',
         destinationAccountId: '',
     });
@@ -58,9 +57,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         [appSettings.ledger_categories]
     );
 
-    const activePaymentMethods = useMemo(
-        () => appSettings.payment_methods?.filter(method => method.isActive) || [],
-        [appSettings.payment_methods]
+    const activeAccounts = useMemo(
+        () => getLedgerAccounts(appSettings, users).filter(account => account.isActive),
+        [appSettings, users]
     );
 
     const accessibleCategories = useMemo(
@@ -68,9 +67,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         [activeCategories, currentUser?.id]
     );
 
-    const accessiblePaymentMethods = useMemo(
-        () => activePaymentMethods.filter(method => isLedgerOptionAvailableToUser(method, currentUser?.id)),
-        [activePaymentMethods, currentUser?.id]
+    const accessibleAccounts = useMemo(
+        () => activeAccounts.filter(account => isLedgerOptionAvailableToUser(account, currentUser?.id)),
+        [activeAccounts, currentUser?.id]
     );
 
     const categoryOptions = useMemo(() => {
@@ -85,29 +84,42 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         return accessibleCategories;
     }, [accessibleCategories, activeCategories, formData.category, formData.categoryId]);
 
-    const paymentMethodOptions = useMemo(() => {
-        const selected = activePaymentMethods.find(method =>
-            method.id === formData.paymentMethodId || method.name === formData.paymentMethod
+    const sourceAccountOptions = useMemo(() => {
+        const selected = activeAccounts.find(account =>
+            account.id === formData.sourceAccountId || account.name === formData.sourceAccount
         );
 
-        if (selected && !accessiblePaymentMethods.some(method => method.id === selected.id)) {
-            return [selected, ...accessiblePaymentMethods];
+        if (selected && !accessibleAccounts.some(account => account.id === selected.id)) {
+            return [selected, ...accessibleAccounts];
         }
 
-        return accessiblePaymentMethods;
-    }, [accessiblePaymentMethods, activePaymentMethods, formData.paymentMethod, formData.paymentMethodId]);
+        return accessibleAccounts;
+    }, [accessibleAccounts, activeAccounts, formData.sourceAccount, formData.sourceAccountId]);
+
+    const destinationAccountOptions = useMemo(() => {
+        const selected = activeAccounts.find(account =>
+            account.id === formData.destinationAccountId || account.name === formData.destinationAccount
+        );
+        const filteredAccessible = accessibleAccounts.filter(account => account.name !== formData.sourceAccount);
+
+        if (selected && !filteredAccessible.some(account => account.id === selected.id)) {
+            return [selected, ...filteredAccessible];
+        }
+
+        return filteredAccessible;
+    }, [accessibleAccounts, activeAccounts, formData.destinationAccount, formData.destinationAccountId, formData.sourceAccount]);
 
     const accessIssue = useMemo(() => {
         if (categoryOptions.length === 0) {
             return 'No ledger categories are assigned to your user yet. Ask an admin to update Ledger Settings.';
         }
 
-        if (paymentMethodOptions.length === 0) {
-            return 'No payment methods are assigned to your user yet. Ask an admin to update Ledger Settings.';
+        if (sourceAccountOptions.length === 0) {
+            return 'No payment accounts are assigned to your user yet. Ask an admin to update Ledger Settings.';
         }
 
         return null;
-    }, [categoryOptions.length, paymentMethodOptions.length]);
+    }, [categoryOptions.length, sourceAccountOptions.length]);
 
     // Load defaults or initial data
     useEffect(() => {
@@ -120,9 +132,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     categoryId: initialData.categoryId || '',
                     amount: initialData.amount.toString(),
                     description: initialData.description,
-                    paymentMethod: initialData.paymentMethod,
-                    paymentMethodId: initialData.paymentMethodId || '',
-                    sourceAccount: initialData.sourceAccount || 'Company Account',
+                    sourceAccount: initialData.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME,
+                    sourceAccountId: initialData.sourceAccountId || '',
                     destinationAccount: initialData.destinationAccount || '',
                     destinationAccountId: initialData.destinationAccountId || '',
                 });
@@ -132,8 +143,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             } else {
                 // Set defaults
                 const defaultCategory = accessibleCategories[0];
-                const defaultMethod = accessiblePaymentMethods[0];
-                const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
+                const defaultAccount = sourceAccountOptions[0];
 
                 setFormData({
                     date: getLocalDateInputValue(),
@@ -142,9 +152,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     categoryId: defaultCategory?.id || '',
                     amount: '',
                     description: '',
-                    paymentMethod: defaultMethod?.name || '',
-                    paymentMethodId: defaultMethod?.id || '',
-                    sourceAccount: defaultAccount,
+                    sourceAccount: defaultAccount?.name || LEDGER_COMPANY_ACCOUNT_NAME,
+                    sourceAccountId: defaultAccount?.id || '',
                     destinationAccount: '',
                     destinationAccountId: '',
                 });
@@ -153,7 +162,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             }
         }
-    }, [isOpen, initialData, forcedType, appSettings, currentUser, accessibleCategories, accessiblePaymentMethods]);
+    }, [isOpen, initialData, forcedType, currentUser, accessibleCategories, sourceAccountOptions]);
 
     useEffect(() => {
         if (!isOpen || initialData) return;
@@ -162,19 +171,23 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             const selectedCategoryStillAccessible = accessibleCategories.some(category =>
                 category.id === prev.categoryId || category.name === prev.category
             );
-            const selectedMethodStillAccessible = accessiblePaymentMethods.some(method =>
-                method.id === prev.paymentMethodId || method.name === prev.paymentMethod
+            const selectedSourceStillAccessible = accessibleAccounts.some(account =>
+                account.id === prev.sourceAccountId || account.name === prev.sourceAccount
             );
+            const nextSourceAccount = selectedSourceStillAccessible ? prev.sourceAccount : (accessibleAccounts[0]?.name || LEDGER_COMPANY_ACCOUNT_NAME);
+            const nextSourceAccountId = selectedSourceStillAccessible ? prev.sourceAccountId : (accessibleAccounts[0]?.id || '');
 
             return {
                 ...prev,
                 category: selectedCategoryStillAccessible ? prev.category : (accessibleCategories[0]?.name || ''),
                 categoryId: selectedCategoryStillAccessible ? prev.categoryId : (accessibleCategories[0]?.id || ''),
-                paymentMethod: selectedMethodStillAccessible ? prev.paymentMethod : (accessiblePaymentMethods[0]?.name || ''),
-                paymentMethodId: selectedMethodStillAccessible ? prev.paymentMethodId : (accessiblePaymentMethods[0]?.id || ''),
+                sourceAccount: nextSourceAccount,
+                sourceAccountId: nextSourceAccountId,
+                destinationAccount: prev.destinationAccount === nextSourceAccount ? '' : prev.destinationAccount,
+                destinationAccountId: prev.destinationAccount === nextSourceAccount ? '' : prev.destinationAccountId,
             };
         });
-    }, [isOpen, initialData, accessibleCategories, accessiblePaymentMethods]);
+    }, [isOpen, initialData, accessibleCategories, accessibleAccounts, activeAccounts]);
 
     useEffect(() => {
         if (!isOpen && newBillPreviews.length > 0) {
@@ -184,24 +197,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
     }, [isOpen, newBillPreviews]);
 
-    // Available Accounts Logic
-    const availableAccounts = useMemo(() => {
-        const accountsFromSettings = appSettings.ledger_accounts || [];
-        const merged = [...accountsFromSettings];
-        users.forEach(user => {
-            const exists = merged.find(a => a.linkedUserId === user.id);
-            if (!exists) {
-                merged.push({
-                    id: `user_${user.id}`,
-                    name: user.name,
-                    type: 'USER' as const,
-                    linkedUserId: user.id,
-                    isActive: true
-                });
-            }
-        });
-        return merged;
-    }, [appSettings.ledger_accounts, users]);
+    const availableAccounts = activeAccounts;
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -242,8 +238,6 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             (original.categoryId || '') !== (next.categoryId || '') ||
             original.amount !== next.amount ||
             original.description !== next.description ||
-            original.paymentMethod !== next.paymentMethod ||
-            (original.paymentMethodId || '') !== (next.paymentMethodId || '') ||
             (original.sourceAccount || '') !== (next.sourceAccount || '') ||
             (original.sourceAccountId || '') !== (next.sourceAccountId || '') ||
             (original.destinationAccount || '') !== (next.destinationAccount || '') ||
@@ -281,8 +275,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             billUrls = [...billUrls, ...uploadedUrls.filter((u): u is string => u !== null)];
         }
 
-        const selectedSourceAccount = availableAccounts.find(a => a.name === formData.sourceAccount);
-        const selectedDestinationAccount = availableAccounts.find(a => a.name === formData.destinationAccount);
+        const selectedSourceAccount = availableAccounts.find(account =>
+            account.id === formData.sourceAccountId || account.name === formData.sourceAccount
+        );
+        const selectedDestinationAccount = availableAccounts.find(account =>
+            account.id === formData.destinationAccountId || account.name === formData.destinationAccount
+        );
         const parsedAmount = parseFloat(formData.amount);
         const entryData = {
             date: formData.date,
@@ -293,11 +291,11 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             categoryId: formData.categoryId,
             amount: parsedAmount,
             description: formData.description.trim(),
-            paymentMethod: formData.paymentMethod,
-            paymentMethodId: formData.paymentMethodId,
-            sourceAccount: formData.sourceAccount || 'Company Account',
+            sourceAccount: selectedSourceAccount?.name || formData.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME,
             sourceAccountId: selectedSourceAccount?.id,
-            destinationAccount: formData.entryType === 'REIMBURSEMENT' ? formData.destinationAccount : undefined,
+            destinationAccount: formData.entryType === 'REIMBURSEMENT'
+                ? (selectedDestinationAccount?.name || formData.destinationAccount)
+                : undefined,
             destinationAccountId: formData.entryType === 'REIMBURSEMENT' ? selectedDestinationAccount?.id : undefined,
             createdBy: initialData?.createdBy || currentUser?.id || '',
             createdByName: initialData?.createdByName || currentUser?.name || 'Unknown',
@@ -339,7 +337,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
     };
 
-    const CustomDropdown = <T extends { id: string, name: string, icon?: string, color?: string }>({
+    const CustomDropdown = <T extends { id: string, name: string, icon?: string, color?: string, paymentMethod?: string, type?: string }>({
         label,
         value,
         options,
@@ -352,7 +350,16 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         onSelect: (option: T) => void,
         placeholder: string
     }) => {
-        const selected = options.find(o => o.id === value || o.name === value); // Match by ID or Name
+        const selected = options.find(o => o.id === value || o.name === value);
+        const defaultColor = label === 'Category' ? '#6366f1' : '#0f766e';
+        const defaultIcon = label === 'Category' ? 'Package' : 'Wallet';
+        const getSubtitle = (option?: T) => {
+            if (!option) return '';
+            if (option.paymentMethod) return `Method: ${option.paymentMethod}`;
+            if (option.type === 'USER') return 'User account';
+            return label;
+        };
+
         return (
             <div className="relative">
                 <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">{label}</label>
@@ -363,10 +370,13 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 >
                     {selected ? (
                         <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded flex items-center justify-center text-white" style={{ backgroundColor: selected.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
-                                <IconRenderer name={selected.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={12} />
+                            <div className="w-5 h-5 rounded flex items-center justify-center text-white" style={{ backgroundColor: selected.color || defaultColor }}>
+                                <IconRenderer name={selected.icon || defaultIcon} size={12} />
                             </div>
-                            <span className="font-bold text-sm text-[#403424]">{selected.name}</span>
+                            <div className="flex flex-col items-start">
+                                <span className="font-bold text-sm text-[#403424]">{selected.name}</span>
+                                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-black">{getSubtitle(selected)}</span>
+                            </div>
                         </div>
                     ) : <span className="text-[#403424]/40 text-sm">{placeholder}</span>}
                     <ChevronDown size={16} className={`text-[#403424]/40 transition-transform ${openDropdown === label ? 'rotate-180' : ''}`} />
@@ -382,12 +392,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                     onClick={() => { onSelect(opt); setOpenDropdown(null); }}
                                     className={`w-full px-3 py-2.5 flex items-center gap-3 rounded-lg hover:bg-[#403424]/5 transition-colors text-left ${opt.id === value ? 'bg-[#95a77c]/10' : ''}`}
                                 >
-                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: opt.color || (label === 'Category' ? '#6366f1' : '#10b981') }}>
-                                        <IconRenderer name={opt.icon || (label === 'Category' ? 'Package' : 'CreditCard')} size={18} />
+                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0" style={{ backgroundColor: opt.color || defaultColor }}>
+                                        <IconRenderer name={opt.icon || defaultIcon} size={18} />
                                     </div>
                                     <div className="flex flex-col">
                                         <span className={`font-bold text-sm text-[#403424] ${opt.id === value ? 'text-[#95a77c]' : ''}`}>{opt.name}</span>
-                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{label}</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{getSubtitle(opt)}</span>
                                     </div>
                                     {opt.id === value && <CheckCircle2 size={16} className="ml-auto text-[#95a77c]" />}
                                 </button>
@@ -502,43 +512,57 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Payment Method */}
-                        {CustomDropdown({
-                            label: "Payment Method",
-                            value: formData.paymentMethodId || formData.paymentMethod,
-                            options: paymentMethodOptions,
-                            onSelect: (opt) => setFormData({ ...formData, paymentMethod: opt.name, paymentMethodId: opt.id }),
-                            placeholder: "Select Method"
-                        })}
+                    {CustomDropdown({
+                        label: formData.entryType === 'REIMBURSEMENT' ? 'Paid From' : 'Payment Account',
+                        value: formData.sourceAccountId || formData.sourceAccount,
+                        options: sourceAccountOptions,
+                        onSelect: (opt: LedgerAccount) => {
+                            setFormData({
+                                ...formData,
+                                sourceAccount: opt.name,
+                                sourceAccountId: opt.id,
+                                destinationAccount: formData.destinationAccount === opt.name ? '' : formData.destinationAccount,
+                                destinationAccountId: formData.destinationAccount === opt.name ? '' : formData.destinationAccountId,
+                            });
+                        },
+                        placeholder: 'Select Account'
+                    })}
 
-                        {/* Source Account (Dynamic) */}
-                        <div className="relative">
-                            <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">Paid From / To</label>
-                            <select
-                                value={formData.sourceAccount}
-                                onChange={(e) => setFormData({ ...formData, sourceAccount: e.target.value })}
-                                className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5 text-sm font-bold text-[#403424]"
-                            >
-                                {availableAccounts.map(account => (
-                                    <option key={account.id} value={account.name}>{account.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
+                    {(() => {
+                        const selectedAccount = availableAccounts.find(account =>
+                            account.id === formData.sourceAccountId || account.name === formData.sourceAccount
+                        );
+
+                        if (!selectedAccount?.paymentMethod) {
+                            return null;
+                        }
+
+                        return (
+                            <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-teal-800">
+                                This account is tagged with the <span className="font-bold">{selectedAccount.paymentMethod}</span> payment method.
+                            </div>
+                        );
+                    })()}
 
                     {/* Destination Account (For Reimbursements) */}
                     {formData.entryType === 'REIMBURSEMENT' && (
                         <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
                             <label className="text-xs font-bold text-purple-700 uppercase tracking-wide">Reimbursing To (Beneficiary)</label>
                             <select
-                                value={formData.destinationAccount}
-                                onChange={(e) => setFormData({ ...formData, destinationAccount: e.target.value })}
+                                value={formData.destinationAccountId || formData.destinationAccount}
+                                onChange={(e) => {
+                                    const selected = destinationAccountOptions.find(account => account.id === e.target.value || account.name === e.target.value);
+                                    setFormData({
+                                        ...formData,
+                                        destinationAccount: selected?.name || e.target.value,
+                                        destinationAccountId: selected?.id || '',
+                                    });
+                                }}
                                 className="w-full mt-1 px-3 py-2 rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white text-sm font-bold text-purple-900"
                             >
                                 <option value="">Select Beneficiary</option>
-                                {availableAccounts.filter(a => a.name !== formData.sourceAccount).map(account => (
-                                    <option key={account.id} value={account.name}>{account.name}</option>
+                                {destinationAccountOptions.map(account => (
+                                    <option key={account.id} value={account.id}>{account.name}</option>
                                 ))}
                             </select>
                         </div>

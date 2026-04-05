@@ -236,9 +236,10 @@ export interface LedgerWebhookPayload {
     category: string;
     amount: number;
     description: string;
-    payment_method: string;
-    source_account: string;
+    payment_account: string;
+    payment_account_id?: string;
     destination_account?: string;
+    destination_account_id?: string;
     status: string;
     branch_id?: string;
     created_by: string;

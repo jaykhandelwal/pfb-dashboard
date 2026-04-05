@@ -6,10 +6,9 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { LedgerEntry, LedgerEntryType, LedgerCategory, LedgerCategoryDefinition, LedgerPaymentMethod, BulkLedgerImportEntry, BulkImportResult } from '../types';
-import { uploadImageToBunny } from '../services/bunnyStorage';
-import { compressImage } from '../services/imageUtils';
+import { LedgerEntry, LedgerEntryType, BulkLedgerImportEntry, BulkImportResult } from '../types';
 import { IconRenderer } from '../services/iconLibrary';
+import { LEDGER_COMPANY_ACCOUNT_NAME, getLedgerAccounts } from '../utils/ledgerAccounts';
 
 import LedgerEntryModal from '../components/LedgerEntryModal';
 
@@ -47,34 +46,12 @@ const normalizeLedgerAmount = (amount: unknown): number => {
 };
 
 const Ledger: React.FC = () => {
-    const { ledgerEntries, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
+    const { ledgerEntries, deleteLedgerEntry, updateLedgerEntryStatus, ledgerLogs, fetchLedgerLogs, appSettings, addBulkLedgerEntries } = useStore();
     const { currentUser, users } = useAuth();
 
-    const defaultAccount = appSettings.ledger_accounts?.find(a => a.isActive)?.name || 'Company Account';
-    const defaultCategory = appSettings.ledger_categories?.find(c => c.isActive);
-    const defaultMethod = appSettings.payment_methods?.find(m => m.isActive);
-
-    // Merge ledger_accounts with system users dynamically
     const availableAccounts = useMemo(() => {
-        const accountsFromSettings = appSettings.ledger_accounts || [];
-        const merged = [...accountsFromSettings];
-
-        // Add users that are not already in the list
-        users.forEach(user => {
-            const exists = merged.find(a => a.linkedUserId === user.id);
-            if (!exists) {
-                merged.push({
-                    id: `user_${user.id}`,
-                    name: user.name,
-                    type: 'USER' as const,
-                    linkedUserId: user.id,
-                    isActive: true
-                });
-            }
-        });
-
-        return merged;
-    }, [appSettings.ledger_accounts, users]);
+        return getLedgerAccounts(appSettings, users);
+    }, [appSettings, users]);
 
     const accountLookup = useMemo(() => {
         const byId = new Map<string, typeof availableAccounts[number]>();
@@ -587,7 +564,7 @@ const Ledger: React.FC = () => {
 
                                                         <div className="flex items-center gap-1">
                                                             <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded border border-slate-100 font-bold uppercase tracking-tight">
-                                                                {entry.sourceAccount || 'Company Account'}
+                                                                {entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME}
                                                             </span>
                                                             {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
                                                                 <>
@@ -701,7 +678,7 @@ const Ledger: React.FC = () => {
                                                     <Trash2 size={14} /> DELETED RECORD
                                                 </div>
                                                 <div className="text-slate-900 font-bold text-lg leading-tight">{latestSnapshot.category}</div>
-                                                <div className="text-slate-500 text-sm">Deleted entry for ₹{latestSnapshot.amount?.toLocaleString()} ({latestSnapshot.paymentMethod || 'N/A'})</div>
+                                                <div className="text-slate-500 text-sm">Deleted entry for ₹{latestSnapshot.amount?.toLocaleString()} ({latestSnapshot.sourceAccount || 'N/A'})</div>
                                             </div>
                                         );
                                     }
@@ -746,7 +723,7 @@ const Ledger: React.FC = () => {
                                                     }`}>
                                                     ₹{entry.amount.toLocaleString()}
                                                 </span>
-                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">{entry.paymentMethod}</span>
+                                                <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">{entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME}</span>
                                             </div>
                                         </div>
                                     );
@@ -913,14 +890,14 @@ const Ledger: React.FC = () => {
                                             <code className="bg-slate-200 px-1 rounded ml-1">category</code>,
                                             <code className="bg-slate-200 px-1 rounded ml-1">amount</code>,
                                             <code className="bg-slate-200 px-1 rounded ml-1">description</code>,
-                                            <code className="bg-slate-200 px-1 rounded ml-1">paymentMethod</code>
+                                            <code className="bg-slate-200 px-1 rounded ml-1">paymentAccount</code>
                                         </p>
                                     </div>
                                     <div>
                                         <h4 className="text-xs font-bold text-slate-500 uppercase mb-1">Optional Fields</h4>
                                         <p className="text-xs text-slate-600">
-                                            <code className="bg-slate-200 px-1 rounded">sourceAccount</code> (defaults to "Company Account"),
-                                            <code className="bg-slate-200 px-1 rounded ml-1">destinationAccount</code> (required for REIMBURSEMENT)
+                                            <code className="bg-slate-200 px-1 rounded">destinationAccount</code> (required for REIMBURSEMENT),
+                                            <code className="bg-slate-200 px-1 rounded ml-1">branchName</code> (optional)
                                         </p>
                                     </div>
                                     <div>
@@ -929,10 +906,10 @@ const Ledger: React.FC = () => {
                                             <button
                                                 onClick={() => {
                                                     const sample = importMode === 'CSV'
-                                                        ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,\n2025-01-17,REIMBURSEMENT,Transport,500,Travel expense reimbursement,BANK_TRANSFER,Company Account,John`
+                                                        ? `date,entryType,category,amount,description,paymentAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,Cash,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,\n2025-01-17,REIMBURSEMENT,Transport,500,Travel expense reimbursement,Company Account,John`
                                                         : JSON.stringify([
-                                                            { date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH" },
-                                                            { date: "2025-01-16", entryType: "INCOME", category: "Other", amount: 5000, description: "Client payment received", paymentMethod: "UPI" }
+                                                            { date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentAccount: "Cash" },
+                                                            { date: "2025-01-16", entryType: "INCOME", category: "Other", amount: 5000, description: "Client payment received", paymentAccount: "UPI" }
                                                         ], null, 2);
                                                     navigator.clipboard.writeText(sample);
                                                     setCopiedSample(true);
@@ -946,8 +923,8 @@ const Ledger: React.FC = () => {
                                         </div>
                                         <pre className="bg-slate-800 text-slate-100 p-3 rounded text-xs overflow-x-auto max-h-32">
                                             {importMode === 'CSV'
-                                                ? `date,entryType,category,amount,description,paymentMethod,sourceAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,CASH,Company Account,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,Company Account,`
-                                                : JSON.stringify([{ date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentMethod: "CASH" }], null, 2)
+                                                ? `date,entryType,category,amount,description,paymentAccount,destinationAccount\n2025-01-15,EXPENSE,Supplies,1500,Office stationery purchase,Cash,\n2025-01-16,INCOME,Other,5000,Client payment received,UPI,`
+                                                : JSON.stringify([{ date: "2025-01-15", entryType: "EXPENSE", category: "Supplies", amount: 1500, description: "Office stationery purchase", paymentAccount: "Cash" }], null, 2)
                                             }
                                         </pre>
                                     </div>
@@ -1033,7 +1010,7 @@ const Ledger: React.FC = () => {
                                                     <th className="px-2 py-1.5 text-left">Category</th>
                                                     <th className="px-2 py-1.5 text-right">Amount</th>
                                                     <th className="px-2 py-1.5 text-left">Description</th>
-                                                    <th className="px-2 py-1.5 text-left">Payment</th>
+                                                    <th className="px-2 py-1.5 text-left">Account</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -1052,7 +1029,7 @@ const Ledger: React.FC = () => {
                                                         <td className="px-2 py-1.5">{entry.category}</td>
                                                         <td className="px-2 py-1.5 text-right font-medium">₹{entry.amount?.toLocaleString()}</td>
                                                         <td className="px-2 py-1.5 max-w-[200px] truncate">{entry.description}</td>
-                                                        <td className="px-2 py-1.5">{entry.paymentMethod}</td>
+                                                        <td className="px-2 py-1.5">{entry.paymentAccount}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

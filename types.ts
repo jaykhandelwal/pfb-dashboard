@@ -287,21 +287,16 @@ export interface LedgerCategoryDefinition {
   allowedUserIds?: string[] | null;
 }
 
-export interface LedgerPaymentMethod {
-  id: string;
-  name: string;
-  isActive: boolean;
-  color?: string;
-  icon?: string;
-  allowedUserIds?: string[] | null;
-}
-
 export interface LedgerAccount {
   id: string;
   name: string;
   type: 'USER' | 'CUSTOM';
   linkedUserId?: string;
   isActive: boolean;
+  color?: string;
+  icon?: string;
+  allowedUserIds?: string[] | null;
+  paymentMethod?: string;
 }
 
 export interface AppSettings {
@@ -326,7 +321,6 @@ export interface AppSettings {
   stock_ordering_litres_per_packet: number | string;
   deep_freezer_categories: string[];
   ledger_categories?: LedgerCategoryDefinition[];
-  payment_methods?: LedgerPaymentMethod[];
   ledger_accounts?: LedgerAccount[];
   coolify_api_token?: string;
   coolify_instance_url?: string;
@@ -368,8 +362,6 @@ export interface LedgerEntry {
   categoryId?: string;
   amount: number;
   description: string;
-  paymentMethod: string;
-  paymentMethodId?: string;
   createdBy: string;
   createdByName: string;
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -405,8 +397,7 @@ export interface BulkLedgerImportEntry {
   category: string;
   amount: number;
   description: string;
-  paymentMethod: string;
-  sourceAccount?: string;
+  paymentAccount: string;
   destinationAccount?: string;
   branchName?: string;
 }
