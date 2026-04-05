@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText } from 'lucide-react';
@@ -7,11 +7,12 @@ import { APP_VERSION } from '../version';
 
 const AUTO_REFRESH_INTERVAL_MS = 10000;
 const AUTO_REFRESH_TICK_MS = 200;
+const DEPLOYMENT_DISCOVERY_WINDOW_MS = 120000;
 const ACTIVE_DEPLOYMENT_STATUSES = new Set(['in_progress', 'queued', 'running', 'pending']);
 const SUCCESSFUL_DEPLOYMENT_STATUSES = new Set(['finished', 'success']);
 const FAILED_DEPLOYMENT_STATUSES = new Set(['failed', 'error']);
 
-const normalizeDeploymentStatus = (status?: string) => status?.toLowerCase() || '';
+const normalizeDeploymentStatus = (status?: string) => status?.trim().toLowerCase() || '';
 const isActiveDeploymentStatus = (status?: string) => ACTIVE_DEPLOYMENT_STATUSES.has(normalizeDeploymentStatus(status));
 
 const getDeploymentStatusDotClass = (status?: string) => {
@@ -53,10 +54,14 @@ const AppSettings: React.FC = () => {
    const [isCheckingStatus, setIsCheckingStatus] = useState(false);
    const [autoRefreshStartedAt, setAutoRefreshStartedAt] = useState<number | null>(null);
    const [autoRefreshNow, setAutoRefreshNow] = useState(() => Date.now());
+   const [autoRefreshArmedUntil, setAutoRefreshArmedUntil] = useState<number | null>(null);
+   const hasBootstrappedDeploymentStatus = useRef(false);
 
    const canCheckDeploymentStatus = Boolean(coolifyUrl && coolifyToken && coolifyTag);
    const hasRunningDeployment = recentDeployments.some((deployment) => isActiveDeploymentStatus(deployment.status));
-   const showAutoRefreshProgress = canCheckDeploymentStatus && hasRunningDeployment && !isCheckingStatus && autoRefreshStartedAt !== null;
+   const isAutoRefreshArmed = autoRefreshArmedUntil !== null;
+   const shouldAutoRefreshDeployments = canCheckDeploymentStatus && !isCheckingStatus && (hasRunningDeployment || isAutoRefreshArmed);
+   const showAutoRefreshProgress = shouldAutoRefreshDeployments && autoRefreshStartedAt !== null;
    const autoRefreshProgress = showAutoRefreshProgress && autoRefreshStartedAt !== null
       ? Math.min(100, ((autoRefreshNow - autoRefreshStartedAt) / AUTO_REFRESH_INTERVAL_MS) * 100)
       : 0;
@@ -119,6 +124,10 @@ const AppSettings: React.FC = () => {
          console.log('Coolify API response:', deployments);
          setRecentDeployments(deployments);
 
+         if (deployments.some((deployment) => isActiveDeploymentStatus(deployment.status))) {
+            setAutoRefreshArmedUntil(null);
+         }
+
          if (!silent) {
             if (deployments.length === 0) {
                setToastMsg('No deployments found for this application.');
@@ -154,13 +163,63 @@ const AppSettings: React.FC = () => {
    };
 
    useEffect(() => {
-      if (coolifyUrl && coolifyToken && coolifyTag) {
-         checkStatus(true);
+      if (!coolifyUrl && appSettings.coolify_instance_url) {
+         setCoolifyUrl(appSettings.coolify_instance_url);
       }
-   }, []);
+
+      if (!coolifyToken && appSettings.coolify_api_token) {
+         setCoolifyToken(appSettings.coolify_api_token);
+      }
+
+      if (!coolifyTag && appSettings.coolify_deployment_tag_or_uuid) {
+         setCoolifyTag(appSettings.coolify_deployment_tag_or_uuid);
+      }
+   }, [
+      appSettings.coolify_instance_url,
+      appSettings.coolify_api_token,
+      appSettings.coolify_deployment_tag_or_uuid,
+      coolifyUrl,
+      coolifyToken,
+      coolifyTag,
+   ]);
 
    useEffect(() => {
-      if (!canCheckDeploymentStatus || !hasRunningDeployment || isCheckingStatus) {
+      if (!canCheckDeploymentStatus || hasBootstrappedDeploymentStatus.current) {
+         return;
+      }
+
+      hasBootstrappedDeploymentStatus.current = true;
+      checkStatus(true);
+   }, [canCheckDeploymentStatus]);
+
+   useEffect(() => {
+      if (!autoRefreshArmedUntil) {
+         return;
+      }
+
+      const remainingMs = autoRefreshArmedUntil - Date.now();
+      if (remainingMs <= 0) {
+         setAutoRefreshArmedUntil(null);
+         return;
+      }
+
+      const armExpiryTimer = window.setTimeout(() => {
+         setAutoRefreshArmedUntil((current) => {
+            if (current === null || current > Date.now()) {
+               return current;
+            }
+
+            return null;
+         });
+      }, remainingMs);
+
+      return () => {
+         window.clearTimeout(armExpiryTimer);
+      };
+   }, [autoRefreshArmedUntil]);
+
+   useEffect(() => {
+      if (!shouldAutoRefreshDeployments) {
          setAutoRefreshStartedAt(null);
          return;
       }
@@ -181,7 +240,7 @@ const AppSettings: React.FC = () => {
          window.clearInterval(tickTimer);
          window.clearTimeout(refreshTimer);
       };
-   }, [canCheckDeploymentStatus, hasRunningDeployment, isCheckingStatus, recentDeployments]);
+   }, [shouldAutoRefreshDeployments]);
 
    const handleDeploy = async () => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
@@ -198,6 +257,7 @@ const AppSettings: React.FC = () => {
             coolifyTag,
             appSettings.coolify_force_build || false
          );
+         setAutoRefreshArmedUntil(Date.now() + DEPLOYMENT_DISCOVERY_WINDOW_MS);
          setToastMsg('Deployment triggered successfully!');
          await checkStatus(true);
       } catch (error: any) {

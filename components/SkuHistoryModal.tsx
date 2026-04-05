@@ -36,9 +36,12 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
     // 2. Consumption History (Orders)
     const consumptionHistory = useMemo(() => {
         if (!sku) return [];
-        const history: { date: string; orderId: string; quantity: number; orderTotal: number; time: string }[] = [];
+
+        const historyByDate = new Map<string, { date: string; quantity: number; ordersCount: number; latestTimestamp: number }>();
 
         orders.forEach(order => {
+            if (order.status === 'CANCELLED') return;
+
             let consumedQty = 0;
 
             // Check direct consumption in items
@@ -59,18 +62,26 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
                 });
             }
 
-            if (consumedQty > 0) {
-                history.push({
-                    date: order.date,
-                    orderId: order.id,
-                    quantity: consumedQty,
-                    orderTotal: order.totalAmount,
-                    time: new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                });
+            if (consumedQty <= 0) return;
+
+            const existingDay = historyByDate.get(order.date);
+            if (existingDay) {
+                existingDay.quantity += consumedQty;
+                existingDay.ordersCount += 1;
+                existingDay.latestTimestamp = Math.max(existingDay.latestTimestamp, order.timestamp);
+                return;
             }
+
+            historyByDate.set(order.date, {
+                date: order.date,
+                quantity: consumedQty,
+                ordersCount: 1,
+                latestTimestamp: order.timestamp,
+            });
         });
 
-        return history.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+        return Array.from(historyByDate.values())
+            .sort((a, b) => b.date.localeCompare(a.date) || b.latestTimestamp - a.latestTimestamp);
     }, [orders, sku?.id]);
 
     // Early return AFTER all hooks
@@ -169,16 +180,17 @@ const SkuHistoryModal: React.FC<SkuHistoryModalProps> = ({ sku, isOpen, onClose 
                                     <p>No consumption history found</p>
                                 </div>
                             ) : (
-                                consumptionHistory.map((item, idx) => (
-                                    <div key={`${item.orderId}-${idx}`} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-colors">
+                                consumptionHistory.map((item) => (
+                                    <div key={item.date} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-colors">
                                         <div className="flex items-center gap-3">
                                             <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600">
                                                 <ShoppingBag size={18} />
                                             </div>
                                             <div>
-                                                <p className="font-bold text-slate-700 text-sm">Sale (Order #{item.orderId.slice(-4)})</p>
+                                                <p className="font-bold text-slate-700 text-sm">{new Date(item.date).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                                                 <div className="flex items-center gap-2 text-xs text-slate-400">
-                                                    <span className="flex items-center gap-1"><Calendar size={10} /> {new Date(item.date).toLocaleDateString()} {item.time}</span>
+                                                    <span className="flex items-center gap-1"><Calendar size={10} /> Daily total</span>
+                                                    <span>{item.ordersCount} {item.ordersCount === 1 ? 'order' : 'orders'}</span>
                                                 </div>
                                             </div>
                                         </div>
