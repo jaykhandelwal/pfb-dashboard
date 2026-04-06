@@ -5,7 +5,7 @@ import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCi
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 import { APP_VERSION } from '../version';
 
-const AUTO_REFRESH_INTERVAL_MS = 10000;
+const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_TICK_MS = 200;
 const DEPLOYMENT_DISCOVERY_WINDOW_MS = 120000;
 const ACTIVE_DEPLOYMENT_STATUSES = new Set(['in_progress', 'queued', 'running', 'pending']);
@@ -772,7 +772,7 @@ const AppSettings: React.FC = () => {
                                  onClick={() => checkStatus()}
                                  disabled={isCheckingStatus || !canCheckDeploymentStatus}
                                  className="relative overflow-hidden flex items-center gap-2 bg-white text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                                 title={showAutoRefreshProgress ? 'Auto-refreshing every 10 seconds while deployment is running.' : 'Check deployment status'}
+                                 title={showAutoRefreshProgress ? 'Auto-refreshing every 30 seconds while deployment is running.' : 'Check deployment status'}
                               >
                                  {showAutoRefreshProgress && (
                                     <span
