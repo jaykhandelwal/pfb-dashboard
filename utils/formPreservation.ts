@@ -271,6 +271,11 @@ function clearRouteDraft(routeKey: string): void {
     writeStore(store);
 }
 
+function clearPendingRestoreTimers(): void {
+    pendingRestoreTimers.forEach((timerId) => window.clearTimeout(timerId));
+    pendingRestoreTimers = [];
+}
+
 function saveCurrentRouteDraft(): void {
     const routeKey = getCurrentRouteKey();
     if (shouldSkipRoute(routeKey)) {
@@ -430,9 +435,26 @@ function restoreRouteDraft(routeKey = getCurrentRouteKey()): number {
     return restoredCount;
 }
 
+function nodeContainsEligibleField(node: Node): boolean {
+    if (!(node instanceof Element)) {
+        return false;
+    }
+
+    return isEligibleField(node) || getEligibleFields(node).length > 0;
+}
+
+function shouldRestoreForMutations(mutations: MutationRecord[]): boolean {
+    return mutations.some((mutation) => (
+        mutation.type === 'childList'
+        && (
+            Array.from(mutation.addedNodes).some(nodeContainsEligibleField)
+            || Array.from(mutation.removedNodes).some(nodeContainsEligibleField)
+        )
+    ));
+}
+
 function scheduleRestore(routeKey = getCurrentRouteKey()): void {
-    pendingRestoreTimers.forEach((timerId) => window.clearTimeout(timerId));
-    pendingRestoreTimers = [];
+    clearPendingRestoreTimers();
 
     RESTORE_DELAYS_MS.forEach((delayMs) => {
         const timerId = window.setTimeout(() => {
@@ -610,6 +632,7 @@ export function initializeFormPreservation(): () => void {
             return;
         }
 
+        clearPendingRestoreTimers();
         scheduleSave();
     };
 
@@ -659,7 +682,11 @@ export function initializeFormPreservation(): () => void {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    mutationObserver = new MutationObserver(() => {
+    mutationObserver = new MutationObserver((mutations) => {
+        if (!shouldRestoreForMutations(mutations)) {
+            return;
+        }
+
         scheduleRestore();
     });
     mutationObserver.observe(document.body, { childList: true, subtree: true });
@@ -683,8 +710,7 @@ export function initializeFormPreservation(): () => void {
             saveTimer = null;
         }
 
-        pendingRestoreTimers.forEach((timerId) => window.clearTimeout(timerId));
-        pendingRestoreTimers = [];
+        clearPendingRestoreTimers();
 
         disposeListeners.forEach((dispose) => dispose());
         disposeListeners = [];
