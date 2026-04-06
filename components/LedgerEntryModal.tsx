@@ -129,6 +129,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         return selectedCategory?.description?.trim() || '';
     }, [appSettings.ledger_categories, formData.category, formData.categoryId]);
 
+    const shouldShowCategoryField = formData.entryType !== 'INCOME';
+
     const sourceAccountOptions = useMemo(() => {
         if (isSourceAccountLocked) {
             return lockedSourceAccount ? [lockedSourceAccount] : [];
@@ -167,7 +169,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             return 'The configured Record Cash account is not assigned to your user. Ask an admin to update Ledger Settings.';
         }
 
-        if (categoryOptions.length === 0) {
+        if (shouldShowCategoryField && categoryOptions.length === 0) {
             return 'No ledger categories are assigned to your user yet. Ask an admin to update Ledger Settings.';
         }
 
@@ -176,7 +178,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
 
         return null;
-    }, [categoryOptions.length, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible, sourceAccountOptions.length]);
+    }, [categoryOptions.length, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible, shouldShowCategoryField, sourceAccountOptions.length]);
 
     // Load defaults or initial data
     useEffect(() => {
@@ -256,6 +258,28 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             };
         });
     }, [isOpen, initialData, accessibleCategories, accessibleAccounts, activeAccounts, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible]);
+
+    useEffect(() => {
+        if (!isOpen || formData.entryType !== 'INCOME') return;
+
+        const preferredIncomeCategoryName = preferredCategoryName?.trim() || 'Other';
+        const preferredIncomeCategory = activeCategories.find(category =>
+            category.name.toLowerCase() === preferredIncomeCategoryName.toLowerCase()
+        );
+
+        const nextCategory = preferredIncomeCategory?.name || preferredIncomeCategoryName;
+        const nextCategoryId = preferredIncomeCategory?.id || '';
+
+        if (formData.category === nextCategory && (formData.categoryId || '') === nextCategoryId) {
+            return;
+        }
+
+        setFormData(prev => ({
+            ...prev,
+            category: nextCategory,
+            categoryId: nextCategoryId
+        }));
+    }, [isOpen, formData.entryType, formData.category, formData.categoryId, preferredCategoryName, activeCategories]);
 
     useEffect(() => {
         if (!isOpen && newBillPreviews.length > 0) {
@@ -572,7 +596,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     </div>
 
                     {/* Category Selection */}
-                    {CustomDropdown({
+                    {shouldShowCategoryField && CustomDropdown({
                         label: "Category",
                         value: formData.categoryId || formData.category,
                         options: categoryOptions,
