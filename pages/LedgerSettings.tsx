@@ -927,6 +927,7 @@ const LedgerSettings: React.FC = () => {
                 </div>
             </div>
 
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
             {/* Categories */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                 <div className="flex items-center justify-between mb-6">
@@ -1075,7 +1076,7 @@ const LedgerSettings: React.FC = () => {
             </div>
 
             {/* Payment Accounts Section */}
-            <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
                     <div>
                         <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
@@ -1300,6 +1301,7 @@ const LedgerSettings: React.FC = () => {
                             );
                         })}
                 </div>
+            </div>
             </div>
 
             <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-8">

@@ -251,6 +251,14 @@ const Ledger: React.FC = () => {
         });
     }, [accountLookup, activeLedgerEntries, availableAccounts]);
 
+    const nonUserPaymentAccountBalances = useMemo(() => {
+        return paymentAccountBalances.filter(account => account.account?.type !== 'USER');
+    }, [paymentAccountBalances]);
+
+    const nonUserNetBalance = useMemo(() => {
+        return nonUserPaymentAccountBalances.reduce((sum, account) => sum + account.balance, 0);
+    }, [nonUserPaymentAccountBalances]);
+
     // Calculate user balances: (Expenses paid by user) - (Reimbursements received by user)
     // Only count APPROVED entries to ensure accurate tracking
     const userBalances = useMemo(() => {
@@ -415,17 +423,17 @@ const Ledger: React.FC = () => {
                             <span className="text-xs font-medium uppercase">Net Balance</span>
                         </div>
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                            {paymentAccountBalances.length} Accounts
+                            {nonUserPaymentAccountBalances.length} Accounts
                         </span>
                     </div>
-                    <p className={`text-xl font-bold ${cardStats.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        ₹{cardStats.net.toLocaleString()}
+                    <p className={`text-xl font-bold ${nonUserNetBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        ₹{nonUserNetBalance.toLocaleString()}
                     </p>
                     <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
                         All approved income/expense movements
                     </p>
                     <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar max-h-[120px]">
-                        {paymentAccountBalances.map(account => {
+                        {nonUserPaymentAccountBalances.map(account => {
                             const accountColor = account.account?.color || '#0f766e';
                             const amountColor = account.balance > 0
                                 ? 'text-emerald-600'
