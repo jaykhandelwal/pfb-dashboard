@@ -875,7 +875,7 @@ const Dashboard: React.FC = () => {
                      <h3 className="font-bold text-slate-700">Assign New Task</h3>
                      <button onClick={() => setIsTaskModalOpen(false)}><X size={20} className="text-slate-400" /></button>
                   </div>
-                  <form onSubmit={handleCreateTask} className="p-4 space-y-4">
+                  <form data-draft-preserve onSubmit={handleCreateTask} className="p-4 space-y-4">
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Description</label>
                         <input type="text" required autoFocus placeholder="e.g. Clean the deep fryer" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500 outline-none" />

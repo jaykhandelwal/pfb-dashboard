@@ -526,7 +526,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         <X size={20} />
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                <form data-draft-preserve onSubmit={handleSubmit} className="p-4 space-y-4">
                     {accessIssue && (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                             {accessIssue}

@@ -1071,7 +1071,7 @@ const Ledger: React.FC = () => {
                             </details>
 
                             {/* Input Area */}
-                            <div>
+                            <div data-draft-preserve>
                                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Paste your {importMode} data</label>
                                 <textarea
                                     value={importText}

@@ -1,4 +1,4 @@
-// Route-scoped draft preservation for standard form fields.
+// Route-scoped draft preservation for selected form workflows.
 // This survives reloads/build updates and clears after successful submits without touching page business logic.
 
 const STORAGE_KEY = 'pakaja_form_drafts_v2';
@@ -8,6 +8,12 @@ const DRAFT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const RESTORE_DELAYS_MS = [0, 250, 1000];
 const SUBMIT_RECHECK_DELAYS_MS = [800, 2000, 5000];
 const INPUT_SELECTOR = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="file"]):not([type="password"]), textarea, select';
+const OPT_IN_SELECTOR = '[data-draft-preserve]';
+const ROUTE_ALLOWLIST = new Set([
+    '/operations',
+    '/attendance',
+    '/tasks',
+]);
 
 interface LegacyFormData {
     timestamp: number;
@@ -47,6 +53,12 @@ interface DraftStore {
     routes: Record<string, RouteDraft>;
 }
 
+interface RestoredFieldDetail {
+    key: string;
+    label: string;
+    valuePreview: string;
+}
+
 let isInitialized = false;
 let isRestoring = false;
 let saveTimer: number | null = null;
@@ -54,6 +66,7 @@ let pendingRestoreTimers: number[] = [];
 let mutationObserver: MutationObserver | null = null;
 let previousRouteKey = getCurrentRouteKey();
 let notificationRouteKey: string | null = null;
+let notificationDismissTimer: number | null = null;
 let disposeListeners: Array<() => void> = [];
 
 function getCurrentRouteKey(): string {
@@ -61,27 +74,58 @@ function getCurrentRouteKey(): string {
     return hashRoute.split('?')[0];
 }
 
-function shouldSkipRoute(routeKey = getCurrentRouteKey()): boolean {
-    return routeKey === '#/login' || routeKey === '/login';
+function normalizeRoutePath(routeKey = getCurrentRouteKey()): string {
+    const withoutHash = routeKey.startsWith('#') ? routeKey.slice(1) : routeKey;
+    const normalized = withoutHash || '/';
+
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+        return normalized.slice(0, -1);
+    }
+
+    return normalized;
 }
 
-function getEligibleFields(root: ParentNode = document): Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement> {
+function shouldSkipRoute(routeKey = getCurrentRouteKey()): boolean {
+    return normalizeRoutePath(routeKey) === '/login';
+}
+
+function isRouteAllowed(routeKey = getCurrentRouteKey()): boolean {
+    return ROUTE_ALLOWLIST.has(normalizeRoutePath(routeKey));
+}
+
+function isFieldOptedIn(field: Element): boolean {
+    return Boolean(field.closest(OPT_IN_SELECTOR));
+}
+
+function shouldPreserveField(field: Element, routeKey = getCurrentRouteKey()): boolean {
+    return isRouteAllowed(routeKey) || isFieldOptedIn(field);
+}
+
+function getEligibleFields(
+    root: ParentNode = document,
+    routeKey = getCurrentRouteKey(),
+): Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement> {
     return Array.from(root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(INPUT_SELECTOR))
         .filter((field) => {
             if ((field as HTMLInputElement).type === 'password') return false;
             if ((field as HTMLInputElement).type === 'file') return false;
             if (field.hasAttribute('data-no-preserve')) return false;
             if (field.disabled) return false;
+            if (!shouldPreserveField(field, routeKey)) return false;
             return true;
         });
 }
 
-function isEligibleField(field: Element): field is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+function isEligibleField(
+    field: Element,
+    routeKey = getCurrentRouteKey(),
+): field is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
     return (
         (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)
         && !field.hasAttribute('data-no-preserve')
         && !field.disabled
         && (!(field instanceof HTMLInputElement) || !['password', 'file', 'hidden', 'submit', 'button', 'reset', 'image'].includes(field.type))
+        && shouldPreserveField(field, routeKey)
     );
 }
 
@@ -149,7 +193,7 @@ function getScopedFields(descriptor: FieldDescriptor): Array<HTMLInputElement | 
         return form ? getEligibleFields(form) : [];
     }
 
-    return getEligibleFields().filter((field) => !field.closest('form'));
+    return getEligibleFields(document).filter((field) => !field.closest('form'));
 }
 
 function buildFieldDescriptor(
@@ -283,7 +327,7 @@ function saveCurrentRouteDraft(): void {
         return;
     }
 
-    const routeFields = getEligibleFields();
+    const routeFields = getEligibleFields(document, routeKey);
     if (routeFields.length === 0) {
         clearRouteDraft(routeKey);
         return;
@@ -307,7 +351,7 @@ function saveDraftForRoute(routeKey: string): void {
         return;
     }
 
-    const routeFields = getEligibleFields();
+    const routeFields = getEligibleFields(document, routeKey);
     if (routeFields.length === 0) {
         clearRouteDraft(routeKey);
         return;
@@ -362,7 +406,7 @@ function applyValueToField(
 function findFieldByDescriptor(descriptor: FieldDescriptor): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null {
     if (descriptor.id) {
         const byId = document.getElementById(descriptor.id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-        if (byId && !byId.hasAttribute('data-no-preserve')) {
+        if (byId && isEligibleField(byId)) {
             return byId;
         }
     }
@@ -404,6 +448,69 @@ function findFieldByDescriptor(descriptor: FieldDescriptor): HTMLInputElement | 
     return null;
 }
 
+function truncateText(value: string, maxLength = 60): string {
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function getRestoredFieldLabel(
+    descriptor: FieldDescriptor,
+    field?: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
+    const candidates = [
+        field ? getLabelText(field) : '',
+        descriptor.label,
+        descriptor.name,
+        descriptor.placeholder,
+        descriptor.id,
+        descriptor.inputType === 'radio' ? descriptor.radioValue : '',
+    ]
+        .map((candidate) => normalizeText(candidate))
+        .filter(Boolean);
+
+    const uniqueCandidates = Array.from(new Set(candidates));
+    if (uniqueCandidates.length === 0) {
+        return `Field ${descriptor.fieldIndex + 1}`;
+    }
+
+    if (uniqueCandidates.length === 1) {
+        return uniqueCandidates[0];
+    }
+
+    return `${uniqueCandidates[0]} (${uniqueCandidates[1]})`;
+}
+
+function getRestoredValuePreview(
+    preserved: PreservedField,
+    field?: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string {
+    if ((field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio'))
+        || preserved.checked !== undefined) {
+        const checked = field instanceof HTMLInputElement ? field.checked : Boolean(preserved.checked);
+        const stateLabel = checked
+            ? (field instanceof HTMLInputElement && field.type === 'radio'
+                ? `Selected: ${field.value || preserved.value || 'option'}`
+                : 'Checked')
+            : 'Unchecked';
+
+        return stateLabel;
+    }
+
+    const rawValue = normalizeText(field?.value ?? preserved.value);
+    return rawValue ? truncateText(rawValue) : 'Empty';
+}
+
+function buildRestoredFieldDetail(
+    preserved: PreservedField,
+    field?: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): RestoredFieldDetail {
+    return {
+        key: preserved.descriptor.key,
+        label: getRestoredFieldLabel(preserved.descriptor, field),
+        valuePreview: getRestoredValuePreview(preserved, field),
+    };
+}
+
 function restoreRouteDraft(routeKey = getCurrentRouteKey()): number {
     if (shouldSkipRoute(routeKey)) return 0;
 
@@ -412,6 +519,7 @@ function restoreRouteDraft(routeKey = getCurrentRouteKey()): number {
     if (!draft?.fields?.length) return 0;
 
     let restoredCount = 0;
+    const restoredFields: RestoredFieldDetail[] = [];
     isRestoring = true;
 
     try {
@@ -421,6 +529,7 @@ function restoreRouteDraft(routeKey = getCurrentRouteKey()): number {
 
             if (applyValueToField(field, preserved)) {
                 restoredCount += 1;
+                restoredFields.push(buildRestoredFieldDetail(preserved, field));
             }
         });
     } finally {
@@ -428,7 +537,7 @@ function restoreRouteDraft(routeKey = getCurrentRouteKey()): number {
     }
 
     if (restoredCount > 0 && notificationRouteKey !== routeKey) {
-        showRestoredNotification(restoredCount);
+        showRestoredNotification(restoredFields);
         notificationRouteKey = routeKey;
     }
 
@@ -495,7 +604,7 @@ function shouldClearSubmittedDraft(
         return true;
     }
 
-    const currentFields = getEligibleFields(form);
+    const currentFields = getEligibleFields(form, routeKey);
     if (currentFields.length === 0) {
         return true;
     }
@@ -541,6 +650,7 @@ function maybeRestoreLegacySnapshot(): void {
         }
 
         let restoredCount = 0;
+        const restoredFields: RestoredFieldDetail[] = [];
         Object.entries(legacyData.fields || {}).forEach(([key, value]) => {
             let field = document.getElementById(key) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
             if (!field) {
@@ -561,10 +671,19 @@ function maybeRestoreLegacySnapshot(): void {
             field.dispatchEvent(new Event('input', { bubbles: true }));
             field.dispatchEvent(new Event('change', { bubbles: true }));
             restoredCount += 1;
+            restoredFields.push({
+                key,
+                label: normalizeText(getLabelText(field) || key) || 'Saved field',
+                valuePreview: value === 'true'
+                    ? 'Checked'
+                    : value === 'false'
+                        ? 'Unchecked'
+                        : (normalizeText(value) ? truncateText(normalizeText(value)) : 'Empty'),
+            });
         });
 
         if (restoredCount > 0 && notificationRouteKey !== getCurrentRouteKey()) {
-            showRestoredNotification(restoredCount);
+            showRestoredNotification(restoredFields);
             notificationRouteKey = getCurrentRouteKey();
         }
 
@@ -574,23 +693,68 @@ function maybeRestoreLegacySnapshot(): void {
     }
 }
 
-function showRestoredNotification(count: number): void {
-    const existing = document.getElementById('form-preservation-notice');
-    existing?.remove();
+function clearNotificationDismissTimer(): void {
+    if (notificationDismissTimer !== null) {
+        window.clearTimeout(notificationDismissTimer);
+        notificationDismissTimer = null;
+    }
+}
+
+function removeExistingNotification(): void {
+    clearNotificationDismissTimer();
+    document.getElementById('form-preservation-notice')?.remove();
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function showRestoredNotification(restoredFields: RestoredFieldDetail[]): void {
+    const count = restoredFields.length;
+    if (count === 0) return;
+
+    removeExistingNotification();
 
     const notification = document.createElement('div');
     notification.id = 'form-preservation-notice';
-    notification.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-40';
+    notification.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-[28rem] z-40';
+    const detailsMarkup = restoredFields.map((detail) => `
+        <li class="rounded-md border border-slate-700/80 bg-slate-800/60 px-3 py-2">
+          <p class="text-xs font-medium text-slate-100">${escapeHtml(detail.label)}</p>
+          <p class="mt-1 text-[11px] text-slate-400 break-words">${escapeHtml(detail.valuePreview)}</p>
+        </li>
+    `).join('');
+
     notification.innerHTML = `
-    <div class="bg-slate-800 text-white rounded-lg shadow-lg p-3 flex items-center gap-3" style="animation: slideUp 0.3s ease-out">
-      <div class="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-400">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-      </div>
-      <div class="flex-1">
-        <p class="text-sm font-medium">Draft Restored</p>
-        <p class="text-xs text-slate-400">${count} field${count > 1 ? 's' : ''} recovered after reload/update</p>
+    <div class="bg-slate-800 text-white rounded-lg shadow-lg p-3" style="animation: slideUp 0.3s ease-out">
+      <div class="flex items-start gap-3">
+        <div class="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-400">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-medium">Draft Restored</p>
+              <p class="text-xs text-slate-400">${count} field${count > 1 ? 's' : ''} recovered after reload/update</p>
+            </div>
+            <button type="button" data-action="dismiss" class="text-xs text-slate-400 hover:text-white transition-colors">Close</button>
+          </div>
+          <button type="button" data-action="toggle" class="mt-2 text-xs font-medium text-emerald-300 hover:text-emerald-200 transition-colors">
+            Expand restored fields
+          </button>
+          <div data-role="details" class="mt-3 hidden rounded-lg border border-slate-700 bg-slate-900/70">
+            <div class="max-h-56 overflow-y-auto p-3">
+              <ul class="space-y-2">${detailsMarkup}</ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -603,17 +767,51 @@ function showRestoredNotification(count: number): void {
         from { opacity: 0; transform: translateY(20px); }
         to { opacity: 1; transform: translateY(0); }
       }
-    `;
+        `;
         document.head.appendChild(style);
     }
 
     document.body.appendChild(notification);
+    const detailsPanel = notification.querySelector('[data-role="details"]') as HTMLDivElement | null;
+    const toggleButton = notification.querySelector('[data-action="toggle"]') as HTMLButtonElement | null;
+    const dismissButton = notification.querySelector('[data-action="dismiss"]') as HTMLButtonElement | null;
 
-    window.setTimeout(() => {
+    const removeNotification = () => {
+        clearNotificationDismissTimer();
         notification.style.opacity = '0';
-        notification.style.transition = 'opacity 0.3s ease-out';
-        window.setTimeout(() => notification.remove(), 300);
-    }, 4000);
+        notification.style.transform = 'translateY(8px)';
+        notification.style.transition = 'opacity 0.2s ease-out, transform 0.2s ease-out';
+        window.setTimeout(() => notification.remove(), 200);
+    };
+
+    const scheduleDismiss = () => {
+        clearNotificationDismissTimer();
+        notificationDismissTimer = window.setTimeout(removeNotification, 6000);
+    };
+
+    toggleButton?.addEventListener('click', () => {
+        if (!detailsPanel || !toggleButton) return;
+
+        const isExpanded = !detailsPanel.classList.contains('hidden');
+        detailsPanel.classList.toggle('hidden', isExpanded);
+        toggleButton.textContent = isExpanded ? 'Expand restored fields' : 'Hide restored fields';
+
+        if (isExpanded) {
+            scheduleDismiss();
+        } else {
+            clearNotificationDismissTimer();
+        }
+    });
+
+    dismissButton?.addEventListener('click', removeNotification);
+    notification.addEventListener('mouseenter', clearNotificationDismissTimer);
+    notification.addEventListener('mouseleave', () => {
+        if (!detailsPanel || detailsPanel.classList.contains('hidden')) {
+            scheduleDismiss();
+        }
+    });
+
+    scheduleDismiss();
 }
 
 export function initializeFormPreservation(): () => void {
@@ -643,7 +841,7 @@ export function initializeFormPreservation(): () => void {
         const routeKey = getCurrentRouteKey();
         if (shouldSkipRoute(routeKey)) return;
 
-        const currentFormFields = getEligibleFields(target);
+        const currentFormFields = getEligibleFields(target, routeKey);
         const submittedFormFields = currentFormFields.map((field) => extractFieldState(field, currentFormFields));
         if (submittedFormFields.length === 0) {
             clearRouteDraft(routeKey);
@@ -662,6 +860,7 @@ export function initializeFormPreservation(): () => void {
         saveDraftForRoute(previousRouteKey);
         previousRouteKey = nextRouteKey;
         notificationRouteKey = null;
+        removeExistingNotification();
         scheduleRestore(nextRouteKey);
     };
 
