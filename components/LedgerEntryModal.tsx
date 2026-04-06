@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    X, CheckCircle2, ChevronDown, UploadCloud
+    X, CheckCircle2, ChevronDown, Info, UploadCloud
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
@@ -505,9 +505,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 )}
 
                 {helperText && (
-                    <p className="mt-1 px-1 text-xs leading-relaxed text-[#403424]/55">
-                        {helperText}
-                    </p>
+                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-[#95a77c]/25 bg-[#95a77c]/10 px-3 py-2">
+                        <Info size={14} className="mt-0.5 shrink-0 text-[#7e8f68]" />
+                        <p className="text-xs font-medium leading-relaxed text-[#5f513f]">
+                            {helperText}
+                        </p>
+                    </div>
                 )}
             </div>
         );

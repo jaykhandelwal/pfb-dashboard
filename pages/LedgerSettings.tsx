@@ -36,6 +36,8 @@ const LedgerSettings: React.FC = () => {
     const [newCategory, setNewCategory] = useState('');
     const [newCategoryDescription, setNewCategoryDescription] = useState('');
     const [newAccountName, setNewAccountName] = useState('');
+    const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+    const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
 
     const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
     const [editingCategoryName, setEditingCategoryName] = useState('');
@@ -99,16 +101,28 @@ const LedgerSettings: React.FC = () => {
         return () => document.removeEventListener('mousedown', handlePointerDown);
     }, [activePaymentMethodMenu]);
 
+    const closeAddCategoryModal = () => {
+        setIsAddCategoryModalOpen(false);
+        setNewCategory('');
+        setNewCategoryDescription('');
+    };
+
+    const closeAddAccountModal = () => {
+        setIsAddAccountModalOpen(false);
+        setNewAccountName('');
+        setActivePaymentMethodMenu(null);
+    };
+
     // CATEGORIES
     const handleAddCategory = () => {
-        if (!newCategory.trim()) return;
+        if (!newCategory.trim()) return false;
         const id = `cat_${Date.now()}`;
         const normalizedName = newCategory.trim();
         const normalizedDescription = newCategoryDescription.trim();
 
         if (categories.find(c => c.name.toLowerCase() === normalizedName.toLowerCase())) {
             alert('Category already exists');
-            return;
+            return false;
         }
 
         const updatedCategories = [...categories, {
@@ -122,8 +136,8 @@ const LedgerSettings: React.FC = () => {
         }];
         setCategories(updatedCategories);
         updateAppSetting('ledger_categories', updatedCategories);
-        setNewCategory('');
-        setNewCategoryDescription('');
+        closeAddCategoryModal();
+        return true;
     };
 
     const startEditingCategory = (cat: LedgerCategoryDefinition) => {
@@ -850,13 +864,13 @@ const LedgerSettings: React.FC = () => {
 
     // ACCOUNTS
     const handleAddAccount = async () => {
-        if (!newAccountName.trim()) return;
+        if (!newAccountName.trim()) return false;
         const id = `custom_${Date.now()}`;
         const name = newAccountName.trim();
 
         if (accounts.find(a => a.name.toLowerCase() === name.toLowerCase())) {
             alert('Account with this name already exists');
-            return;
+            return false;
         }
 
         const newAcc: LedgerAccount = {
@@ -870,8 +884,8 @@ const LedgerSettings: React.FC = () => {
         };
         const updatedAccounts = [...accounts, newAcc];
         await persistAccounts(updatedAccounts);
-        setNewAccountName('');
-        setActivePaymentMethodMenu(null);
+        closeAddAccountModal();
+        return true;
     };
 
     const toggleAccount = async (id: string) => {
@@ -915,6 +929,8 @@ const LedgerSettings: React.FC = () => {
     const hasInvalidSavedRecordCashAccount = Boolean(
         (savedRecordCashSettings.accountId || savedRecordCashSettings.accountName) && !savedRecordCashAccount
     );
+    const activeCategoriesCount = categories.filter(category => category.isActive).length;
+    const customAccountsCount = accounts.filter(account => account.type === 'CUSTOM').length;
 
     return (
         <div className="pb-16 max-w-6xl mx-auto">
@@ -929,60 +945,64 @@ const LedgerSettings: React.FC = () => {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
             {/* Categories */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        Expense Categories
-                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{categories.length}</span>
-                    </h3>
-                </div>
-                <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_auto] gap-3 items-start">
-                        <input
-                            type="text"
-                            value={newCategory}
-                            onChange={(e) => setNewCategory(e.target.value)}
-                            placeholder="Add New Category (e.g. Rent)"
-                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                        />
-                        <textarea
-                            value={newCategoryDescription}
-                            onChange={(e) => setNewCategoryDescription(e.target.value)}
-                            placeholder="Helper text shown below the category picker in the entry modal"
-                            rows={2}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all resize-none"
-                        />
+            <div className="min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="mb-6 border-b border-slate-100 pb-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                            <h3 className="text-xl font-bold text-slate-800 flex flex-wrap items-center gap-2">
+                                Expense Categories
+                                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{categories.length}</span>
+                            </h3>
+                            <p className="mt-2 max-w-xl text-sm text-slate-500">
+                                Keep the ledger entry flow easy to scan. Add categories only when needed, then tune color, icon, and access from the list.
+                            </p>
+                        </div>
                         <button
-                            onClick={handleAddCategory}
-                            className="h-full min-h-[56px] bg-indigo-600 text-white px-4 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 flex items-center justify-center"
+                            type="button"
+                            onClick={() => setIsAddCategoryModalOpen(true)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 sm:self-start"
                         >
-                            <Plus size={24} />
+                            <Plus size={18} />
+                            Add Category
                         </button>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">
-                        Descriptions appear as helper text when someone selects this category while creating a ledger entry.
-                    </p>
+                    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Cleaner create flow</p>
+                            <p className="mt-1 text-sm text-slate-600">
+                                New categories open in a modal, and helper text stays tucked away until you actually need to add it.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                                {activeCategoriesCount} active
+                            </span>
+                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-600">
+                                Helper text supported
+                            </span>
+                        </div>
+                    </div>
                 </div>
-                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-3 max-h-[560px] overflow-y-auto pr-2 custom-scrollbar">
                     {categories.map((cat) => (
-                        <div key={cat.id} className={`group flex flex-col p-3 rounded-xl border transition-all ${cat.isActive ? 'bg-white border-slate-200 hover:border-indigo-300' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                            <div className="flex items-center justify-between w-full">
-                                {editingCategoryId === cat.id ? (
-                                    <div className="flex-1 flex flex-col gap-4 mr-4">
-                                        <div className="flex gap-2">
+                        <div key={cat.id} className={`group rounded-2xl border p-4 transition-all ${cat.isActive ? 'bg-white border-slate-200 hover:border-indigo-300' : 'bg-slate-50 border-slate-100 opacity-70'}`}>
+                            {editingCategoryId === cat.id ? (
+                                <div className="space-y-4">
+                                        <div className="flex flex-col gap-3 sm:flex-row">
                                             <input
                                                 value={editingCategoryName}
                                                 onChange={(e) => setEditingCategoryName(e.target.value)}
-                                                className="flex-1 px-2 py-1 border-b-2 border-indigo-500 focus:outline-none bg-transparent font-bold capitalize"
+                                                className="min-w-0 flex-1 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 font-bold capitalize text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                                 autoFocus
                                             />
-                                            <button onClick={saveEditingCategory} className="text-emerald-500 hover:bg-emerald-50 p-1 rounded-lg">
-                                                <Check size={18} />
-                                            </button>
-                                            <button onClick={() => setEditingCategoryId(null)} className="text-slate-400 hover:bg-slate-50 p-1 rounded-lg">
-                                                <X size={18} />
-                                            </button>
+                                            <div className="flex shrink-0 items-center gap-2">
+                                                <button onClick={saveEditingCategory} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-200 text-emerald-500 transition-all hover:bg-emerald-50">
+                                                    <Check size={18} />
+                                                </button>
+                                                <button onClick={() => setEditingCategoryId(null)} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-400 transition-all hover:bg-slate-50">
+                                                    <X size={18} />
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <label className="flex flex-col gap-2">
@@ -1020,56 +1040,61 @@ const LedgerSettings: React.FC = () => {
                                             panelKey: 'category-icon',
                                             onSelect: setEditingCategoryIcon
                                         })}
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="flex items-center gap-3">
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="min-w-0 flex items-start gap-3">
                                             <div
-                                                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
+                                                className="h-11 w-11 shrink-0 rounded-xl flex items-center justify-center text-white shadow-sm"
                                                 style={{ backgroundColor: cat.color || '#6366f1' }}
                                             >
                                                 <IconRenderer name={cat.icon || PRESET_ICONS[0]} size={20} />
                                             </div>
-                                            <div className="flex flex-col">
+                                            <div className="min-w-0 flex flex-col">
                                                 {(() => {
                                                     const accessSummary = getAccessSummary(cat);
                                                     return (
                                                         <>
-                                                            <span className={`font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
-                                                            <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className={`break-words font-bold capitalize ${cat.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{cat.name}</span>
+                                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                                                                    {accessSummary.title}
+                                                                </span>
+                                                                {!cat.isActive && (
+                                                                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                                                                        Disabled
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase font-bold tracking-wider text-slate-400">
                                                                 <span>Category</span>
                                                                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                                                                <span>{accessSummary.title}</span>
+                                                                <span>{cat.icon || PRESET_ICONS[0]}</span>
                                                             </div>
-                                                            <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
+                                                            <span className="mt-1 text-xs text-slate-500">{accessSummary.subtitle}</span>
                                                             {cat.description?.trim() && (
-                                                                <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-600">
+                                                                <p className="mt-2 max-w-xl break-words text-sm leading-relaxed text-slate-600">
                                                                     {cat.description.trim()}
                                                                 </p>
                                                             )}
                                                         </>
                                                     );
                                                 })()}
-                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {!editingCategoryId && (
-                                                <>
-                                                    <button onClick={() => startEditingCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                                                        <Edit2 size={16} />
-                                                    </button>
-                                                    <button onClick={() => toggleCategory(cat.id)} className={`p-2 rounded-lg transition-all ${cat.isActive ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-500 hover:bg-emerald-50'}`}>
-                                                        {cat.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                                                    </button>
-                                                    <button onClick={() => deleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </>
-                                            )}
                                         </div>
-                                    </>
-                                )}
-                            </div>
+                                        <div className="flex shrink-0 items-center gap-1 self-start opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => startEditingCategory(cat)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button onClick={() => toggleCategory(cat.id)} className={`p-2 rounded-lg transition-all ${cat.isActive ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-500 hover:bg-emerald-50'}`}>
+                                                {cat.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                                            </button>
+                                            <button onClick={() => deleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
