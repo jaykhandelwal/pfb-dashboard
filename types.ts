@@ -289,6 +289,7 @@ export interface StorageUnit {
 export interface LedgerCategoryDefinition {
   id: string;
   name: string;
+  description?: string;
   isActive: boolean;
   color?: string;
   icon?: string;
@@ -305,6 +306,12 @@ export interface LedgerAccount {
   icon?: string;
   allowedUserIds?: string[] | null;
   paymentMethod?: string;
+}
+
+export interface LedgerRecordCashSettings {
+  accountId?: string;
+  accountName?: string;
+  allowedUserIds?: string[] | null;
 }
 
 export interface AppSettings {
@@ -331,6 +338,7 @@ export interface AppSettings {
   ledger_categories?: LedgerCategoryDefinition[];
   ledger_accounts?: LedgerAccount[];
   ledger_payment_methods?: string[];
+  ledger_record_cash?: LedgerRecordCashSettings;
   coolify_api_token?: string;
   coolify_instance_url?: string;
   coolify_deployment_tag_or_uuid?: string;

@@ -16,13 +16,25 @@ interface LedgerEntryModalProps {
     onClose: () => void;
     initialData?: LedgerEntry | null;
     forcedType?: LedgerEntryType; // If provided, locks the type
+    dialogTitle?: string;
+    submitLabel?: string;
+    preferredCategoryName?: string;
+    lockedSourceAccountId?: string;
+    lockedSourceAccountName?: string;
+    lockSourceAccount?: boolean;
 }
 
 const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     isOpen,
     onClose,
     initialData,
-    forcedType
+    forcedType,
+    dialogTitle,
+    submitLabel,
+    preferredCategoryName,
+    lockedSourceAccountId,
+    lockedSourceAccountName,
+    lockSourceAccount
 }) => {
     const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
@@ -78,6 +90,25 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         [activeAccounts, currentUser?.id]
     );
 
+    const isSourceAccountLocked = Boolean(lockSourceAccount && (lockedSourceAccountId || lockedSourceAccountName));
+
+    const lockedSourceAccount = useMemo(() => {
+        if (!isSourceAccountLocked) {
+            return undefined;
+        }
+
+        const normalizedLockedName = lockedSourceAccountName?.trim().toLowerCase();
+
+        return activeAccounts.find(account =>
+            (lockedSourceAccountId && account.id === lockedSourceAccountId)
+            || (!!normalizedLockedName && account.name.toLowerCase() === normalizedLockedName)
+        );
+    }, [activeAccounts, isSourceAccountLocked, lockedSourceAccountId, lockedSourceAccountName]);
+
+    const lockedSourceAccountAccessible = useMemo(() => (
+        !isSourceAccountLocked || (!!lockedSourceAccount && isLedgerOptionAvailableToUser(lockedSourceAccount, currentUser?.id))
+    ), [currentUser?.id, isSourceAccountLocked, lockedSourceAccount]);
+
     const categoryOptions = useMemo(() => {
         const selected = activeCategories.find(category =>
             category.id === formData.categoryId || category.name === formData.category
@@ -90,7 +121,19 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         return accessibleCategories;
     }, [accessibleCategories, activeCategories, formData.category, formData.categoryId]);
 
+    const selectedCategoryHelperText = useMemo(() => {
+        const selectedCategory = appSettings.ledger_categories?.find(category =>
+            category.id === formData.categoryId || category.name === formData.category
+        );
+
+        return selectedCategory?.description?.trim() || '';
+    }, [appSettings.ledger_categories, formData.category, formData.categoryId]);
+
     const sourceAccountOptions = useMemo(() => {
+        if (isSourceAccountLocked) {
+            return lockedSourceAccount ? [lockedSourceAccount] : [];
+        }
+
         const selected = activeAccounts.find(account =>
             account.id === formData.sourceAccountId || account.name === formData.sourceAccount
         );
@@ -100,7 +143,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
 
         return accessibleAccounts;
-    }, [accessibleAccounts, activeAccounts, formData.sourceAccount, formData.sourceAccountId]);
+    }, [accessibleAccounts, activeAccounts, formData.sourceAccount, formData.sourceAccountId, isSourceAccountLocked, lockedSourceAccount]);
 
     const destinationAccountOptions = useMemo(() => {
         const selected = activeAccounts.find(account =>
@@ -116,6 +159,14 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     }, [accessibleAccounts, activeAccounts, formData.destinationAccount, formData.destinationAccountId, formData.sourceAccount]);
 
     const accessIssue = useMemo(() => {
+        if (isSourceAccountLocked && !lockedSourceAccount) {
+            return 'Record Cash is not configured with a valid active payment account. Ask an admin to update Ledger Settings.';
+        }
+
+        if (isSourceAccountLocked && !lockedSourceAccountAccessible) {
+            return 'The configured Record Cash account is not assigned to your user. Ask an admin to update Ledger Settings.';
+        }
+
         if (categoryOptions.length === 0) {
             return 'No ledger categories are assigned to your user yet. Ask an admin to update Ledger Settings.';
         }
@@ -125,7 +176,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
 
         return null;
-    }, [categoryOptions.length, sourceAccountOptions.length]);
+    }, [categoryOptions.length, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible, sourceAccountOptions.length]);
 
     // Load defaults or initial data
     useEffect(() => {
@@ -148,8 +199,10 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             } else {
                 // Set defaults
-                const defaultCategory = accessibleCategories[0];
-                const defaultAccount = sourceAccountOptions[0];
+                const defaultCategory = accessibleCategories.find(category =>
+                    preferredCategoryName && category.name.toLowerCase() === preferredCategoryName.toLowerCase()
+                ) || accessibleCategories[0];
+                const defaultAccount = isSourceAccountLocked ? lockedSourceAccount : sourceAccountOptions[0];
 
                 setFormData({
                     date: getLocalDateInputValue(),
@@ -168,7 +221,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             }
         }
-    }, [isOpen, initialData, forcedType, currentUser, accessibleCategories, sourceAccountOptions]);
+    }, [isOpen, initialData, forcedType, currentUser, accessibleCategories, sourceAccountOptions, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount]);
 
     useEffect(() => {
         if (!isOpen || initialData) return;
@@ -177,23 +230,32 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             const selectedCategoryStillAccessible = accessibleCategories.some(category =>
                 category.id === prev.categoryId || category.name === prev.category
             );
-            const selectedSourceStillAccessible = accessibleAccounts.some(account =>
-                account.id === prev.sourceAccountId || account.name === prev.sourceAccount
-            );
-            const nextSourceAccount = selectedSourceStillAccessible ? prev.sourceAccount : (accessibleAccounts[0]?.name || LEDGER_COMPANY_ACCOUNT_NAME);
-            const nextSourceAccountId = selectedSourceStillAccessible ? prev.sourceAccountId : (accessibleAccounts[0]?.id || '');
+            const preferredCategory = accessibleCategories.find(category =>
+                preferredCategoryName && category.name.toLowerCase() === preferredCategoryName.toLowerCase()
+            ) || accessibleCategories[0];
+            const selectedSourceStillAccessible = isSourceAccountLocked
+                ? Boolean(lockedSourceAccount && lockedSourceAccountAccessible)
+                : accessibleAccounts.some(account =>
+                    account.id === prev.sourceAccountId || account.name === prev.sourceAccount
+                );
+            const nextSourceAccount = isSourceAccountLocked
+                ? (lockedSourceAccount?.name || '')
+                : (selectedSourceStillAccessible ? prev.sourceAccount : (accessibleAccounts[0]?.name || LEDGER_COMPANY_ACCOUNT_NAME));
+            const nextSourceAccountId = isSourceAccountLocked
+                ? (lockedSourceAccount?.id || '')
+                : (selectedSourceStillAccessible ? prev.sourceAccountId : (accessibleAccounts[0]?.id || ''));
 
             return {
                 ...prev,
-                category: selectedCategoryStillAccessible ? prev.category : (accessibleCategories[0]?.name || ''),
-                categoryId: selectedCategoryStillAccessible ? prev.categoryId : (accessibleCategories[0]?.id || ''),
+                category: selectedCategoryStillAccessible ? prev.category : (preferredCategory?.name || ''),
+                categoryId: selectedCategoryStillAccessible ? prev.categoryId : (preferredCategory?.id || ''),
                 sourceAccount: nextSourceAccount,
                 sourceAccountId: nextSourceAccountId,
                 destinationAccount: prev.destinationAccount === nextSourceAccount ? '' : prev.destinationAccount,
                 destinationAccountId: prev.destinationAccount === nextSourceAccount ? '' : prev.destinationAccountId,
             };
         });
-    }, [isOpen, initialData, accessibleCategories, accessibleAccounts, activeAccounts]);
+    }, [isOpen, initialData, accessibleCategories, accessibleAccounts, activeAccounts, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible]);
 
     useEffect(() => {
         if (!isOpen && newBillPreviews.length > 0) {
@@ -348,13 +410,15 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         value,
         options,
         onSelect,
-        placeholder
+        placeholder,
+        helperText
     }: {
         label: string,
         value: string,
         options: T[],
         onSelect: (option: T) => void,
-        placeholder: string
+        placeholder: string,
+        helperText?: string
     }) => {
         const selected = options.find(o => o.id === value || o.name === value);
         const defaultColor = label === 'Category' ? '#6366f1' : '#0f766e';
@@ -415,6 +479,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         </div>
                     </div>
                 )}
+
+                {helperText && (
+                    <p className="mt-1 px-1 text-xs leading-relaxed text-[#403424]/55">
+                        {helperText}
+                    </p>
+                )}
             </div>
         );
     };
@@ -426,7 +496,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between p-4 border-b border-[#403424]/10">
                     <h2 className="text-lg font-bold text-[#403424]">
-                        {initialData ? 'Edit Entry' : 'New Entry'}
+                        {dialogTitle || (initialData ? 'Edit Entry' : 'New Entry')}
                     </h2>
                     <button onClick={onClose} className="p-1 text-[#403424]/40 hover:text-[#403424]">
                         <X size={20} />
@@ -507,7 +577,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         value: formData.categoryId || formData.category,
                         options: categoryOptions,
                         onSelect: (opt) => setFormData({ ...formData, category: opt.name, categoryId: opt.id }),
-                        placeholder: "Select Category"
+                        placeholder: "Select Category",
+                        helperText: selectedCategoryHelperText
                     })}
 
                     <div>
@@ -522,7 +593,29 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         />
                     </div>
 
-                    {CustomDropdown({
+                    {isSourceAccountLocked ? (
+                        <div>
+                            <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
+                                {formData.entryType === 'REIMBURSEMENT' ? 'Paid From' : 'Payment Account'}
+                            </label>
+                            <div className="mt-1 flex items-center gap-3 rounded-lg border border-[#403424]/10 bg-[#403424]/5 px-3 py-3">
+                                <div
+                                    className="w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0"
+                                    style={{ backgroundColor: lockedSourceAccount?.color || '#0f766e' }}
+                                >
+                                    <IconRenderer name={lockedSourceAccount?.icon || 'Wallet'} size={18} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="font-bold text-sm text-[#403424] truncate">
+                                        {lockedSourceAccount?.name || lockedSourceAccountName || 'Unavailable Account'}
+                                    </span>
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-400 font-black">
+                                        Locked from Ledger Settings
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : CustomDropdown({
                         label: formData.entryType === 'REIMBURSEMENT' ? 'Paid From' : 'Payment Account',
                         value: formData.sourceAccountId || formData.sourceAccount,
                         options: sourceAccountOptions,
@@ -539,9 +632,11 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     })}
 
                     {(() => {
-                        const selectedAccount = availableAccounts.find(account =>
-                            account.id === formData.sourceAccountId || account.name === formData.sourceAccount
-                        );
+                        const selectedAccount = isSourceAccountLocked
+                            ? lockedSourceAccount
+                            : availableAccounts.find(account =>
+                                account.id === formData.sourceAccountId || account.name === formData.sourceAccount
+                            );
                         const paymentMethod = normalizeLedgerPaymentMethod(selectedAccount?.paymentMethod);
 
                         if (!paymentMethod) {
@@ -689,7 +784,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                         <span className="animate-pulse">Uploading...</span>
                                     ) : (
                                         <>
-                                            {initialData ? 'Update Entry' : 'Save Entry'}
+                                            {submitLabel || (initialData ? 'Update Entry' : 'Save Entry')}
                                             <CheckCircle2 size={18} />
                                         </>
                                     )}

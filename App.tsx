@@ -27,7 +27,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { StoreProvider } from './context/StoreContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import UpdateNotification from './components/UpdateNotification';
-import { restoreFormData } from './utils/formPreservation';
+import { initializeFormPreservation } from './utils/formPreservation';
 
 // Root Redirect Component
 const RootRedirect = () => {
@@ -63,12 +63,12 @@ function App() {
     window.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
-    // Restore any saved form data after an app update
-    restoreFormData();
+    const teardownFormPreservation = initializeFormPreservation();
 
     return () => {
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('touchmove', handleTouchMove);
+      teardownFormPreservation();
     };
   }, []);
 

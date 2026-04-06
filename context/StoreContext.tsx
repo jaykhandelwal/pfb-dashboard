@@ -516,9 +516,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         enable_debug_inventory: false,
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
-        ledger_categories: Object.values(LedgerCategory).map(cat => ({ id: cat.toLowerCase().replace(/\s+/g, '_'), name: cat, isActive: true })),
+        ledger_categories: Object.values(LedgerCategory).map(cat => ({
+            id: cat.toLowerCase().replace(/\s+/g, '_'),
+            name: cat,
+            description: '',
+            isActive: true
+        })),
         ledger_accounts: buildDefaultLedgerAccounts(),
         ledger_payment_methods: [],
+        ledger_record_cash: {
+            accountId: '',
+            accountName: '',
+            allowedUserIds: null,
+        },
         coolify_api_token: '',
         coolify_instance_url: '',
         coolify_deployment_tag_or_uuid: '',
@@ -603,16 +613,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     // Helper to fetch ALL rows, bypassing the default 1000 limit
                     const fetchAll = async (table: string) => {
                         let allData: any[] = [];
-                        let page = 0;
+                        let from = 0;
                         const pageSize = 1000;
-                        // Safety limit to prevent infinite loops if DB is huge (e.g. >20k)
-                        const maxPages = 20;
+                        let totalCount: number | null = null;
 
-                        while (page < maxPages) {
-                            const { data, error } = await supabase
+                        while (true) {
+                            const { data, error, count } = await supabase
                                 .from(table)
-                                .select('*')
-                                .range(page * pageSize, (page + 1) * pageSize - 1);
+                                .select('*', { count: 'exact' })
+                                .range(from, from + pageSize - 1);
 
                             if (error) {
                                 console.error(`Error fetching ${table}:`, error);
@@ -620,11 +629,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                             }
                             if (!data || data.length === 0) break;
 
+                            if (totalCount === null && typeof count === 'number') {
+                                totalCount = count;
+                            }
+
                             allData = [...allData, ...data];
 
                             // If we got fewer rows than requested, we reached the end
                             if (data.length < pageSize) break;
-                            page++;
+
+                            from += data.length;
+
+                            if (totalCount !== null && allData.length >= totalCount) {
+                                break;
+                            }
                         }
                         return { data: allData };
                     };

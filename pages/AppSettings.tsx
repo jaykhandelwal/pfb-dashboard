@@ -771,16 +771,14 @@ const AppSettings: React.FC = () => {
                               <button
                                  onClick={() => checkStatus()}
                                  disabled={isCheckingStatus || !canCheckDeploymentStatus}
-                                 className="relative overflow-hidden flex items-center gap-2 text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                                 className="relative overflow-hidden flex items-center gap-2 bg-white text-slate-600 px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50"
                                  title={showAutoRefreshProgress ? 'Auto-refreshing every 10 seconds while deployment is running.' : 'Check deployment status'}
                               >
                                  {showAutoRefreshProgress && (
-                                    <span className="pointer-events-none absolute inset-x-2 bottom-1 h-0.5 rounded-full bg-slate-200/80">
-                                       <span
-                                          className="block h-full rounded-full bg-indigo-500/55 transition-[width] duration-200 ease-linear"
-                                          style={{ width: `${autoRefreshProgress}%` }}
-                                       />
-                                    </span>
+                                    <span
+                                       className="pointer-events-none absolute inset-y-0 left-0 rounded-l-lg bg-gradient-to-r from-indigo-100/90 via-indigo-50/80 to-indigo-100/50 transition-[width] duration-200 ease-linear"
+                                       style={{ width: `${autoRefreshProgress}%` }}
+                                    />
                                  )}
                                  <span className="relative z-10 flex items-center gap-2">
                                     <RefreshCw size={16} className={isCheckingStatus ? 'animate-spin' : ''} />

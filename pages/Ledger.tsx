@@ -165,6 +165,92 @@ const Ledger: React.FC = () => {
         return { income, expenses, reimbursements, net: income + reimbursements - expenses };
     }, [approvedEntriesForTotals]);
 
+    const paymentAccountBalances = useMemo(() => {
+        type PaymentAccountBalanceRow = {
+            key: string;
+            name: string;
+            balance: number;
+            account?: typeof availableAccounts[number];
+            hasTransactions: boolean;
+        };
+
+        const rows = new Map<string, PaymentAccountBalanceRow>();
+
+        const resolveAccount = (accountId?: string, accountName?: string) => {
+            if (accountId && accountLookup.byId.has(accountId)) {
+                return accountLookup.byId.get(accountId);
+            }
+            if (accountName && accountLookup.byName.has(accountName)) {
+                return accountLookup.byName.get(accountName);
+            }
+            return undefined;
+        };
+
+        const ensureRow = (accountId?: string, accountName?: string) => {
+            const resolvedAccount = resolveAccount(accountId, accountName);
+            const fallbackName = accountName?.trim() || accountId || LEDGER_COMPANY_ACCOUNT_NAME;
+            const key = resolvedAccount?.id || `legacy:${fallbackName.toLowerCase()}`;
+
+            if (!rows.has(key)) {
+                rows.set(key, {
+                    key,
+                    name: resolvedAccount
+                        ? (resolvedAccount.isActive ? resolvedAccount.name : `${resolvedAccount.name} (Disabled)`)
+                        : fallbackName,
+                    balance: 0,
+                    account: resolvedAccount,
+                    hasTransactions: false,
+                });
+            }
+
+            return rows.get(key)!;
+        };
+
+        availableAccounts.forEach(account => {
+            rows.set(account.id, {
+                key: account.id,
+                name: account.isActive ? account.name : `${account.name} (Disabled)`,
+                balance: 0,
+                account,
+                hasTransactions: false,
+            });
+        });
+
+        activeLedgerEntries.forEach(entry => {
+            if (entry.status !== 'APPROVED') {
+                return;
+            }
+
+            if (entry.entryType === 'REIMBURSEMENT') {
+                return;
+            }
+
+            const amount = normalizeLedgerAmount(entry.amount);
+            if (amount <= 0) {
+                return;
+            }
+
+            const accountRow = ensureRow(entry.sourceAccountId, entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME);
+            accountRow.balance += entry.entryType === 'INCOME' ? amount : -amount;
+            accountRow.hasTransactions = true;
+        });
+
+        return Array.from(rows.values()).sort((left, right) => {
+            const leftGroup = left.account ? (left.account.type === 'CUSTOM' ? 0 : 1) : 2;
+            const rightGroup = right.account ? (right.account.type === 'CUSTOM' ? 0 : 1) : 2;
+
+            if (leftGroup !== rightGroup) {
+                return leftGroup - rightGroup;
+            }
+
+            if (left.hasTransactions !== right.hasTransactions) {
+                return left.hasTransactions ? -1 : 1;
+            }
+
+            return left.name.localeCompare(right.name);
+        });
+    }, [accountLookup, activeLedgerEntries, availableAccounts]);
+
     // Calculate user balances: (Expenses paid by user) - (Reimbursements received by user)
     // Only count APPROVED entries to ensure accurate tracking
     const userBalances = useMemo(() => {
@@ -323,13 +409,58 @@ const Ledger: React.FC = () => {
                     </div>
                     <p className="text-xl font-bold text-[#403424]">₹{cardStats.expenses.toLocaleString()}</p>
                 </div>
-                <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5">
-                    <div className="flex items-center gap-2 text-[#403424] mb-1">
-                        <span className="text-xs font-medium uppercase">Net Balance</span>
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-[#403424]/5 flex flex-col min-h-[160px]">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className="flex items-center gap-2 text-[#403424]">
+                            <span className="text-xs font-medium uppercase">Net Balance</span>
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {paymentAccountBalances.length} Accounts
+                        </span>
                     </div>
                     <p className={`text-xl font-bold ${cardStats.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         ₹{cardStats.net.toLocaleString()}
                     </p>
+                    <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        All approved income/expense movements
+                    </p>
+                    <div className="mt-3 flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar max-h-[120px]">
+                        {paymentAccountBalances.map(account => {
+                            const accountColor = account.account?.color || '#0f766e';
+                            const amountColor = account.balance > 0
+                                ? 'text-emerald-600'
+                                : account.balance < 0
+                                    ? 'text-red-600'
+                                    : 'text-slate-500';
+
+                            return (
+                                <div key={account.key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-2">
+                                    <div className="min-w-0 flex items-center gap-2">
+                                        <div
+                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0"
+                                            style={{ backgroundColor: accountColor }}
+                                        >
+                                            <IconRenderer name={account.account?.icon || 'Wallet'} size={14} />
+                                        </div>
+                                        <div className="min-w-0 flex flex-col">
+                                            <span className="text-xs font-bold text-slate-700 truncate">{account.name}</span>
+                                            <span className="text-[9px] uppercase tracking-widest font-black text-slate-400">
+                                                {account.account?.type === 'USER'
+                                                    ? 'User Account'
+                                                    : account.account
+                                                        ? 'Payment Account'
+                                                        : 'Legacy Account'}
+                                                {!account.hasTransactions ? ' • No Income/Expense' : ''}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className={`text-sm font-black ${amountColor}`}>
+                                        ₹{account.balance.toLocaleString()}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
                 <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 shadow-sm border border-purple-100 flex flex-col min-h-[160px] col-span-2 md:col-span-1">
                     <div className="flex items-center justify-between mb-2">

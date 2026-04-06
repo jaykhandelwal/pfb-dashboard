@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import {
     Settings, Plus, Trash2, X, Users, User, CreditCard, ToggleLeft, ToggleRight,
     Edit2, Check, ShoppingCart, Home, Truck, Zap, Coffee, Tag, Package, Wallet, Banknote, AlertTriangle,
     Briefcase, Gift, Heart, Star, Wrench, Info, HelpCircle, Palette, Sticker, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { LedgerAccount, LedgerCategoryDefinition } from '../types';
+import { LedgerAccount, LedgerCategoryDefinition, LedgerRecordCashSettings } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ICON_CATEGORIES, ALL_ICONS, IconRenderer } from '../services/iconLibrary';
 import {
+    isLedgerOptionAvailableToUser,
     getLedgerOptionAllowedUsers,
     hasLedgerOptionUserRestrictions,
     sanitizeLedgerAllowedUserIds
@@ -21,6 +22,7 @@ import {
     getLedgerPaymentMethods,
     normalizeLedgerPaymentMethod
 } from '../utils/ledgerPaymentMethods';
+import { findLedgerRecordCashAccount, getLedgerRecordCashSettings } from '../utils/ledgerRecordCash';
 
 const LedgerSettings: React.FC = () => {
     const { appSettings, updateAppSetting } = useStore();
@@ -32,11 +34,12 @@ const LedgerSettings: React.FC = () => {
     const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
 
     const [newCategory, setNewCategory] = useState('');
+    const [newCategoryDescription, setNewCategoryDescription] = useState('');
     const [newAccountName, setNewAccountName] = useState('');
-    const [newAccountPaymentMethod, setNewAccountPaymentMethod] = useState('');
 
     const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
     const [editingCategoryName, setEditingCategoryName] = useState('');
+    const [editingCategoryDescription, setEditingCategoryDescription] = useState('');
     const [editingCategoryColor, setEditingCategoryColor] = useState('');
     const [editingCategoryIcon, setEditingCategoryIcon] = useState('');
     const [editingCategoryAllowedUserIds, setEditingCategoryAllowedUserIds] = useState<string[]>([]);
@@ -47,6 +50,8 @@ const LedgerSettings: React.FC = () => {
     const [editingAccountIcon, setEditingAccountIcon] = useState('');
     const [editingAccountAllowedUserIds, setEditingAccountAllowedUserIds] = useState<string[]>([]);
     const [editingAccountPaymentMethod, setEditingAccountPaymentMethod] = useState('');
+    const [recordCashAccountId, setRecordCashAccountId] = useState('');
+    const [recordCashAllowedUserIds, setRecordCashAllowedUserIds] = useState<string[]>([]);
 
     const PRESET_COLORS = [
         '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -57,19 +62,49 @@ const LedgerSettings: React.FC = () => {
 
     const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
     const [expandedEditorPanel, setExpandedEditorPanel] = useState<'category-color' | 'category-icon' | 'account-color' | 'account-icon' | null>(null);
+    const [activePaymentMethodMenu, setActivePaymentMethodMenu] = useState<string | null>(null);
+    const activePaymentMethodMenuRef = useRef<HTMLDivElement | null>(null);
 
     // Initialize from appSettings
     useEffect(() => {
         if (appSettings.ledger_categories) setCategories(appSettings.ledger_categories);
         setAccounts(getLedgerAccounts(appSettings, users));
         setPaymentMethods(getLedgerPaymentMethods(appSettings));
+        const recordCashSettings = getLedgerRecordCashSettings(appSettings);
+        const resolvedRecordCashAccount = findLedgerRecordCashAccount(appSettings, users);
+        setRecordCashAccountId(resolvedRecordCashAccount?.id || recordCashSettings.accountId || '');
+        setRecordCashAllowedUserIds(
+            hasLedgerOptionUserRestrictions(recordCashSettings)
+                ? (recordCashSettings.allowedUserIds || [])
+                : users.map(user => user.id)
+        );
     }, [appSettings, users]);
+
+    useEffect(() => {
+        if (!activePaymentMethodMenu) {
+            activePaymentMethodMenuRef.current = null;
+            return;
+        }
+
+        const handlePointerDown = (event: MouseEvent) => {
+            if (
+                activePaymentMethodMenuRef.current
+                && !activePaymentMethodMenuRef.current.contains(event.target as Node)
+            ) {
+                setActivePaymentMethodMenu(null);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+        return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, [activePaymentMethodMenu]);
 
     // CATEGORIES
     const handleAddCategory = () => {
         if (!newCategory.trim()) return;
         const id = `cat_${Date.now()}`;
         const normalizedName = newCategory.trim();
+        const normalizedDescription = newCategoryDescription.trim();
 
         if (categories.find(c => c.name.toLowerCase() === normalizedName.toLowerCase())) {
             alert('Category already exists');
@@ -79,6 +114,7 @@ const LedgerSettings: React.FC = () => {
         const updatedCategories = [...categories, {
             id,
             name: normalizedName,
+            description: normalizedDescription,
             isActive: true,
             color: PRESET_COLORS[0],
             icon: 'Package',
@@ -87,11 +123,13 @@ const LedgerSettings: React.FC = () => {
         setCategories(updatedCategories);
         updateAppSetting('ledger_categories', updatedCategories);
         setNewCategory('');
+        setNewCategoryDescription('');
     };
 
     const startEditingCategory = (cat: LedgerCategoryDefinition) => {
         setEditingCategoryId(cat.id);
         setEditingCategoryName(cat.name);
+        setEditingCategoryDescription(cat.description || '');
         setEditingCategoryColor(cat.color || PRESET_COLORS[0]);
         setEditingCategoryIcon(cat.icon || PRESET_ICONS[0]);
         setExpandedEditorPanel(null);
@@ -104,7 +142,7 @@ const LedgerSettings: React.FC = () => {
         if (!editingCategoryName.trim()) return;
         const allowedUserIds = sanitizeLedgerAllowedUserIds(editingCategoryAllowedUserIds, users);
 
-        if (!allowedUserIds || allowedUserIds.length === 0) {
+        if (allowedUserIds !== null && allowedUserIds.length === 0) {
             alert('Select at least one user for this category.');
             return;
         }
@@ -112,6 +150,7 @@ const LedgerSettings: React.FC = () => {
         const updatedCategories = categories.map(c => c.id === editingCategoryId ? {
             ...c,
             name: editingCategoryName.trim(),
+            description: editingCategoryDescription.trim(),
             color: editingCategoryColor,
             icon: editingCategoryIcon,
             allowedUserIds
@@ -201,13 +240,14 @@ const LedgerSettings: React.FC = () => {
             : '';
 
         if (!confirm(`Delete payment method "${paymentMethod}" from the selector?${usageMessage}`)) {
-            return;
+            return false;
         }
 
         const updatedPaymentMethods = paymentMethods.filter(
             method => getLedgerPaymentMethodKey(method) !== getLedgerPaymentMethodKey(paymentMethod)
         );
         await persistPaymentMethods(updatedPaymentMethods);
+        return true;
     };
 
     const toggleSelectedCategoryUser = (userId: string) => {
@@ -222,6 +262,12 @@ const LedgerSettings: React.FC = () => {
         );
     };
 
+    const toggleSelectedRecordCashUser = (userId: string) => {
+        setRecordCashAllowedUserIds(prev =>
+            prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+        );
+    };
+
     const startEditingAccount = (account: LedgerAccount) => {
         setEditingAccountId(account.id);
         setEditingAccountName(account.name);
@@ -229,11 +275,35 @@ const LedgerSettings: React.FC = () => {
         setEditingAccountIcon(account.icon || PRESET_ICONS[10]);
         setEditingAccountPaymentMethod(account.paymentMethod || '');
         setExpandedEditorPanel(null);
+        setActivePaymentMethodMenu(null);
         setEditingAccountAllowedUserIds(
             account.type === 'USER' && account.linkedUserId
                 ? [account.linkedUserId]
                 : (hasLedgerOptionUserRestrictions(account) ? (account.allowedUserIds || []) : users.map(user => user.id))
         );
+    };
+
+    const saveRecordCashSettings = async () => {
+        const allowedUserIds = sanitizeLedgerAllowedUserIds(recordCashAllowedUserIds, users);
+
+        if (allowedUserIds !== null && allowedUserIds.length === 0) {
+            alert('Select at least one user for Record Cash.');
+            return;
+        }
+
+        const selectedAccount = accounts.find(account => account.id === recordCashAccountId);
+        if (selectedAccount && !selectedAccount.isActive) {
+            alert('Select an active payment account for Record Cash.');
+            return;
+        }
+
+        const nextSettings: LedgerRecordCashSettings = {
+            accountId: selectedAccount?.id || '',
+            accountName: selectedAccount?.name || '',
+            allowedUserIds,
+        };
+
+        await updateAppSetting('ledger_record_cash', nextSettings);
     };
 
     const saveEditingAccount = async () => {
@@ -254,7 +324,7 @@ const LedgerSettings: React.FC = () => {
             ? [accountBeingEdited.linkedUserId]
             : sanitizeLedgerAllowedUserIds(editingAccountAllowedUserIds, users);
 
-        if (accountBeingEdited.type === 'CUSTOM' && (!allowedUserIds || allowedUserIds.length === 0)) {
+        if (accountBeingEdited.type === 'CUSTOM' && allowedUserIds !== null && allowedUserIds.length === 0) {
             alert('Select at least one user for this payment account.');
             return;
         }
@@ -275,6 +345,7 @@ const LedgerSettings: React.FC = () => {
 
         await persistAccounts(updatedAccounts);
         setEditingAccountId(null);
+        setActivePaymentMethodMenu(null);
     };
 
     const getUserInitials = (name: string) =>
@@ -509,6 +580,7 @@ const LedgerSettings: React.FC = () => {
     };
 
     const renderPaymentMethodInput = ({
+        inputId,
         accent,
         value,
         previousValue,
@@ -519,6 +591,7 @@ const LedgerSettings: React.FC = () => {
         className = '',
         onKeyDown
     }: {
+        inputId: string;
         accent: 'slate' | 'emerald';
         value: string;
         previousValue?: string;
@@ -534,41 +607,216 @@ const LedgerSettings: React.FC = () => {
         const matchesDeletedPreviousMethod = Boolean(normalizedValue)
             && !existingMethod
             && getLedgerPaymentMethodKey(previousValue) === getLedgerPaymentMethodKey(normalizedValue);
+        const isOpen = activePaymentMethodMenu === inputId;
+        const filteredPaymentMethods = paymentMethods.filter(method =>
+            !normalizedValue || getLedgerPaymentMethodKey(method).includes(getLedgerPaymentMethodKey(normalizedValue))
+        );
+        const canCreateNewMethod = Boolean(normalizedValue) && !existingMethod;
+        const accentClasses = accent === 'emerald'
+            ? {
+                field: isOpen ? 'border-emerald-200 bg-emerald-50/50 shadow-emerald-100/70' : 'border-slate-200 bg-white',
+                ring: 'focus-within:ring-emerald-500',
+                toggle: isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                selected: 'border-emerald-200 bg-emerald-50/90 shadow-sm shadow-emerald-100/80',
+                badge: 'border-emerald-200 bg-white text-emerald-700',
+                icon: 'bg-emerald-600 text-white',
+                helper: 'text-emerald-600'
+            }
+            : {
+                field: isOpen ? 'border-slate-300 bg-slate-50/90 shadow-slate-200/90' : 'border-slate-200 bg-white',
+                ring: 'focus-within:ring-slate-800',
+                toggle: isOpen ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                selected: 'border-slate-300 bg-slate-100/90 shadow-sm shadow-slate-200/80',
+                badge: 'border-slate-300 bg-white text-slate-700',
+                icon: 'bg-slate-800 text-white',
+                helper: 'text-slate-500'
+            };
 
         return (
-            <label className={`flex flex-col gap-1 ${className}`}>
+            <div
+                className={`relative flex flex-col gap-2 ${className} ${isOpen ? 'z-30' : ''}`}
+                ref={(node) => {
+                    if (isOpen) {
+                        activePaymentMethodMenuRef.current = node;
+                    }
+                }}
+            >
                 {label && <span className="text-xs font-semibold text-slate-500">{label}</span>}
-                <input
-                    type="text"
-                    list="ledger-payment-method-options"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    placeholder={placeholder}
-                    className={`w-full rounded-xl border bg-white focus:outline-none focus:ring-2 ${compact ? 'px-3 py-2' : 'px-4 py-3'} ${accent === 'emerald' ? 'border-slate-200 focus:ring-emerald-500' : 'border-slate-200 focus:ring-slate-800'}`}
-                />
+                <div className={`rounded-2xl border shadow-[0_18px_40px_-30px_rgba(15,23,42,0.35)] transition-all focus-within:ring-2 ${accentClasses.field} ${accentClasses.ring}`}>
+                    <div className={`flex items-center gap-2 ${compact ? 'px-3 py-2.5' : 'px-4 py-3.5'}`}>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                            <Tag size={16} />
+                        </div>
+                        <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => {
+                                onChange(e.target.value);
+                                setActivePaymentMethodMenu(inputId);
+                            }}
+                            onFocus={() => setActivePaymentMethodMenu(inputId)}
+                            onClick={() => setActivePaymentMethodMenu(inputId)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                    setActivePaymentMethodMenu(null);
+                                }
+
+                                onKeyDown?.(e);
+                            }}
+                            placeholder={placeholder}
+                            className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                        />
+                        {value && (
+                            <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => onChange('')}
+                                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                                aria-label="Clear payment method"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setActivePaymentMethodMenu(isOpen ? null : inputId)}
+                            className={`rounded-xl p-2 transition-all ${accentClasses.toggle}`}
+                            aria-label={isOpen ? 'Close payment method options' : 'Open payment method options'}
+                        >
+                            <ChevronDown className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} size={16} />
+                        </button>
+                    </div>
+                </div>
+                {isOpen && (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-3 overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 shadow-[0_32px_80px_-32px_rgba(15,23,42,0.45)]">
+                        <div className="border-b border-slate-200 bg-gradient-to-b from-white to-slate-50 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
+                                        <Tag size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Saved payment methods</p>
+                                        <p className="mt-1 text-sm text-slate-600">
+                                            Choose a label from the list, or type a new one and save the account.
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                                    {paymentMethods.length} saved
+                                </span>
+                            </div>
+                        </div>
+                        <div className="max-h-80 space-y-3 overflow-y-auto p-3">
+                            {canCreateNewMethod && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        onChange(normalizedValue);
+                                        setActivePaymentMethodMenu(null);
+                                    }}
+                                    className="flex w-full items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-left transition-all hover:border-emerald-300 hover:bg-emerald-100/80"
+                                >
+                                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
+                                        <Plus size={18} />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold text-emerald-900">{normalizedValue}</span>
+                                        <span className="block text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+                                            New label, saved when this account is saved
+                                        </span>
+                                    </span>
+                                </button>
+                            )}
+                            {filteredPaymentMethods.length > 0 ? (
+                                filteredPaymentMethods.map(method => {
+                                    const usageCount = getPaymentMethodUsageCount(method);
+                                    const isSelected = getLedgerPaymentMethodKey(method) === getLedgerPaymentMethodKey(value);
+
+                                    return (
+                                        <div
+                                            key={method}
+                                            className={`flex items-center gap-2 rounded-2xl border p-2 transition-all ${isSelected ? accentClasses.selected : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    onChange(method);
+                                                    setActivePaymentMethodMenu(null);
+                                                }}
+                                                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                                            >
+                                                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${isSelected ? accentClasses.icon : 'bg-slate-100 text-slate-500'}`}>
+                                                    <CreditCard size={18} />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold text-slate-700">{method}</span>
+                                                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                                                        <span>{usageCount} account{usageCount === 1 ? '' : 's'}</span>
+                                                        {isSelected && (
+                                                            <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${accentClasses.badge}`}>
+                                                                Selected
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const deleted = await deletePaymentMethod(method);
+
+                                                    if (
+                                                        deleted
+                                                        && getLedgerPaymentMethodKey(value) === getLedgerPaymentMethodKey(method)
+                                                        && getLedgerPaymentMethodKey(previousValue) !== getLedgerPaymentMethodKey(method)
+                                                    ) {
+                                                        onChange('');
+                                                    }
+                                                }}
+                                                className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600 transition-all hover:border-red-200 hover:bg-red-100"
+                                                aria-label={`Delete payment method ${method}`}
+                                            >
+                                                <Trash2 size={13} />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    );
+                                })
+                            ) : !canCreateNewMethod ? (
+                                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+                                    {paymentMethods.length > 0
+                                        ? 'No saved payment methods match this search.'
+                                        : 'No payment methods saved yet. Type a label here and save an account to create the first one.'}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                )}
                 {matchesDeletedPreviousMethod ? (
                     <span className="text-xs font-medium text-amber-700">
                         This deleted payment method will stay invalid until you replace it.
                     </span>
-                ) : normalizedValue && !existingMethod ? (
+                ) : canCreateNewMethod ? (
                     <span className="text-xs font-medium text-emerald-600">
-                        This new payment method will be added to the selector when you save the account.
+                        This new payment method will be saved when you submit the account.
                     </span>
                 ) : paymentMethods.length > 0 ? (
-                    <span className="text-xs text-slate-400">
-                        Select from saved payment methods or type a new one.
+                    <span className={`text-xs ${accentClasses.helper}`}>
+                        Open the menu to pick or delete a saved label, or type a new one.
                     </span>
                 ) : (
                     <span className="text-xs text-slate-400">
                         No payment methods saved yet. Type one here to create the first option.
                     </span>
                 )}
-            </label>
+            </div>
         );
     };
 
-    const getAccessSummary = (option: LedgerCategoryDefinition | LedgerAccount) => {
+    const getAccessSummary = (option: LedgerCategoryDefinition | LedgerAccount | LedgerRecordCashSettings) => {
         if ('type' in option && option.type === 'USER') {
             const linkedUser = users.find(user => user.id === option.linkedUserId);
             return {
@@ -611,8 +859,6 @@ const LedgerSettings: React.FC = () => {
             return;
         }
 
-        const paymentMethod = await resolveAccountPaymentMethod(newAccountPaymentMethod);
-
         const newAcc: LedgerAccount = {
             id,
             name,
@@ -621,12 +867,11 @@ const LedgerSettings: React.FC = () => {
             color: PRESET_COLORS[1],
             icon: 'CreditCard',
             allowedUserIds: null,
-            paymentMethod,
         };
         const updatedAccounts = [...accounts, newAcc];
         await persistAccounts(updatedAccounts);
         setNewAccountName('');
-        setNewAccountPaymentMethod('');
+        setActivePaymentMethodMenu(null);
     };
 
     const toggleAccount = async (id: string) => {
@@ -650,19 +895,35 @@ const LedgerSettings: React.FC = () => {
         accountHasDeletedPaymentMethod(account, paymentMethods)
     );
 
+    const savedRecordCashSettings = getLedgerRecordCashSettings(appSettings);
+    const savedRecordCashAccount = findLedgerRecordCashAccount(appSettings, users);
+    const selectableRecordCashAccounts = accounts
+        .slice()
+        .sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'CUSTOM' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+    const recordCashSelectedAccount = selectableRecordCashAccounts.find(account => account.id === recordCashAccountId);
+    const recordCashAccessOption: LedgerRecordCashSettings = {
+        allowedUserIds: recordCashAllowedUserIds.length === users.length ? null : recordCashAllowedUserIds
+    };
+    const recordCashAccessSummary = getAccessSummary(recordCashAccessOption);
+    const recordCashUsersWithButtonAccess = getLedgerOptionAllowedUsers(recordCashAccessOption, users);
+    const recordCashUsersMissingAccountAccess = recordCashSelectedAccount
+        ? recordCashUsersWithButtonAccess.filter(user => !isLedgerOptionAvailableToUser(recordCashSelectedAccount, user.id))
+        : [];
+    const hasInvalidSavedRecordCashAccount = Boolean(
+        (savedRecordCashSettings.accountId || savedRecordCashSettings.accountName) && !savedRecordCashAccount
+    );
+
     return (
         <div className="pb-16 max-w-6xl mx-auto">
-            <datalist id="ledger-payment-method-options">
-                {paymentMethods.map(method => (
-                    <option key={method} value={method} />
-                ))}
-            </datalist>
             <div className="mb-6 flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Settings className="text-slate-600" /> Ledger Settings
                     </h2>
-                    <p className="text-slate-500 text-sm md:text-base">Configure categories and payment accounts.</p>
+                    <p className="text-slate-500 text-sm md:text-base">Configure categories, payment accounts, and cash recording.</p>
                 </div>
             </div>
 
@@ -674,21 +935,33 @@ const LedgerSettings: React.FC = () => {
                         <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{categories.length}</span>
                     </h3>
                 </div>
-                <div className="flex gap-2 mb-6">
-                    <input
-                        type="text"
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        placeholder="Add New Category (e.g. Rent)"
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                    />
-                    <button
-                        onClick={handleAddCategory}
-                        className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
-                    >
-                        <Plus size={24} />
-                    </button>
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_auto] gap-3 items-start">
+                        <input
+                            type="text"
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            placeholder="Add New Category (e.g. Rent)"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                        />
+                        <textarea
+                            value={newCategoryDescription}
+                            onChange={(e) => setNewCategoryDescription(e.target.value)}
+                            placeholder="Helper text shown below the category picker in the entry modal"
+                            rows={2}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all resize-none"
+                        />
+                        <button
+                            onClick={handleAddCategory}
+                            className="h-full min-h-[56px] bg-indigo-600 text-white px-4 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 flex items-center justify-center"
+                        >
+                            <Plus size={24} />
+                        </button>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">
+                        Descriptions appear as helper text when someone selects this category while creating a ledger entry.
+                    </p>
                 </div>
                 <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                     {categories.map((cat) => (
@@ -710,6 +983,22 @@ const LedgerSettings: React.FC = () => {
                                                 <X size={18} />
                                             </button>
                                         </div>
+
+                                        <label className="flex flex-col gap-2">
+                                            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                                                Helper Text
+                                            </span>
+                                            <textarea
+                                                value={editingCategoryDescription}
+                                                onChange={(e) => setEditingCategoryDescription(e.target.value)}
+                                                placeholder="Explain what transactions belong in this category"
+                                                rows={3}
+                                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                                            />
+                                            <span className="text-xs text-slate-500">
+                                                This appears below the category dropdown in the New Entry modal.
+                                            </span>
+                                        </label>
 
                                         {renderAccessEditor({
                                             accent: 'indigo',
@@ -752,6 +1041,11 @@ const LedgerSettings: React.FC = () => {
                                                                 <span>{accessSummary.title}</span>
                                                             </div>
                                                             <span className="text-xs text-slate-500">{accessSummary.subtitle}</span>
+                                                            {cat.description?.trim() && (
+                                                                <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-600">
+                                                                    {cat.description.trim()}
+                                                                </p>
+                                                            )}
                                                         </>
                                                     );
                                                 })()}
@@ -793,11 +1087,10 @@ const LedgerSettings: React.FC = () => {
                         <p className="text-slate-400 text-sm mt-1">Manage staff accounts, funding sources, visibility, and optional payment-method labels.</p>
                     </div>
                     <div className="w-full md:w-auto">
-                        <div className="mb-2 flex items-center justify-between">
+                        <div className="mb-2">
                             <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Add custom account</span>
-                            <span className="text-xs text-slate-400">Second field is optional</span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr),minmax(0,1.2fr),auto] gap-2 w-full md:w-auto">
+                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr),auto] gap-2 w-full md:w-auto">
                             <label className="flex flex-col gap-1">
                                 <span className="text-xs font-semibold text-slate-500">Account name</span>
                                 <input
@@ -810,15 +1103,6 @@ const LedgerSettings: React.FC = () => {
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddAccount()}
                                 />
                             </label>
-                            {renderPaymentMethodInput({
-                                accent: 'slate',
-                                label: 'Payment method label',
-                                value: newAccountPaymentMethod,
-                                onChange: setNewAccountPaymentMethod,
-                                placeholder: 'Select or type a payment method',
-                                className: 'md:w-80',
-                                onKeyDown: (e) => e.key === 'Enter' && handleAddAccount()
-                            })}
                             <div className="flex items-end">
                                 <button
                                     onClick={handleAddAccount}
@@ -832,61 +1116,19 @@ const LedgerSettings: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr),minmax(0,1fr)] gap-4 mb-6">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Payment method selector</p>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    Accounts can select from this list, or type a new label when editing. New labels are added on save. Deleted labels stay on old accounts as warnings until you update them.
-                                </p>
-                            </div>
-                            <span className="self-start rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-500">
-                                {paymentMethods.length} saved
-                            </span>
-                        </div>
-
-                        {paymentMethods.length > 0 ? (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                                {paymentMethods.map(method => {
-                                    const usageCount = getPaymentMethodUsageCount(method);
-
-                                    return (
-                                        <div key={method} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-semibold text-slate-700">{method}</span>
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                                    {usageCount} account{usageCount === 1 ? '' : 's'}
-                                                </span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => deletePaymentMethod(method)}
-                                                className="rounded-full p-1.5 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
-                                                aria-label={`Delete payment method ${method}`}
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <p className="mt-4 text-sm text-slate-500">
-                                No payment methods saved yet. The first custom label you type on an account will create one.
-                            </p>
-                        )}
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <p className="font-semibold text-slate-700">How it works</p>
-                        <p className="mt-2">
-                            User accounts are created automatically and stay private to that user. Custom accounts can be shared. Payment methods are optional labels attached to accounts.
-                        </p>
-                        <p className="mt-2">
-                            Deleting a payment method does not erase it from existing accounts. Those accounts show a warning until an admin edits them and picks a current method.
-                        </p>
+                        <span className="self-start rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                            {paymentMethods.length} saved labels
+                        </span>
                     </div>
+                    <p className="mt-2">
+                        User accounts are created automatically and stay private to that user. Custom accounts can be shared. Payment methods are optional labels attached to accounts.
+                    </p>
+                    <p className="mt-2">
+                        Deleting a payment method from the dropdown does not erase it from existing accounts. Those accounts show a warning until an admin edits them and picks a current method.
+                    </p>
                 </div>
 
                 {accountsWithDeletedPaymentMethods.length > 0 && (
@@ -930,6 +1172,7 @@ const LedgerSettings: React.FC = () => {
                                                     autoFocus
                                                 />
                                                 {renderPaymentMethodInput({
+                                                    inputId: `account-payment-method-${acc.id}`,
                                                     accent: 'emerald',
                                                     value: editingAccountPaymentMethod,
                                                     previousValue: acc.paymentMethod,
@@ -943,7 +1186,13 @@ const LedgerSettings: React.FC = () => {
                                                     <button onClick={saveEditingAccount} className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-xl border border-emerald-200">
                                                         <Check size={18} />
                                                     </button>
-                                                    <button onClick={() => setEditingAccountId(null)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-xl border border-slate-200">
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingAccountId(null);
+                                                            setActivePaymentMethodMenu(null);
+                                                        }}
+                                                        className="text-slate-400 hover:bg-slate-100 p-2 rounded-xl border border-slate-200"
+                                                    >
                                                         <X size={18} />
                                                     </button>
                                                 </div>
@@ -1050,6 +1299,102 @@ const LedgerSettings: React.FC = () => {
                                 </div>
                             );
                         })}
+                </div>
+            </div>
+
+            <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                    <div className="max-w-2xl">
+                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                            <div className="p-2 bg-amber-100 rounded-lg">
+                                <Banknote className="text-amber-700" size={24} />
+                            </div>
+                            Record Cash
+                        </h3>
+                        <p className="text-slate-400 text-sm mt-1">
+                            Configure the sidebar shortcut that records cash sales directly as ledger income.
+                        </p>
+                    </div>
+                    <div className={`self-start rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${recordCashSelectedAccount ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : 'border border-slate-200 bg-slate-50 text-slate-500'}`}>
+                        {recordCashSelectedAccount ? 'Enabled' : 'Hidden'}
+                    </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr),minmax(0,1fr)] gap-6">
+                    <div className="space-y-4">
+                        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                            Entries created from <span className="font-bold">Record Cash</span> are saved as <span className="font-bold">INCOME</span> and posted to the payment account you choose here.
+                        </div>
+
+                        <label className="flex flex-col gap-2">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment Account</span>
+                            <select
+                                value={recordCashAccountId}
+                                onChange={(e) => setRecordCashAccountId(e.target.value)}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            >
+                                <option value="">No account selected (hide button)</option>
+                                {selectableRecordCashAccounts.map(account => (
+                                    <option key={account.id} value={account.id}>
+                                        {account.name}
+                                        {account.type === 'USER' ? ' • User account' : ' • Custom account'}
+                                        {account.isActive ? '' : ' • Disabled'}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                                <span>{recordCashAccessSummary.title}</span>
+                                {recordCashSelectedAccount && (
+                                    <>
+                                        <span className="h-1 w-1 rounded-full bg-slate-300" />
+                                        <span>{recordCashSelectedAccount.name}</span>
+                                    </>
+                                )}
+                            </div>
+                            <p className="mt-2 text-sm text-slate-600">
+                                {recordCashSelectedAccount
+                                    ? `The sidebar button will record income to ${recordCashSelectedAccount.name}. ${recordCashAccessSummary.subtitle}.`
+                                    : 'Choose a payment account to show the Record Cash button in the sidebar.'}
+                            </p>
+                        </div>
+
+                        {recordCashSelectedAccount && !recordCashSelectedAccount.isActive && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                The selected payment account is currently disabled. Re-enable it or pick another account before saving.
+                            </div>
+                        )}
+
+                        {recordCashUsersMissingAccountAccess.length > 0 && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                {recordCashUsersMissingAccountAccess.map(user => user.name).join(', ')} will not see the Record Cash button because the selected payment account is not assigned to them.
+                            </div>
+                        )}
+
+                        {hasInvalidSavedRecordCashAccount && (
+                            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                The previously saved Record Cash account no longer exists. Select a new payment account and save to restore the shortcut.
+                            </div>
+                        )}
+
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={saveRecordCashSettings}
+                                className="rounded-xl bg-amber-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-amber-100 transition-all hover:bg-amber-700"
+                            >
+                                Save Record Cash Settings
+                            </button>
+                        </div>
+                    </div>
+
+                    {renderAccessEditor({
+                        accent: 'emerald',
+                        selectedUserIds: recordCashAllowedUserIds,
+                        onToggleUser: toggleSelectedRecordCashUser
+                    })}
                 </div>
             </div>
         </div>

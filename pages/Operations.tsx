@@ -7,20 +7,84 @@ import { ArrowDownCircle, ArrowUpCircle, Save, Plus, Calendar, Store, AlertTrian
 import { getLocalISOString } from '../constants';
 import LinkedSkuOrdersModal from '../components/LinkedSkuOrdersModal';
 
+const OPERATIONS_DRAFT_KEY = 'pakaja_operations_draft_v1';
+const OPERATIONS_DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const OPERATIONS_MODES = [TransactionType.CHECK_OUT, TransactionType.CHECK_IN] as const;
+
+type OperationsMode = typeof OPERATIONS_MODES[number];
+type OperationsInputMap = Record<string, { packets: string, loose: string }>;
+type OperationsAppliedReturnsMap = Record<string, boolean>;
+
+interface OperationsModeDraft {
+  date: string;
+  dateAutoReason: string;
+  inputs: OperationsInputMap;
+  appliedReturns: OperationsAppliedReturnsMap;
+}
+
+interface OperationsDraft {
+  savedAt: number;
+  branchId: string;
+  activeType: OperationsMode;
+  modes: Record<OperationsMode, OperationsModeDraft>;
+}
+
+interface LegacyOperationsDraft {
+  savedAt: number;
+  date: string;
+  branchId: string;
+  type: OperationsMode;
+  inputs: OperationsInputMap;
+  appliedReturns: OperationsAppliedReturnsMap;
+}
+
+const getDefaultModeDraft = (mode: OperationsMode, now = new Date()): OperationsModeDraft => {
+  const today = getLocalISOString(now);
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = getLocalISOString(yesterdayDate);
+
+  if (mode === TransactionType.CHECK_OUT) {
+    return {
+      date: today,
+      dateAutoReason: '',
+      inputs: {},
+      appliedReturns: {},
+    };
+  }
+
+  if (now.getHours() < 18) {
+    return {
+      date: yesterday,
+      dateAutoReason: 'Auto-selected Yesterday (Before 6 PM rule)',
+      inputs: {},
+      appliedReturns: {},
+    };
+  }
+
+  return {
+    date: today,
+    dateAutoReason: '',
+    inputs: {},
+    appliedReturns: {},
+  };
+};
+
+const createDefaultModeDrafts = (now = new Date()): Record<OperationsMode, OperationsModeDraft> => ({
+  [TransactionType.CHECK_OUT]: getDefaultModeDraft(TransactionType.CHECK_OUT, now),
+  [TransactionType.CHECK_IN]: getDefaultModeDraft(TransactionType.CHECK_IN, now),
+});
+
 const Operations: React.FC = () => {
   const { branches, skus, addBatchTransactions, transactions, menuItems, orders } = useStore();
   const { currentUser } = useAuth();
   const [linkedSkuData, setLinkedSkuData] = useState<{ sku: SKU, soldQty: number } | null>(null);
 
   // Form State
-  const [date, setDate] = useState<string>(getLocalISOString());
   const [branchId, setBranchId] = useState<string>(branches[0]?.id || '');
-  const [type, setType] = useState<TransactionType>(TransactionType.CHECK_OUT);
-
-  // Store quantities as { skuId: { packets: number, loose: number } }
-  const [inputs, setInputs] = useState<Record<string, { packets: string, loose: string }>>({});
-  // Track if the return value has been applied to hide the button
-  const [appliedReturns, setAppliedReturns] = useState<Record<string, boolean>>({});
+  const [type, setType] = useState<OperationsMode>(TransactionType.CHECK_OUT);
+  const [modeDrafts, setModeDrafts] = useState<Record<OperationsMode, OperationsModeDraft>>(() => createDefaultModeDrafts());
+  const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -29,35 +93,110 @@ const Operations: React.FC = () => {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Smart Date Logic ---
-  // Ensure we use Local Time to avoid UTC shift
   const todayStr = getLocalISOString();
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = getLocalISOString(yesterdayDate);
+  const activeModeDraft = modeDrafts[type];
+  const date = activeModeDraft.date;
+  const inputs = activeModeDraft.inputs;
+  const appliedReturns = activeModeDraft.appliedReturns;
+  const dateAutoReason = activeModeDraft.dateAutoReason;
 
-  const [dateAutoReason, setDateAutoReason] = useState<string>('');
-
-  // Update date automatically when Transaction Type changes
-  useEffect(() => {
-    const currentHour = new Date().getHours();
-
-    if (type === TransactionType.CHECK_OUT) {
-      // Checkouts are usually for the current trading day
-      setDate(todayStr);
-      setDateAutoReason('');
-    } else if (type === TransactionType.CHECK_IN) {
-      // Returns Logic:
-      // If it's before 6 PM (18:00), assume we are entering returns for Yesterday's shift.
-      if (currentHour < 18) {
-        setDate(yesterdayStr);
-        setDateAutoReason('Auto-selected Yesterday (Before 6 PM rule)');
-      } else {
-        setDate(todayStr);
-        setDateAutoReason('');
-      }
+  const clearOperationsDraft = () => {
+    try {
+      localStorage.removeItem(OPERATIONS_DRAFT_KEY);
+    } catch {
+      // Ignore storage errors.
     }
-  }, [type, todayStr, yesterdayStr]);
+  };
+
+  useEffect(() => {
+    try {
+      const rawDraft = localStorage.getItem(OPERATIONS_DRAFT_KEY);
+      if (!rawDraft) return;
+
+      const parsedDraft = JSON.parse(rawDraft) as Partial<OperationsDraft & LegacyOperationsDraft>;
+      if (!parsedDraft.savedAt || Date.now() - parsedDraft.savedAt > OPERATIONS_DRAFT_TTL_MS) {
+        clearOperationsDraft();
+        return;
+      }
+
+      const defaultModeDrafts = createDefaultModeDrafts();
+
+      if (parsedDraft.modes && typeof parsedDraft.modes === 'object') {
+        setModeDrafts({
+          [TransactionType.CHECK_OUT]: {
+            ...defaultModeDrafts[TransactionType.CHECK_OUT],
+            ...parsedDraft.modes[TransactionType.CHECK_OUT],
+          },
+          [TransactionType.CHECK_IN]: {
+            ...defaultModeDrafts[TransactionType.CHECK_IN],
+            ...parsedDraft.modes[TransactionType.CHECK_IN],
+          },
+        });
+
+        if (parsedDraft.activeType === TransactionType.CHECK_OUT || parsedDraft.activeType === TransactionType.CHECK_IN) {
+          setType(parsedDraft.activeType);
+        }
+      } else if (parsedDraft.type === TransactionType.CHECK_OUT || parsedDraft.type === TransactionType.CHECK_IN) {
+        setModeDrafts({
+          ...defaultModeDrafts,
+          [parsedDraft.type]: {
+            ...defaultModeDrafts[parsedDraft.type],
+            date: typeof parsedDraft.date === 'string' && parsedDraft.date ? parsedDraft.date : defaultModeDrafts[parsedDraft.type].date,
+            inputs: parsedDraft.inputs && typeof parsedDraft.inputs === 'object' ? parsedDraft.inputs : {},
+            appliedReturns: parsedDraft.appliedReturns && typeof parsedDraft.appliedReturns === 'object' ? parsedDraft.appliedReturns : {},
+          },
+        });
+        setType(parsedDraft.type);
+      }
+
+      if (typeof parsedDraft.branchId === 'string' && parsedDraft.branchId) {
+        setBranchId(parsedDraft.branchId);
+      }
+    } catch {
+      clearOperationsDraft();
+    } finally {
+      setHasHydratedDraft(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedDraft) return;
+
+    const draft: OperationsDraft = {
+      savedAt: Date.now(),
+      branchId,
+      activeType: type,
+      modes: modeDrafts,
+    };
+
+    try {
+      localStorage.setItem(OPERATIONS_DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [branchId, type, modeDrafts, hasHydratedDraft]);
+
+  const updateModeDraft = (mode: OperationsMode, updater: (draft: OperationsModeDraft) => OperationsModeDraft) => {
+    setModeDrafts(prev => ({
+      ...prev,
+      [mode]: updater(prev[mode]),
+    }));
+  };
+
+  const updateActiveModeDraft = (updater: (draft: OperationsModeDraft) => OperationsModeDraft) => {
+    updateModeDraft(type, updater);
+  };
+
+  const setActiveDate = (nextDate: string, nextReason = '') => {
+    updateActiveModeDraft(prev => ({
+      ...prev,
+      date: nextDate,
+      dateAutoReason: nextReason,
+    }));
+  };
 
   const formatDateLabel = (dateString: string) => {
     // Parse using string manipulation to ensure visual date matches input (ignore timezone)
@@ -209,23 +348,22 @@ const Operations: React.FC = () => {
   }, [orders, branchId, date, menuItems]);
 
   const handleInputChange = (skuId: string, field: 'packets' | 'loose', value: string) => {
-    setInputs(prev => ({
+    updateActiveModeDraft(prev => ({
       ...prev,
-      [skuId]: {
-        ...prev[skuId],
-        [field]: value
-      }
+      inputs: {
+        ...prev.inputs,
+        [skuId]: {
+          ...prev.inputs[skuId],
+          [field]: value
+        }
+      },
+      appliedReturns: field === 'loose' && (!value || value === '0')
+        ? { ...prev.appliedReturns, [skuId]: false }
+        : prev.appliedReturns,
     }));
 
     // Clear error when user types
     if (errorMsg) setErrorMsg('');
-
-    if (field === 'loose' && (!value || value === '0')) {
-      setAppliedReturns(prev => ({
-        ...prev,
-        [skuId]: false
-      }));
-    }
   };
 
   const useLastReturn = (skuId: string, qty: number) => {
@@ -233,17 +371,19 @@ const Operations: React.FC = () => {
     const safeCurrent = isNaN(currentVal) ? 0 : currentVal;
     const newVal = safeCurrent + qty;
 
-    setInputs(prev => ({
+    updateActiveModeDraft(prev => ({
       ...prev,
-      [skuId]: {
-        ...prev[skuId],
-        loose: newVal.toString()
+      inputs: {
+        ...prev.inputs,
+        [skuId]: {
+          ...prev.inputs[skuId],
+          loose: newVal.toString()
+        }
+      },
+      appliedReturns: {
+        ...prev.appliedReturns,
+        [skuId]: true
       }
-    }));
-
-    setAppliedReturns(prev => ({
-      ...prev,
-      [skuId]: true
     }));
   };
 
@@ -312,8 +452,11 @@ const Operations: React.FC = () => {
         setWarningMsg(`Saved to DEVICE ONLY. Internet sync failed. Check connection.`);
       }
 
-      setInputs({});
-      setAppliedReturns({});
+      updateModeDraft(type, prev => ({
+        ...prev,
+        inputs: {},
+        appliedReturns: {},
+      }));
       setIsConfirmOpen(false);
       setTimeout(() => {
         setSuccessMsg('');
@@ -406,7 +549,7 @@ const Operations: React.FC = () => {
             <div className="flex flex-col md:flex-row gap-3">
               <button
                 type="button"
-                onClick={() => { setDate(yesterdayStr); setDateAutoReason(''); }}
+                onClick={() => setActiveDate(yesterdayStr)}
                 className={`flex-1 p-3 rounded-lg border flex flex-col items-center justify-center transition-all ${date === yesterdayStr
                   ? 'bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-300'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -418,7 +561,7 @@ const Operations: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => { setDate(todayStr); setDateAutoReason(''); }}
+                onClick={() => setActiveDate(todayStr)}
                 className={`flex-1 p-3 rounded-lg border flex flex-col items-center justify-center transition-all ${date === todayStr
                   ? 'bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-300'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -432,8 +575,9 @@ const Operations: React.FC = () => {
               <div className="relative">
                 <input
                   type="date"
+                  data-no-preserve
                   value={date}
-                  onChange={(e) => { setDate(e.target.value); setDateAutoReason(''); }}
+                  onChange={(e) => setActiveDate(e.target.value)}
                   className="h-full px-4 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-medium w-full md:w-auto"
                 />
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-3 md:hidden">
@@ -523,6 +667,7 @@ const Operations: React.FC = () => {
                           <input
                             type="number"
                             min="0"
+                            data-no-preserve
                             placeholder="0"
                             value={inputs[sku.id]?.packets || ''}
                             onChange={(e) => handleInputChange(sku.id, 'packets', e.target.value)}
@@ -535,6 +680,7 @@ const Operations: React.FC = () => {
                           <input
                             type="number"
                             min="0"
+                            data-no-preserve
                             placeholder="0"
                             value={inputs[sku.id]?.loose || ''}
                             onChange={(e) => handleInputChange(sku.id, 'loose', e.target.value)}
@@ -621,6 +767,7 @@ const Operations: React.FC = () => {
                           <input
                             type="number"
                             min="0"
+                            data-no-preserve
                             placeholder="Packets"
                             value={inputs[sku.id]?.packets || ''}
                             onChange={(e) => handleInputChange(sku.id, 'packets', e.target.value)}
@@ -634,6 +781,7 @@ const Operations: React.FC = () => {
                           <input
                             type="number"
                             min="0"
+                            data-no-preserve
                             placeholder="Loose"
                             value={inputs[sku.id]?.loose || ''}
                             onChange={(e) => handleInputChange(sku.id, 'loose', e.target.value)}

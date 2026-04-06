@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake,
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils,
-  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen
+  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen, Banknote
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,7 @@ import { LedgerEntryType, Permission } from '../types';
 import { UselessDashboard } from './UselessDashboard';
 import { APP_VERSION } from '../version';
 import LedgerEntryModal from './LedgerEntryModal';
+import { canUserAccessLedgerRecordCash, findLedgerRecordCashAccount } from '../utils/ledgerRecordCash';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -29,7 +30,7 @@ type NavItem = {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
-  const { currentUser, logout, hasPermission } = useAuth();
+  const { currentUser, users, logout, hasPermission } = useAuth();
   const { appSettings, lastUpdated, isLiveConnected } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -40,7 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Sync Status State
   const [syncStatus, setSyncStatus] = useState<string>('');
-  const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType }>({ isOpen: false });
+  const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType; mode?: 'STANDARD' | 'RECORD_CASH' }>({ isOpen: false });
 
   // Track expanded state of dropdowns - Default collapsed
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
@@ -78,12 +79,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     return <main className="bg-[#eff2e7] min-h-screen">{children}</main>;
   }
 
+  const recordCashAccount = findLedgerRecordCashAccount(appSettings, users);
+  const canRecordCash = canUserAccessLedgerRecordCash(appSettings, users, currentUser.id);
+
   const navStructure: NavItem[] = [
-    { id: 'add-expense', label: 'Add Expense', icon: <TrendingDown size={20} />, onClick: () => setLedgerModal({ isOpen: true, type: 'EXPENSE' }) },
+    { id: 'add-expense', label: 'Add Expense', icon: <TrendingDown size={20} />, onClick: () => setLedgerModal({ isOpen: true, type: 'EXPENSE', mode: 'STANDARD' }) },
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, permission: 'VIEW_DASHBOARD' },
     { path: '/operations', label: 'Operations', icon: <ArrowRightLeft size={20} />, permission: 'MANAGE_OPERATIONS' },
     { path: '/attendance', label: 'Attendance', icon: <UserCheck size={20} />, permission: 'MANAGE_ATTENDANCE' },
   ];
+
+  if (canRecordCash && recordCashAccount) {
+    navStructure.splice(1, 0, {
+      id: 'record-cash',
+      label: 'Record Cash',
+      icon: <Banknote size={20} />,
+      onClick: () => setLedgerModal({ isOpen: true, type: 'INCOME', mode: 'RECORD_CASH' })
+    });
+  }
 
   // Conditionally add Tasks based on Beta Flag
   if (appSettings.enable_beta_tasks) {
@@ -368,6 +381,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         isOpen={ledgerModal.isOpen}
         onClose={() => setLedgerModal(prev => ({ ...prev, isOpen: false }))}
         forcedType={ledgerModal.type}
+        dialogTitle={ledgerModal.mode === 'RECORD_CASH' ? 'Record Cash' : undefined}
+        submitLabel={ledgerModal.mode === 'RECORD_CASH' ? 'Record Cash' : undefined}
+        preferredCategoryName={ledgerModal.mode === 'RECORD_CASH' ? 'Other' : undefined}
+        lockedSourceAccountId={ledgerModal.mode === 'RECORD_CASH' ? recordCashAccount?.id : undefined}
+        lockedSourceAccountName={ledgerModal.mode === 'RECORD_CASH' ? recordCashAccount?.name : undefined}
+        lockSourceAccount={ledgerModal.mode === 'RECORD_CASH'}
       />
 
       {/* Main Content */}
