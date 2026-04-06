@@ -318,6 +318,7 @@ const AppSettings: React.FC = () => {
                            <label className="relative inline-flex items-center cursor-pointer">
                               <input
                                  type="checkbox"
+                                 data-no-preserve
                                  className="sr-only peer"
                                  checked={appSettings.require_customer_phone || false}
                                  onChange={() => handleToggle('require_customer_phone')}
@@ -346,6 +347,7 @@ const AppSettings: React.FC = () => {
                            <label className="relative inline-flex items-center cursor-pointer">
                               <input
                                  type="checkbox"
+                                 data-no-preserve
                                  className="sr-only peer"
                                  checked={appSettings.require_customer_name || false}
                                  onChange={() => handleToggle('require_customer_name')}
@@ -401,6 +403,7 @@ const AppSettings: React.FC = () => {
                                  <label className="relative inline-flex items-center cursor-pointer">
                                     <input
                                        type="checkbox"
+                                       data-no-preserve
                                        className="sr-only peer"
                                        checked={appSettings.enable_whatsapp_webhook || false}
                                        onChange={() => handleToggle('enable_whatsapp_webhook')}
@@ -452,6 +455,7 @@ const AppSettings: React.FC = () => {
                                        <label className="relative inline-flex items-center cursor-pointer">
                                           <input
                                              type="checkbox"
+                                             data-no-preserve
                                              className="sr-only peer"
                                              checked={appSettings.debug_whatsapp_webhook || false}
                                              onChange={() => handleToggle('debug_whatsapp_webhook')}
@@ -484,6 +488,7 @@ const AppSettings: React.FC = () => {
                                  <label className="relative inline-flex items-center cursor-pointer">
                                     <input
                                        type="checkbox"
+                                       data-no-preserve
                                        className="sr-only peer"
                                        checked={appSettings.enable_attendance_webhook || false}
                                        onChange={() => handleToggle('enable_attendance_webhook')}
@@ -541,6 +546,7 @@ const AppSettings: React.FC = () => {
                                  <label className="relative inline-flex items-center cursor-pointer">
                                     <input
                                        type="checkbox"
+                                       data-no-preserve
                                        className="sr-only peer"
                                        checked={appSettings.enable_transaction_webhook || false}
                                        onChange={() => handleToggle('enable_transaction_webhook')}
@@ -738,6 +744,7 @@ const AppSettings: React.FC = () => {
                               <label className="relative inline-flex items-center cursor-pointer">
                                  <input
                                     type="checkbox"
+                                    data-no-preserve
                                     className="sr-only peer"
                                     checked={appSettings.coolify_force_build || false}
                                     onChange={() => handleToggle('coolify_force_build')}
@@ -867,6 +874,7 @@ const AppSettings: React.FC = () => {
                            <label className={`relative inline-flex items-center cursor-pointer ${currentUser?.role !== 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                               <input
                                  type="checkbox"
+                                 data-no-preserve
                                  className="sr-only peer"
                                  checked={appSettings.enable_beta_tasks || false}
                                  onChange={() => handleToggle('enable_beta_tasks')}
@@ -898,6 +906,7 @@ const AppSettings: React.FC = () => {
                            <label className={`relative inline-flex items-center cursor-pointer ${currentUser?.role !== 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                               <input
                                  type="checkbox"
+                                 data-no-preserve
                                  className="sr-only peer"
                                  checked={appSettings.enable_beta_ledger || false}
                                  onChange={() => handleToggle('enable_beta_ledger')}
@@ -943,6 +952,7 @@ const AppSettings: React.FC = () => {
                               <label className="relative inline-flex items-center cursor-pointer">
                                  <input
                                     type="checkbox"
+                                    data-no-preserve
                                     className="sr-only peer"
                                     checked={appSettings.enable_attendance_webhook_debug || false}
                                     onChange={() => handleToggle('enable_attendance_webhook_debug')}
@@ -971,6 +981,7 @@ const AppSettings: React.FC = () => {
                               <label className="relative inline-flex items-center cursor-pointer">
                                  <input
                                     type="checkbox"
+                                    data-no-preserve
                                     className="sr-only peer"
                                     checked={appSettings.enable_debug_inventory || false}
                                     onChange={() => handleToggle('enable_debug_inventory')}
