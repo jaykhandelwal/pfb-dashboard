@@ -107,10 +107,22 @@ const LedgerSettings: React.FC = () => {
         setNewCategoryDescription('');
     };
 
+    const openAddCategoryModal = () => {
+        setNewCategory('');
+        setNewCategoryDescription('');
+        setIsAddCategoryModalOpen(true);
+    };
+
     const closeAddAccountModal = () => {
         setIsAddAccountModalOpen(false);
         setNewAccountName('');
         setActivePaymentMethodMenu(null);
+    };
+
+    const openAddAccountModal = () => {
+        setNewAccountName('');
+        setActivePaymentMethodMenu(null);
+        setIsAddAccountModalOpen(true);
     };
 
     // CATEGORIES
@@ -959,7 +971,7 @@ const LedgerSettings: React.FC = () => {
                         </div>
                         <button
                             type="button"
-                            onClick={() => setIsAddCategoryModalOpen(true)}
+                            onClick={openAddCategoryModal}
                             className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 sm:self-start"
                         >
                             <Plus size={18} />
@@ -1101,43 +1113,37 @@ const LedgerSettings: React.FC = () => {
             </div>
 
             {/* Payment Accounts Section */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-                    <div>
-                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                            <div className="p-2 bg-slate-100 rounded-lg">
-                                <CreditCard className="text-slate-600" size={24} />
-                            </div>
-                            Payment Accounts
-                        </h3>
-                        <p className="text-slate-400 text-sm mt-1">Manage staff accounts, funding sources, visibility, and optional payment-method labels.</p>
-                    </div>
-                    <div className="w-full md:w-auto">
-                        <div className="mb-2">
-                            <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Add custom account</span>
+            <div className="min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="mb-6 border-b border-slate-100 pb-6">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                                <div className="p-2 bg-slate-100 rounded-lg">
+                                    <CreditCard className="text-slate-600" size={22} />
+                                </div>
+                                Payment Accounts
+                            </h3>
+                            <p className="mt-2 max-w-xl text-sm text-slate-500">
+                                Manage staff accounts, funding sources, visibility, and optional payment-method labels without crowding the main list.
+                            </p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr),auto] gap-2 w-full md:w-auto">
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs font-semibold text-slate-500">Account name</span>
-                                <input
-                                    type="text"
-                                    aria-label="Account name"
-                                    value={newAccountName}
-                                    onChange={(e) => setNewAccountName(e.target.value)}
-                                    placeholder="Petty Cash / Owner / etc."
-                                    className="w-full md:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-slate-800 focus:outline-none"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddAccount()}
-                                />
-                            </label>
-                            <div className="flex items-end">
-                                <button
-                                    onClick={handleAddAccount}
-                                    className="bg-slate-800 text-white px-6 py-3 rounded-xl hover:bg-slate-900 transition-all flex items-center gap-2 font-bold shadow-lg shadow-slate-200"
-                                >
-                                    <Plus size={20} />
-                                    Add Account
-                                </button>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:flex-col lg:items-end">
+                            <div className="flex flex-wrap gap-2 lg:justify-end">
+                                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                                    {customAccountsCount} custom
+                                </span>
+                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                                    {paymentMethods.length} labels
+                                </span>
                             </div>
+                            <button
+                                type="button"
+                                onClick={openAddAccountModal}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-900"
+                            >
+                                <Plus size={18} />
+                                Add Custom Account
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1194,7 +1200,7 @@ const LedgerSettings: React.FC = () => {
                                                 <input
                                                     value={editingAccountName}
                                                     onChange={(e) => setEditingAccountName(e.target.value)}
-                                                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white font-bold"
+                                                    className="min-w-0 flex-1 px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white font-bold"
                                                     autoFocus
                                                 />
                                                 {renderPaymentMethodInput({
@@ -1205,7 +1211,7 @@ const LedgerSettings: React.FC = () => {
                                                     onChange: setEditingAccountPaymentMethod,
                                                     placeholder: 'Select or type a payment method',
                                                     compact: true,
-                                                    className: 'flex-1',
+                                                    className: 'min-w-0 flex-1',
                                                     onKeyDown: (e) => e.key === 'Enter' && saveEditingAccount()
                                                 })}
                                                 <div className="flex gap-2">
@@ -1269,7 +1275,7 @@ const LedgerSettings: React.FC = () => {
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        <h4 className="font-black text-lg text-slate-800 truncate">{acc.name}</h4>
+                                                        <h4 className="break-words font-black text-lg text-slate-800">{acc.name}</h4>
                                                         <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${acc.type === 'USER' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                                             {acc.type === 'USER' ? 'User Account' : 'Custom Account'}
                                                         </span>
@@ -1328,6 +1334,164 @@ const LedgerSettings: React.FC = () => {
                 </div>
             </div>
             </div>
+
+            {isAddCategoryModalOpen && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in"
+                    onClick={closeAddCategoryModal}
+                >
+                    <div
+                        className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl animate-in zoom-in-95"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-6 py-5">
+                            <div>
+                                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-500">New Category</p>
+                                <h3 className="mt-1 text-xl font-bold text-slate-800">Add expense category</h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    Keep the list uncluttered and add helper text only when the category needs extra guidance.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeAddCategoryModal}
+                                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+                                aria-label="Close add category modal"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                handleAddCategory();
+                            }}
+                            className="space-y-5 p-6"
+                        >
+                            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                                New categories start active and visible to all users. You can customize access, icon, and color right after creating them.
+                            </div>
+
+                            <label className="flex flex-col gap-2">
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Category Name</span>
+                                <input
+                                    type="text"
+                                    required
+                                    autoFocus
+                                    value={newCategory}
+                                    onChange={(e) => setNewCategory(e.target.value)}
+                                    placeholder="e.g. Rent"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </label>
+
+                            <label className="flex flex-col gap-2">
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Helper Text</span>
+                                <textarea
+                                    value={newCategoryDescription}
+                                    onChange={(e) => setNewCategoryDescription(e.target.value)}
+                                    placeholder="Shown below the category picker in the entry modal"
+                                    rows={3}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                                />
+                                <span className="text-xs text-slate-500">
+                                    Optional. Use this when teammates need a quick hint about what belongs in the category.
+                                </span>
+                            </label>
+
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                <button
+                                    type="button"
+                                    onClick={closeAddCategoryModal}
+                                    className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700"
+                                >
+                                    <Plus size={18} />
+                                    Create Category
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {isAddAccountModalOpen && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in"
+                    onClick={closeAddAccountModal}
+                >
+                    <div
+                        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl animate-in zoom-in-95"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-6 py-5">
+                            <div>
+                                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">New Account</p>
+                                <h3 className="mt-1 text-xl font-bold text-slate-800">Add custom payment account</h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    Create the account first, then fine-tune who can use it and what label it carries.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeAddAccountModal}
+                                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+                                aria-label="Close add account modal"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={async (event) => {
+                                event.preventDefault();
+                                await handleAddAccount();
+                            }}
+                            className="space-y-5 p-6"
+                        >
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                                Custom accounts start active and visible to everyone. Payment method labels, icons, and access rules can be updated from the account card after creation.
+                            </div>
+
+                            <label className="flex flex-col gap-2">
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Account Name</span>
+                                <input
+                                    type="text"
+                                    required
+                                    autoFocus
+                                    value={newAccountName}
+                                    onChange={(e) => setNewAccountName(e.target.value)}
+                                    placeholder="Petty Cash / Owner / etc."
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                />
+                            </label>
+
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                <button
+                                    type="button"
+                                    onClick={closeAddAccountModal}
+                                    className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-900"
+                                >
+                                    <Plus size={18} />
+                                    Create Account
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">

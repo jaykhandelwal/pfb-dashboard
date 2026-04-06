@@ -392,6 +392,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         lockedSourceAccountId={ledgerModal.mode === 'RECORD_CASH' ? recordCashAccount?.id : undefined}
         lockedSourceAccountName={ledgerModal.mode === 'RECORD_CASH' ? recordCashAccount?.name : undefined}
         lockSourceAccount={ledgerModal.mode === 'RECORD_CASH'}
+        manualSelectionUntilSingleOption={ledgerModal.mode === 'STANDARD' && ledgerModal.type === 'EXPENSE'}
       />
 
       {/* Main Content */}

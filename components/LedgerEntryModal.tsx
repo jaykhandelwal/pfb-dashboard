@@ -22,6 +22,7 @@ interface LedgerEntryModalProps {
     lockedSourceAccountId?: string;
     lockedSourceAccountName?: string;
     lockSourceAccount?: boolean;
+    manualSelectionUntilSingleOption?: boolean;
 }
 
 const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
@@ -34,7 +35,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     preferredCategoryName,
     lockedSourceAccountId,
     lockedSourceAccountName,
-    lockSourceAccount
+    lockSourceAccount,
+    manualSelectionUntilSingleOption = false
 }) => {
     const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
@@ -180,6 +182,55 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         return null;
     }, [categoryOptions.length, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible, shouldShowCategoryField, sourceAccountOptions.length]);
 
+    const getDefaultCategory = () => {
+        const preferredCategory = accessibleCategories.find(category =>
+            preferredCategoryName && category.name.toLowerCase() === preferredCategoryName.toLowerCase()
+        );
+
+        if (manualSelectionUntilSingleOption) {
+            return accessibleCategories.length === 1 ? accessibleCategories[0] : undefined;
+        }
+
+        return preferredCategory || accessibleCategories[0];
+    };
+
+    const getDefaultSourceAccount = () => {
+        if (isSourceAccountLocked) {
+            return lockedSourceAccount;
+        }
+
+        if (manualSelectionUntilSingleOption) {
+            return accessibleAccounts.length === 1 ? accessibleAccounts[0] : undefined;
+        }
+
+        return accessibleAccounts[0];
+    };
+
+    const hasSelectedCategory = !shouldShowCategoryField || Boolean(formData.categoryId || formData.category);
+    const hasSelectedSourceAccount = isSourceAccountLocked
+        ? Boolean(lockedSourceAccount)
+        : Boolean(formData.sourceAccountId || formData.sourceAccount);
+    const hasSelectedDestinationAccount = formData.entryType !== 'REIMBURSEMENT'
+        || Boolean(formData.destinationAccountId || formData.destinationAccount);
+
+    const validationIssue = useMemo(() => {
+        if (!hasSelectedCategory) {
+            return 'Select a category to continue.';
+        }
+
+        if (!hasSelectedSourceAccount) {
+            return `Select ${formData.entryType === 'REIMBURSEMENT' ? 'the source account' : 'a payment account'} to continue.`;
+        }
+
+        if (!hasSelectedDestinationAccount) {
+            return 'Select a beneficiary to continue.';
+        }
+
+        return null;
+    }, [formData.entryType, hasSelectedCategory, hasSelectedDestinationAccount, hasSelectedSourceAccount]);
+
+    const submitBlockedReason = accessIssue || validationIssue;
+
     // Load defaults or initial data
     useEffect(() => {
         if (isOpen) {
@@ -201,10 +252,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             } else {
                 // Set defaults
-                const defaultCategory = accessibleCategories.find(category =>
-                    preferredCategoryName && category.name.toLowerCase() === preferredCategoryName.toLowerCase()
-                ) || accessibleCategories[0];
-                const defaultAccount = isSourceAccountLocked ? lockedSourceAccount : sourceAccountOptions[0];
+                const defaultCategory = getDefaultCategory();
+                const defaultAccount = getDefaultSourceAccount();
 
                 setFormData({
                     date: getLocalDateInputValue(),
@@ -213,7 +262,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     categoryId: defaultCategory?.id || '',
                     amount: '',
                     description: '',
-                    sourceAccount: defaultAccount?.name || LEDGER_COMPANY_ACCOUNT_NAME,
+                    sourceAccount: defaultAccount?.name || '',
                     sourceAccountId: defaultAccount?.id || '',
                     destinationAccount: '',
                     destinationAccountId: '',
@@ -232,20 +281,19 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             const selectedCategoryStillAccessible = accessibleCategories.some(category =>
                 category.id === prev.categoryId || category.name === prev.category
             );
-            const preferredCategory = accessibleCategories.find(category =>
-                preferredCategoryName && category.name.toLowerCase() === preferredCategoryName.toLowerCase()
-            ) || accessibleCategories[0];
+            const preferredCategory = getDefaultCategory();
             const selectedSourceStillAccessible = isSourceAccountLocked
                 ? Boolean(lockedSourceAccount && lockedSourceAccountAccessible)
                 : accessibleAccounts.some(account =>
                     account.id === prev.sourceAccountId || account.name === prev.sourceAccount
                 );
+            const defaultSourceAccount = getDefaultSourceAccount();
             const nextSourceAccount = isSourceAccountLocked
                 ? (lockedSourceAccount?.name || '')
-                : (selectedSourceStillAccessible ? prev.sourceAccount : (accessibleAccounts[0]?.name || LEDGER_COMPANY_ACCOUNT_NAME));
+                : (selectedSourceStillAccessible ? prev.sourceAccount : (defaultSourceAccount?.name || ''));
             const nextSourceAccountId = isSourceAccountLocked
                 ? (lockedSourceAccount?.id || '')
-                : (selectedSourceStillAccessible ? prev.sourceAccountId : (accessibleAccounts[0]?.id || ''));
+                : (selectedSourceStillAccessible ? prev.sourceAccountId : (defaultSourceAccount?.id || ''));
 
             return {
                 ...prev,
@@ -257,7 +305,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 destinationAccountId: prev.destinationAccount === nextSourceAccount ? '' : prev.destinationAccountId,
             };
         });
-    }, [isOpen, initialData, accessibleCategories, accessibleAccounts, activeAccounts, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible]);
+    }, [isOpen, initialData, accessibleCategories, accessibleAccounts, isSourceAccountLocked, lockedSourceAccount, lockedSourceAccountAccessible, manualSelectionUntilSingleOption, preferredCategoryName]);
 
     useEffect(() => {
         if (!isOpen || formData.entryType !== 'INCOME') return;
@@ -340,7 +388,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
 
     const handleSubmit = async (e?: React.FormEvent, statusOverride?: 'APPROVED' | 'REJECTED', rejectionReason?: string) => {
         if (e) e.preventDefault();
-        if (!formData.amount || !formData.description || accessIssue) return;
+        if (!formData.amount || !formData.description || submitBlockedReason) return;
 
         setIsUploading(true);
 
@@ -530,9 +578,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     </button>
                 </div>
                 <form data-draft-preserve onSubmit={handleSubmit} className="p-4 space-y-4">
-                    {accessIssue && (
+                    {submitBlockedReason && (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            {accessIssue}
+                            {submitBlockedReason}
                         </div>
                     )}
 
@@ -762,7 +810,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                     <button
                                         type="button"
                                         onClick={(e) => handleSubmit(e, 'APPROVED')}
-                                        disabled={isUploading || !!accessIssue}
+                                        disabled={isUploading || !!submitBlockedReason}
                                         className="col-span-2 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-600/20 hover:shadow-xl hover:bg-emerald-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                     >
                                         Update & Approve
@@ -770,7 +818,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                     </button>
                                     <button
                                         type="submit"
-                                        disabled={isUploading || !!accessIssue}
+                                        disabled={isUploading || !!submitBlockedReason}
                                         className="py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
                                     >
                                         Update Only
@@ -795,7 +843,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                                 handleSubmit(undefined, 'REJECTED', reason);
                                             }
                                         }}
-                                        disabled={isUploading || !!accessIssue}
+                                        disabled={isUploading || !!submitBlockedReason}
                                         className="py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-600/20 hover:shadow-xl hover:bg-red-700 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                     >
                                         Reject Entry
@@ -804,7 +852,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                             ) : (
                                 <button
                                     type="submit"
-                                    disabled={isUploading || !!accessIssue}
+                                    disabled={isUploading || !!submitBlockedReason}
                                     className="w-full py-3 bg-[#95a77c] text-white rounded-xl font-bold shadow-lg shadow-[#95a77c]/20 hover:shadow-xl hover:bg-[#7d8f68] transition-all transform active:scale-[0.98] flex items-center justify-center gap-2"
                                 >
                                     {isUploading ? (
