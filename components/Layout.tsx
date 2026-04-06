@@ -225,6 +225,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     // If it's an action button (Leaf)
     if (item.onClick) {
+      const isRecordCashAction = item.id === 'record-cash';
       return (
         <button
           key={item.id || item.label}
@@ -233,7 +234,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             item.onClick?.();
             handleMobileNavClick();
           }}
-          className="flex items-center space-x-3 px-4 h-12 w-full rounded-lg transition-colors font-medium text-base text-[#eef1e6] bg-[#403424] border border-[#403424] shadow-sm hover:bg-[#4b3d2c]"
+          className={`flex items-center space-x-3 px-4 h-12 w-full rounded-lg transition-colors font-medium text-base shadow-sm ${
+            isRecordCashAction
+              ? 'text-white bg-emerald-600 border border-emerald-600 hover:bg-emerald-700'
+              : 'text-[#eef1e6] bg-[#403424] border border-[#403424] hover:bg-[#4b3d2c]'
+          }`}
         >
           {item.icon}
           <span>{item.label}</span>
