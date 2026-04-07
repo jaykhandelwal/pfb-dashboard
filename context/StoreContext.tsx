@@ -95,6 +95,7 @@ const mapCouponFromDB = (data: any): Coupon => ({
     ...data,
     customerId: data.customer_id || data.customerId,
     ruleId: data.rule_id || data.ruleId,
+    createdAt: getSafeTimestamp(data),
     expiresAt: data.expires_at || data.expiresAt,
     redeemedAt: data.redeemed_at || data.redeemedAt,
     redeemedOrderId: data.redeemed_order_id || data.redeemedOrderId
@@ -152,6 +153,21 @@ const mapDeletedTransactionFromDB = (t: any): Transaction => ({
     deletedAt: t.deleted_at || t.deletedAt,
     deletedBy: t.deleted_by || t.deletedBy
 });
+
+const upsertById = <T extends { id: string }>(items: T[], nextItem: T, prepend = false): T[] => {
+    const existingIndex = items.findIndex(item => item.id === nextItem.id);
+    if (existingIndex === -1) {
+        return prepend ? [nextItem, ...items] : [...items, nextItem];
+    }
+
+    return items.map(item => item.id === nextItem.id ? nextItem : item);
+};
+
+const sortByOrder = <T extends { order: number }>(items: T[]): T[] =>
+    [...items].sort((a, b) => a.order - b.order);
+
+const sortCouponsByCreatedAt = (items: Coupon[]): Coupon[] =>
+    [...items].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
 // --- DATABASE MAPPERS (WRITE: App -> DB) ---
 // Translates App camelCase to Supabase snake_case.
@@ -404,6 +420,7 @@ interface StoreContextType {
     salesRecords: SalesRecord[];
     lastUpdated: number; // Added timestamp
     isLiveConnected: boolean; // Connection Status
+    refreshStore: () => Promise<void>;
 
     // Ledger Logs
     ledgerLogs: LedgerLog[];
@@ -580,133 +597,151 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    const refreshStore = async (showLoading = false): Promise<void> => {
+        if (showLoading) {
+            setIsLoading(true);
+        }
+
+        try {
+            const load = (key: string, setter: any, fallback: any) => {
+                const stored = localStorage.getItem(`pakaja_${key}`);
+                if (stored) setter(JSON.parse(stored));
+                else setter(fallback);
+            };
+
+            load('transactions', setTransactions, []);
+            load('salesRecords', setSalesRecords, []);
+            load('skus', setSkus, INITIAL_SKUS);
+            load('branches', setBranches, INITIAL_BRANCHES);
+            load('orders', (data: any[]) => setOrders(Array.isArray(data) ? data.map(normalizeOrderRecord) : []), []);
+            load('todos', setTodos, []);
+            load('menuItems', setMenuItems, INITIAL_MENU_ITEMS);
+            load('menuCategories', setMenuCategories, INITIAL_MENU_CATEGORIES);
+            load('customers', setCustomers, INITIAL_CUSTOMERS);
+            load('membershipRules', setMembershipRules, INITIAL_MEMBERSHIP_RULES);
+            load('customerCoupons', setCustomerCoupons, []);
+            load('attendanceRecords', setAttendanceRecords, []);
+            load('attendanceOverrides', setAttendanceOverrides, []);
+            load('deletedTransactions', setDeletedTransactions, []);
+            load('taskTemplates', setTaskTemplates, []);
+            load('storageUnits', setStorageUnits, []);
+
+            const storedSettings = localStorage.getItem('pakaja_appSettings');
+            if (storedSettings) {
+                setAppSettings(prev => ({ ...prev, ...JSON.parse(storedSettings) }));
+            }
+
+            if (isSupabaseConfigured()) {
+                // Helper to fetch ALL rows, bypassing the default 1000 limit
+                const fetchAll = async (table: string) => {
+                    let allData: any[] = [];
+                    let from = 0;
+                    const pageSize = 1000;
+                    let totalCount: number | null = null;
+
+                    while (true) {
+                        const { data, error, count } = await supabase
+                            .from(table)
+                            .select('*', { count: 'exact' })
+                            .range(from, from + pageSize - 1);
+
+                        if (error) {
+                            console.error(`Error fetching ${table}:`, error);
+                            break;
+                        }
+                        if (!data || data.length === 0) break;
+
+                        if (totalCount === null && typeof count === 'number') {
+                            totalCount = count;
+                        }
+
+                        allData = [...allData, ...data];
+
+                        // If we got fewer rows than requested, we reached the end
+                        if (data.length < pageSize) break;
+
+                        from += data.length;
+
+                        if (totalCount !== null && allData.length >= totalCount) {
+                            break;
+                        }
+                    }
+                    return { data: allData };
+                };
+
+                const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData, ledgerData] = await Promise.all([
+                    fetchAll('transactions'), // Use fetchAll
+                    fetchAll('orders'),       // Use fetchAll
+                    supabase.from('skus').select('*').order('order', { ascending: true }),
+                    supabase.from('branches').select('*'),
+                    supabase.from('menu_items').select('*'),
+                    supabase.from('menu_categories').select('*').order('order', { ascending: true }),
+                    fetchAll('customers'),    // Use fetchAll
+                    supabase.from('membership_rules').select('*'),
+                    supabase.from('customer_coupons').select('*').order('created_at', { ascending: true }),
+                    fetchAll('attendance'),   // Use fetchAll
+                    supabase.from('task_templates').select('*'),
+                    supabase.from('todos').select('*'),
+                    fetchAll('sales_records'), // Use fetchAll
+                    supabase.from('app_settings').select('*'),
+                    supabase.from('storage_units').select('*'),
+                    fetchAll('deleted_transactions'), // Fetch explicitly from deleted table
+                    fetchAll('ledger_entries') // Fetch ledger entries
+                ]);
+
+                if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
+                if (ordData.data) { const mapped = ordData.data.map(mapOrderFromDB); setOrders(mapped); save('orders', mapped); }
+                if (skuData.data) { const mapped = skuData.data.map(mapSkuFromDB); setSkus(mapped); save('skus', mapped); }
+                if (brData.data) { setBranches(brData.data); save('branches', brData.data); }
+                if (menuData.data) { const mapped = menuData.data.map(mapMenuItemFromDB); setMenuItems(mapped); save('menuItems', mapped); }
+                if (catData.data) { setMenuCategories(catData.data); save('menuCategories', catData.data); }
+                if (custData.data) { const mapped = custData.data.map(mapCustomerFromDB); setCustomers(mapped); save('customers', mapped); }
+                if (ruleData.data) { const mapped = ruleData.data.map(mapRuleFromDB); setMembershipRules(mapped); save('membershipRules', mapped); }
+                if (cpnData.data) { const mapped = cpnData.data.map(mapCouponFromDB); setCustomerCoupons(mapped); save('customerCoupons', mapped); }
+                if (attData.data) { const mapped = attData.data.map(mapAttendanceFromDB); setAttendanceRecords(mapped); save('attendanceRecords', mapped); }
+                if (tmplData.data) { const mapped = tmplData.data.map(mapTemplateFromDB); setTaskTemplates(mapped); save('taskTemplates', mapped); }
+                if (todoData.data) { const mapped = todoData.data.map(mapTodoFromDB); setTodos(mapped); save('todos', mapped); }
+                if (salesData.data) { const mapped = salesData.data.map(mapSalesRecordFromDB); setSalesRecords(mapped); save('salesRecords', mapped); }
+                if (storageData.data) { const mapped = storageData.data.map(mapStorageUnitFromDB); setStorageUnits(mapped); save('storageUnits', mapped); }
+
+                // Set Deleted Transactions
+                if (delData.data) {
+                    const mappedDel = delData.data.map(mapDeletedTransactionFromDB);
+                    setDeletedTransactions(mappedDel);
+                    save('deletedTransactions', mappedDel);
+                }
+
+                if (settingsData.data) {
+                    const settingsMap = settingsData.data.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
+                    setAppSettings(prev => ({ ...prev, ...settingsMap }));
+                    save('appSettings', settingsMap);
+                }
+
+                // Ledger Entries
+                if (ledgerData.data) {
+                    const mapped = ledgerData.data.map(mapLedgerEntryFromDB);
+                    setLedgerEntries(mapped);
+                    save('ledgerEntries', mapped);
+                }
+
+                setLastUpdated(Date.now());
+            }
+        } catch (e) {
+            console.error("Sync Failed", e);
+        } finally {
+            if (showLoading) {
+                setIsLoading(false);
+            }
+        }
+    };
+
     useEffect(() => {
         const initializeStore = async () => {
             try {
-                const load = (key: string, setter: any, fallback: any) => {
-                    const stored = localStorage.getItem(`pakaja_${key}`);
-                    if (stored) setter(JSON.parse(stored));
-                    else setter(fallback);
-                };
-
-                load('transactions', setTransactions, []);
-                load('salesRecords', setSalesRecords, []);
-                load('skus', setSkus, INITIAL_SKUS);
-                load('branches', setBranches, INITIAL_BRANCHES);
-                load('orders', (data: any[]) => setOrders(Array.isArray(data) ? data.map(normalizeOrderRecord) : []), []);
-                load('todos', setTodos, []);
-                load('menuItems', setMenuItems, INITIAL_MENU_ITEMS);
-                load('menuCategories', setMenuCategories, INITIAL_MENU_CATEGORIES);
-                load('customers', setCustomers, INITIAL_CUSTOMERS);
-                load('membershipRules', setMembershipRules, INITIAL_MEMBERSHIP_RULES);
-                load('customerCoupons', setCustomerCoupons, []);
-                load('attendanceRecords', setAttendanceRecords, []);
-                load('attendanceOverrides', setAttendanceOverrides, []);
-                load('deletedTransactions', setDeletedTransactions, []);
-                load('taskTemplates', setTaskTemplates, []);
-                load('storageUnits', setStorageUnits, []);
-
-                const storedSettings = localStorage.getItem('pakaja_appSettings');
-                if (storedSettings) {
-                    setAppSettings(prev => ({ ...prev, ...JSON.parse(storedSettings) }));
-                }
-
-                if (isSupabaseConfigured()) {
-                    // Helper to fetch ALL rows, bypassing the default 1000 limit
-                    const fetchAll = async (table: string) => {
-                        let allData: any[] = [];
-                        let from = 0;
-                        const pageSize = 1000;
-                        let totalCount: number | null = null;
-
-                        while (true) {
-                            const { data, error, count } = await supabase
-                                .from(table)
-                                .select('*', { count: 'exact' })
-                                .range(from, from + pageSize - 1);
-
-                            if (error) {
-                                console.error(`Error fetching ${table}:`, error);
-                                break;
-                            }
-                            if (!data || data.length === 0) break;
-
-                            if (totalCount === null && typeof count === 'number') {
-                                totalCount = count;
-                            }
-
-                            allData = [...allData, ...data];
-
-                            // If we got fewer rows than requested, we reached the end
-                            if (data.length < pageSize) break;
-
-                            from += data.length;
-
-                            if (totalCount !== null && allData.length >= totalCount) {
-                                break;
-                            }
-                        }
-                        return { data: allData };
-                    };
-
-                    const [txData, ordData, skuData, brData, menuData, catData, custData, ruleData, cpnData, attData, tmplData, todoData, salesData, settingsData, storageData, delData, ledgerData] = await Promise.all([
-                        fetchAll('transactions'), // Use fetchAll
-                        fetchAll('orders'),       // Use fetchAll
-                        supabase.from('skus').select('*').order('order', { ascending: true }),
-                        supabase.from('branches').select('*'),
-                        supabase.from('menu_items').select('*'),
-                        supabase.from('menu_categories').select('*').order('order', { ascending: true }),
-                        fetchAll('customers'),    // Use fetchAll
-                        supabase.from('membership_rules').select('*'),
-                        supabase.from('customer_coupons').select('*').order('created_at', { ascending: true }),
-                        fetchAll('attendance'),   // Use fetchAll
-                        supabase.from('task_templates').select('*'),
-                        supabase.from('todos').select('*'),
-                        fetchAll('sales_records'), // Use fetchAll
-                        supabase.from('app_settings').select('*'),
-                        supabase.from('storage_units').select('*'),
-                        fetchAll('deleted_transactions'), // Fetch explicitly from deleted table
-                        fetchAll('ledger_entries') // Fetch ledger entries
-                    ]);
-
-                    if (txData.data) { const mapped = txData.data.map(mapTransactionFromDB); setTransactions(mapped); save('transactions', mapped); }
-                    if (ordData.data) { const mapped = ordData.data.map(mapOrderFromDB); setOrders(mapped); save('orders', mapped); }
-                    if (skuData.data) { const mapped = skuData.data.map(mapSkuFromDB); setSkus(mapped); save('skus', mapped); }
-                    if (brData.data) { setBranches(brData.data); save('branches', brData.data); }
-                    if (menuData.data) { const mapped = menuData.data.map(mapMenuItemFromDB); setMenuItems(mapped); save('menuItems', mapped); }
-                    if (catData.data) { setMenuCategories(catData.data); save('menuCategories', catData.data); }
-                    if (custData.data) { const mapped = custData.data.map(mapCustomerFromDB); setCustomers(mapped); save('customers', mapped); }
-                    if (ruleData.data) { const mapped = ruleData.data.map(mapRuleFromDB); setMembershipRules(mapped); save('membershipRules', mapped); }
-                    if (cpnData.data) { const mapped = cpnData.data.map(mapCouponFromDB); setCustomerCoupons(mapped); save('customerCoupons', mapped); }
-                    if (attData.data) { const mapped = attData.data.map(mapAttendanceFromDB); setAttendanceRecords(mapped); save('attendanceRecords', mapped); }
-                    if (tmplData.data) { const mapped = tmplData.data.map(mapTemplateFromDB); setTaskTemplates(mapped); save('taskTemplates', mapped); }
-                    if (todoData.data) { const mapped = todoData.data.map(mapTodoFromDB); setTodos(mapped); save('todos', mapped); }
-                    if (salesData.data) { const mapped = salesData.data.map(mapSalesRecordFromDB); setSalesRecords(mapped); save('salesRecords', mapped); }
-                    if (storageData.data) { const mapped = storageData.data.map(mapStorageUnitFromDB); setStorageUnits(mapped); save('storageUnits', mapped); }
-
-                    // Set Deleted Transactions
-                    if (delData.data) {
-                        const mappedDel = delData.data.map(mapDeletedTransactionFromDB);
-                        setDeletedTransactions(mappedDel);
-                        save('deletedTransactions', mappedDel);
-                    }
-
-                    if (settingsData.data) {
-                        const settingsMap = settingsData.data.reduce((acc: any, curr: any) => ({ ...acc, [curr.key]: curr.value }), {});
-                        setAppSettings(prev => ({ ...prev, ...settingsMap }));
-                        save('appSettings', settingsMap);
-                    }
-
-                    // Ledger Entries
-                    if (ledgerData.data) {
-                        const mapped = ledgerData.data.map(mapLedgerEntryFromDB);
-                        setLedgerEntries(mapped);
-                        save('ledgerEntries', mapped);
-                    }
-
-                    setLastUpdated(Date.now());
-                }
-            } catch (e) { console.error("Sync Failed", e); } finally { setIsLoading(false); }
+                await refreshStore(true);
+            } finally {
+                setIsLoading(false);
+            }
         };
         initializeStore();
     }, []);
@@ -721,11 +756,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setTransactions(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapTransactionFromDB(newRecord);
-                        // Deduplicate
-                        if (prev.some(t => t.id === mapped.id)) return prev;
-                        updated = [...prev, mapped];
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapTransactionFromDB(newRecord));
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(t => t.id !== oldRecord.id);
                     }
@@ -739,12 +771,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setOrders(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapOrderFromDB(newRecord);
-                        if (prev.some(o => o.id === mapped.id)) return prev;
-                        updated = [mapped, ...prev];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(o => o.id === newRecord.id ? mapOrderFromDB(newRecord) : o);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapOrderFromDB(newRecord), true);
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(o => o.id !== oldRecord.id);
                     }
@@ -758,16 +786,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setSkus(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapSkuFromDB(newRecord);
-                        if (prev.some(s => s.id === mapped.id)) return prev;
-                        updated = [...prev, mapped];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(s => s.id === newRecord.id ? mapSkuFromDB(newRecord) : s);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapSkuFromDB(newRecord));
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(s => s.id !== oldRecord.id);
                     }
-                    updated.sort((a, b) => a.order - b.order);
+                    updated = sortByOrder(updated);
                     save('skus', updated);
                     setLastUpdated(Date.now());
                     return updated;
@@ -778,10 +802,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setAttendanceRecords(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapAttendanceFromDB(newRecord);
-                        if (prev.some(a => a.id === mapped.id)) return prev;
-                        updated = [mapped, ...prev];
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapAttendanceFromDB(newRecord), true);
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(a => a.id !== oldRecord.id);
                     }
@@ -795,12 +817,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setTodos(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapTodoFromDB(newRecord);
-                        if (prev.some(t => t.id === mapped.id)) return prev;
-                        updated = [mapped, ...prev];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(t => t.id === newRecord.id ? mapTodoFromDB(newRecord) : t);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapTodoFromDB(newRecord), true);
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(t => t.id !== oldRecord.id);
                     }
@@ -826,12 +844,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setMenuItems(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapMenuItemFromDB(newRecord);
-                        if (prev.some(m => m.id === mapped.id)) return prev;
-                        updated = [...prev, mapped];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(m => m.id === newRecord.id ? mapMenuItemFromDB(newRecord) : m);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapMenuItemFromDB(newRecord));
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(m => m.id !== oldRecord.id);
                     }
@@ -845,11 +859,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setBranches(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        if (prev.some(b => b.id === newRecord.id)) return prev;
-                        updated = [...prev, newRecord];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(b => b.id === newRecord.id ? newRecord : b);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, newRecord);
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(b => b.id !== oldRecord.id);
                     }
@@ -858,17 +869,133 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     return updated;
                 });
             })
-            // 9. Ledger Entries
+            // 9. Customers
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setCustomers(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapCustomerFromDB(newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(c => c.id !== oldRecord.id);
+                    }
+                    save('customers', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 10. Menu Categories
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_categories' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setMenuCategories(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = sortByOrder(upsertById(prev, newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(c => c.id !== oldRecord.id);
+                    }
+                    save('menuCategories', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 11. Membership Rules
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'membership_rules' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setMembershipRules(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapRuleFromDB(newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(rule => rule.id !== oldRecord.id);
+                    }
+                    save('membershipRules', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 12. Customer Coupons
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_coupons' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setCustomerCoupons(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = sortCouponsByCreatedAt(upsertById(prev, mapCouponFromDB(newRecord)));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(coupon => coupon.id !== oldRecord.id);
+                    }
+                    save('customerCoupons', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 13. Task Templates
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'task_templates' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setTaskTemplates(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapTemplateFromDB(newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(template => template.id !== oldRecord.id);
+                    }
+                    save('taskTemplates', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 14. Sales Records
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_records' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setSalesRecords(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapSalesRecordFromDB(newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(record => record.id !== oldRecord.id);
+                    }
+                    save('salesRecords', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 15. Storage Units
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'storage_units' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setStorageUnits(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapStorageUnitFromDB(newRecord));
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(unit => unit.id !== oldRecord.id);
+                    }
+                    save('storageUnits', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 16. Deleted Transactions
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'deleted_transactions' }, (payload: any) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                setDeletedTransactions(prev => {
+                    let updated = prev;
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapDeletedTransactionFromDB(newRecord), true);
+                    } else if (eventType === 'DELETE') {
+                        updated = prev.filter(transaction => transaction.id !== oldRecord.id);
+                    }
+                    save('deletedTransactions', updated);
+                    setLastUpdated(Date.now());
+                    return updated;
+                });
+            })
+            // 17. Ledger Entries
             .on('postgres_changes', { event: '*', schema: 'public', table: 'ledger_entries' }, (payload: any) => {
                 const { eventType, new: newRecord, old: oldRecord } = payload;
                 setLedgerEntries(prev => {
                     let updated = prev;
-                    if (eventType === 'INSERT') {
-                        const mapped = mapLedgerEntryFromDB(newRecord);
-                        if (prev.some(e => e.id === mapped.id)) return prev;
-                        updated = [mapped, ...prev];
-                    } else if (eventType === 'UPDATE') {
-                        updated = prev.map(e => e.id === newRecord.id ? mapLedgerEntryFromDB(newRecord) : e);
+                    if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                        updated = upsertById(prev, mapLedgerEntryFromDB(newRecord), true);
                     } else if (eventType === 'DELETE') {
                         updated = prev.filter(e => e.id !== oldRecord.id);
                     }
@@ -1729,7 +1856,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             transactions, skus, branches, orders, todos, menuItems, menuCategories,
             customers, membershipRules, customerCoupons, attendanceRecords,
             attendanceOverrides, deletedTransactions, taskTemplates, storageUnits,
-            appSettings, salesRecords, lastUpdated, isLiveConnected, isLoading,
+            appSettings, salesRecords, lastUpdated, isLiveConnected, isLoading, refreshStore,
             addBatchTransactions, updateTransaction, deleteTransactionBatch, resetData,
             addSku, updateSku, deleteSku, reorderSku,
             addBranch, updateBranch, deleteBranch,

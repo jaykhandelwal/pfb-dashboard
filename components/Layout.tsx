@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake,
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils,
-  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen, Banknote
+  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen, Banknote, RefreshCw
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -31,7 +31,7 @@ type NavItem = {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, users, logout, hasPermission } = useAuth();
-  const { appSettings, lastUpdated, isLiveConnected } = useStore();
+  const { appSettings, lastUpdated, isLiveConnected, refreshStore } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Easter Egg State
@@ -41,6 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Sync Status State
   const [syncStatus, setSyncStatus] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType; mode?: 'STANDARD' | 'RECORD_CASH' }>({ isOpen: false });
 
   // Track expanded state of dropdowns - Default collapsed
@@ -73,6 +74,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     return () => clearInterval(timer);
   }, [lastUpdated]);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshStore();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // If no user (e.g. login page), render simple layout
   if (!currentUser) {
@@ -305,9 +316,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </button>
 
           {/* Live Status Indicator */}
-          <div className={`mt-4 flex justify-center items-center gap-1.5 text-[10px] font-mono tracking-tighter transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
+          <div className={`mt-4 flex justify-center items-center gap-2 text-[10px] font-mono tracking-tighter transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
             <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
             {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh data"
+              className={`inline-flex items-center gap-1 rounded-full border border-current/15 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] transition-colors ${isRefreshing ? 'cursor-wait opacity-70' : 'hover:bg-current/10'}`}
+            >
+              <RefreshCw size={9} className={isRefreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
           </div>
           <div className="flex justify-center items-center mt-0.5 opacity-40 text-[9px] font-mono tracking-tight cursor-default select-none">
             v{APP_VERSION}
@@ -362,9 +383,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <LogOut size={20} />
                 <span>Sign Out</span>
               </button>
-              <div className={`mt-4 flex justify-center items-center gap-1.5 text-[10px] font-mono transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <div className={`mt-4 flex justify-center items-center gap-2 text-[10px] font-mono transition-colors ${isLiveConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
                 <Wifi size={10} className={`${isLiveConnected ? 'text-emerald-500' : 'text-amber-500'}`} />
                 {isLiveConnected ? 'Live' : 'Offline'} • {syncStatus}
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  aria-label="Refresh data"
+                  className={`inline-flex items-center gap-1 rounded-full border border-current/15 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] transition-colors ${isRefreshing ? 'cursor-wait opacity-70' : 'hover:bg-current/10'}`}
+                >
+                  <RefreshCw size={9} className={isRefreshing ? 'animate-spin' : ''} />
+                  Refresh
+                </button>
               </div>
               <div className="flex justify-center items-center mt-1 opacity-40 text-[8px] font-mono tracking-widest uppercase">
                 Version {APP_VERSION}
@@ -386,6 +417,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         isOpen={ledgerModal.isOpen}
         onClose={() => setLedgerModal(prev => ({ ...prev, isOpen: false }))}
         forcedType={ledgerModal.type}
+        submissionContext={ledgerModal.mode}
         dialogTitle={ledgerModal.mode === 'RECORD_CASH' ? 'Record Cash' : undefined}
         submitLabel={ledgerModal.mode === 'RECORD_CASH' ? 'Record Cash' : undefined}
         preferredCategoryName={ledgerModal.mode === 'RECORD_CASH' ? 'Other' : undefined}

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import { getLocalISOString } from '../constants';
 import { LedgerAccount, LedgerEntry, LedgerEntryType } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
@@ -26,6 +27,7 @@ interface LedgerEntryModalProps {
     lockSourceAccount?: boolean;
     manualSelectionUntilSingleOption?: boolean;
     useBusinessDayDefaultDate?: boolean;
+    submissionContext?: 'STANDARD' | 'RECORD_CASH';
 }
 
 const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
@@ -40,10 +42,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     lockedSourceAccountName,
     lockSourceAccount,
     manualSelectionUntilSingleOption = false,
-    useBusinessDayDefaultDate = false
+    useBusinessDayDefaultDate = false,
+    submissionContext = 'STANDARD'
 }) => {
     const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
+    const { notify } = useNotification();
     const shouldAutoSelectPreviousBusinessDate = useMemo(
         () => useBusinessDayDefaultDate && shouldUsePreviousBusinessDate(appSettings),
         [appSettings.business_day_cutoff_hour, useBusinessDayDefaultDate]
@@ -241,6 +245,37 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     }, [formData.entryType, hasSelectedCategory, hasSelectedDestinationAccount, hasSelectedSourceAccount]);
 
     const submitBlockedReason = accessIssue || validationIssue;
+
+    const showSubmitSuccessNotification = (entry: Omit<LedgerEntry, 'id'>) => {
+        const formattedAmount = `₹${entry.amount.toLocaleString()}`;
+
+        if (submissionContext === 'RECORD_CASH') {
+            notify({
+                variant: 'success',
+                title: 'Cash Recorded',
+                message: `${formattedAmount} recorded in ${entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME}.`
+            });
+            return;
+        }
+
+        if (entry.entryType === 'EXPENSE') {
+            const categorySuffix = entry.category ? ` under ${entry.category}` : '';
+            const accountSuffix = entry.sourceAccount ? ` from ${entry.sourceAccount}` : '';
+
+            notify({
+                variant: 'success',
+                title: 'Expense Added',
+                message: `${formattedAmount} expense saved${categorySuffix}${accountSuffix}.`
+            });
+            return;
+        }
+
+        notify({
+            variant: 'success',
+            title: 'Ledger Entry Saved',
+            message: `${formattedAmount} ${entry.entryType.toLowerCase()} entry saved successfully.`
+        });
+    };
 
     // Load defaults or initial data
     useEffect(() => {
@@ -472,11 +507,16 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 }
             } else {
                 await addLedgerEntry(entryData);
+                showSubmitSuccessNotification(entryData);
             }
 
             onClose();
         } catch (error) {
-            alert(error instanceof Error ? error.message : 'Unable to save ledger entry.');
+            notify({
+                variant: 'error',
+                title: 'Unable to save ledger entry',
+                message: error instanceof Error ? error.message : 'Please try again.'
+            });
         } finally {
             setIsUploading(false);
         }

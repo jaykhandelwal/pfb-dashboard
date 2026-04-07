@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText, Clock } from 'lucide-react';
+import { useNotification } from '../context/NotificationContext';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText, Clock } from 'lucide-react';
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 import { APP_VERSION } from '../version';
 import { DEFAULT_BUSINESS_DAY_CUTOFF_HOUR, formatBusinessDayCutoffHour } from '../utils/businessDay';
@@ -37,11 +38,10 @@ const getDeploymentStatusDotClass = (status?: string) => {
 const AppSettings: React.FC = () => {
    const { branches, appSettings, updateAppSetting, isLoading } = useStore();
    const { currentUser } = useAuth();
+   const { notify } = useNotification();
 
    // Local state to manage loading status per toggle to avoid race conditions
    const [savingKeys, setSavingKeys] = useState<string[]>([]);
-   // Local state for toast
-   const [toastMsg, setToastMsg] = useState('');
    // Local state for input fields (to debounce or handle blur save)
    const [webhookUrl, setWebhookUrl] = useState(appSettings.whatsapp_webhook_url || '');
    const [attendanceWebhookUrl, setAttendanceWebhookUrl] = useState(appSettings.attendance_webhook_url || '');
@@ -73,6 +73,10 @@ const AppSettings: React.FC = () => {
       business_day_cutoff_hour: Number(businessDayCutoffHourInput)
    });
 
+   const showToast = (message: string, variant: 'success' | 'error' | 'warning' | 'info' = 'success', durationMs = 3000) => {
+      notify({ message, variant, durationMs });
+   };
+
    const handleToggle = async (key: string) => {
       // Prevent double clicks
       if (savingKeys.includes(key)) return;
@@ -99,9 +103,7 @@ const AppSettings: React.FC = () => {
       // Remove from saving list
       setSavingKeys(prev => prev.filter(k => k !== key));
 
-      // Show success toast
-      setToastMsg('Setting saved successfully!');
-      setTimeout(() => setToastMsg(''), 3000);
+      showToast('Setting saved successfully!');
    };
 
    const handleTextSave = async (key: string, value: string) => {
@@ -111,17 +113,14 @@ const AppSettings: React.FC = () => {
       await updateAppSetting(key, value);
       setSavingKeys(prev => prev.filter(k => k !== key));
 
-      // Show success toast
-      setToastMsg('Setting saved successfully!');
-      setTimeout(() => setToastMsg(''), 3000);
+      showToast('Setting saved successfully!');
    };
 
    const handleBusinessDayCutoffSave = async () => {
       const parsedValue = Number(businessDayCutoffHourInput);
 
       if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue > 23) {
-         setToastMsg('Enter a valid hour from 0 to 23.');
-         setTimeout(() => setToastMsg(''), 3000);
+         showToast('Enter a valid hour from 0 to 23.', 'warning');
          return;
       }
 
@@ -132,15 +131,13 @@ const AppSettings: React.FC = () => {
       setSavingKeys(prev => [...prev, 'business_day_cutoff_hour']);
       await updateAppSetting('business_day_cutoff_hour', parsedValue);
       setSavingKeys(prev => prev.filter(k => k !== 'business_day_cutoff_hour'));
-      setToastMsg('Setting saved successfully!');
-      setTimeout(() => setToastMsg(''), 3000);
+      showToast('Setting saved successfully!');
    };
 
    const checkStatus = async (silent: boolean = false) => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
          if (!silent) {
-            setToastMsg('Please fill all Coolify settings first.');
-            setTimeout(() => setToastMsg(''), 3000);
+            showToast('Please fill all Coolify settings first.', 'warning');
          }
          return;
       }
@@ -157,7 +154,7 @@ const AppSettings: React.FC = () => {
 
          if (!silent) {
             if (deployments.length === 0) {
-               setToastMsg('No deployments found for this application.');
+               showToast('No deployments found for this application.', 'info');
             } else {
                // Find latest SUCCESSFUL/FINISHED deployment
                const latestSuccessful = deployments.find((d: any) => SUCCESSFUL_DEPLOYMENT_STATUSES.has(normalizeDeploymentStatus(d.status)));
@@ -166,26 +163,23 @@ const AppSettings: React.FC = () => {
                   console.log(`Comparing - Local: ${APP_VERSION} vs Remote: ${latestSuccessful.extracted_version}`);
                   // Simple string comparison for version (assuming format YY.MM.DD.HHMM which works lexicographically)
                   if (latestSuccessful.extracted_version > APP_VERSION) {
-                     setToastMsg(`New version available: v${latestSuccessful.extracted_version}. Please update.`);
+                     showToast(`New version available: v${latestSuccessful.extracted_version}. Please update.`, 'info', 5000);
                   } else {
-                     setToastMsg(`Status updated. You are on the latest version.`);
+                     showToast('Status updated. You are on the latest version.', 'success');
                   }
                } else {
                   console.log('No extracted version found in latest deployment', latestSuccessful);
-                  setToastMsg(`Found ${deployments.length} recent deployment(s). Status updated.`);
+                  showToast(`Found ${deployments.length} recent deployment(s). Status updated.`, 'info');
                }
             }
          }
       } catch (error: any) {
          console.error('Status check failed:', error);
          if (!silent) {
-            setToastMsg(`Status check failed: ${error.message}`);
+            showToast(`Status check failed: ${error.message}`, 'error', 5000);
          }
       } finally {
          setIsCheckingStatus(false);
-         if (!silent) {
-            setTimeout(() => setToastMsg(''), 5000); // 5s to read the longer message
-         }
       }
    };
 
@@ -275,8 +269,7 @@ const AppSettings: React.FC = () => {
 
    const handleDeploy = async () => {
       if (!coolifyUrl || !coolifyToken || !coolifyTag) {
-         setToastMsg('Please fill all Coolify settings first.');
-         setTimeout(() => setToastMsg(''), 3000);
+         showToast('Please fill all Coolify settings first.', 'warning');
          return;
       }
 
@@ -289,14 +282,13 @@ const AppSettings: React.FC = () => {
             appSettings.coolify_force_build || false
          );
          setAutoRefreshArmedUntil(Date.now() + DEPLOYMENT_DISCOVERY_WINDOW_MS);
-         setToastMsg('Deployment triggered successfully!');
+         showToast('Deployment triggered successfully!');
          await checkStatus(true);
       } catch (error: any) {
          console.error('Deployment failed:', error);
          alert(`Deployment failed: ${error.message}`);
       } finally {
          setIsDeploying(false);
-         setTimeout(() => setToastMsg(''), 3000);
       }
    };
 
@@ -678,8 +670,7 @@ const AppSettings: React.FC = () => {
                                                 onClick={async () => {
                                                    const updated = { ...actions, [action]: !isEnabled };
                                                    await updateAppSetting('transaction_webhook_actions', updated);
-                                                   setToastMsg(`${action} webhook ${!isEnabled ? 'enabled' : 'disabled'}`);
-                                                   setTimeout(() => setToastMsg(''), 2000);
+                                                   showToast(`${action} webhook ${!isEnabled ? 'enabled' : 'disabled'}`, 'success', 2000);
                                                 }}
                                                 className={`px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all ${isEnabled ? colorMap[action].on : colorMap[action].off}`}
                                              >
@@ -1081,16 +1072,6 @@ const AppSettings: React.FC = () => {
                </div>
             </div>
          </div>
-
-         {/* Success Toast */}
-         {toastMsg && (
-            <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 md:bottom-10 z-50">
-               <div className="bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 animate-fade-in-up">
-                  <CheckCircle2 size={20} className="text-emerald-400" />
-                  <span className="font-bold text-sm">{toastMsg}</span>
-               </div>
-            </div>
-         )}
       </div>
    );
 };
