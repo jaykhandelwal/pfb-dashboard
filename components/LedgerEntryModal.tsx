@@ -28,6 +28,7 @@ interface LedgerEntryModalProps {
     manualSelectionUntilSingleOption?: boolean;
     useBusinessDayDefaultDate?: boolean;
     submissionContext?: 'STANDARD' | 'RECORD_CASH';
+    showToast?: (toast: { variant: 'success' | 'warning' | 'error'; title?: string; message: string; durationMs?: number; }) => void;
 }
 
 const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
@@ -43,7 +44,8 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     lockSourceAccount,
     manualSelectionUntilSingleOption = false,
     useBusinessDayDefaultDate = false,
-    submissionContext = 'STANDARD'
+    submissionContext = 'STANDARD',
+    showToast
 }) => {
     const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
@@ -246,11 +248,20 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
 
     const submitBlockedReason = accessIssue || validationIssue;
 
+    const emitToast = (toast: { variant: 'success' | 'warning' | 'error'; title?: string; message: string; durationMs?: number; }) => {
+        if (showToast) {
+            showToast(toast);
+            return;
+        }
+
+        notify(toast);
+    };
+
     const showSubmitSuccessNotification = (entry: Omit<LedgerEntry, 'id'>) => {
         const formattedAmount = `₹${entry.amount.toLocaleString()}`;
 
         if (submissionContext === 'RECORD_CASH') {
-            notify({
+            emitToast({
                 variant: 'success',
                 title: 'Cash Recorded',
                 message: `${formattedAmount} recorded in ${entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME}.`
@@ -262,7 +273,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             const categorySuffix = entry.category ? ` under ${entry.category}` : '';
             const accountSuffix = entry.sourceAccount ? ` from ${entry.sourceAccount}` : '';
 
-            notify({
+            emitToast({
                 variant: 'success',
                 title: 'Expense Added',
                 message: `${formattedAmount} expense saved${categorySuffix}${accountSuffix}.`
@@ -270,7 +281,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             return;
         }
 
-        notify({
+        emitToast({
             variant: 'success',
             title: 'Ledger Entry Saved',
             message: `${formattedAmount} ${entry.entryType.toLowerCase()} entry saved successfully.`
@@ -512,7 +523,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
 
             onClose();
         } catch (error) {
-            notify({
+            emitToast({
                 variant: 'error',
                 title: 'Unable to save ledger entry',
                 message: error instanceof Error ? error.message : 'Please try again.'

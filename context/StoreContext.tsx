@@ -21,6 +21,7 @@ import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 import { buildDefaultLedgerAccounts, getLedgerAccounts, LEDGER_COMPANY_ACCOUNT_NAME } from '../utils/ledgerAccounts';
 import { getOrderTotalAmount, normalizeOrderRecord } from '../utils/orderUtils';
 import { DEFAULT_BUSINESS_DAY_CUTOFF_HOUR } from '../utils/businessDay';
+import { generateId } from '../utils/id';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -1070,7 +1071,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!currentUser) return;
 
         const newLog = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             batch_id: batchId,
             action,
             performed_by: currentUser.id,
@@ -1520,7 +1521,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!currentUser) return; // Should not happen if auth is enforced
 
         const newLog: LedgerLog = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             ledgerEntryId: entry.id,
             action,
             performedBy: currentUser.id,
@@ -1598,7 +1599,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const newEntry: LedgerEntry = {
             ...entry,
-            id: crypto.randomUUID(),
+            id: generateId(),
             status: 'PENDING' // Default status
         } as LedgerEntry;
 
@@ -1800,7 +1801,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // Create ledger entry
             const newEntry: LedgerEntry = {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 date: entry.date,
                 timestamp: parseDateStringToLocalTimestamp(entry.date),
                 entryType: entry.entryType,

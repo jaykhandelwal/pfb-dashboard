@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, ArrowRightLeft, Package, History, Store, Trash2, Snowflake,
   Users, LogOut, Menu, X, Scale, Receipt, Contact, Award, Utensils,
-  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen, Banknote, RefreshCw
+  ChevronDown, ChevronRight, Settings, TrendingUp, TrendingDown, UserCheck, Tag, Sliders, CheckSquare, Sparkles, Truck, Wifi, BookOpen, Banknote, RefreshCw, CheckCircle2, AlertTriangle, WifiOff
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +28,63 @@ type NavItem = {
   onClick?: () => void;
 };
 
+type LayoutToast = {
+  variant: 'success' | 'warning' | 'error';
+  title?: string;
+  message: string;
+  durationMs?: number;
+};
+
+const LAYOUT_TOAST_STYLES: Record<LayoutToast['variant'], {
+  shell: string;
+  border: string;
+  iconWrap: string;
+  iconRing: string;
+  iconGlow: string;
+  panelGlow: string;
+  title: string;
+  body: string;
+  closeIcon: string;
+  closeButton: string;
+}> = {
+  success: {
+    shell: 'bg-gradient-to-br from-emerald-600 via-emerald-600 to-emerald-500',
+    border: 'border-emerald-400/35',
+    iconWrap: 'bg-white/14 text-white ring-white/20',
+    iconRing: 'bg-emerald-200/24',
+    iconGlow: 'bg-emerald-100/22',
+    panelGlow: 'bg-emerald-100/18',
+    title: 'text-white',
+    body: 'text-white',
+    closeIcon: 'text-white/80',
+    closeButton: 'hover:bg-white/10 hover:text-white',
+  },
+  warning: {
+    shell: 'bg-white/95',
+    border: 'border-amber-100/90',
+    iconWrap: 'bg-amber-50 text-amber-600 ring-amber-100',
+    iconRing: 'bg-amber-300/30',
+    iconGlow: 'bg-amber-200/35',
+    panelGlow: 'bg-amber-200/28',
+    title: 'text-slate-900',
+    body: 'text-slate-600',
+    closeIcon: 'text-slate-400',
+    closeButton: 'hover:bg-amber-50 hover:text-amber-700',
+  },
+  error: {
+    shell: 'bg-white/95',
+    border: 'border-rose-100/90',
+    iconWrap: 'bg-rose-50 text-rose-600 ring-rose-100',
+    iconRing: 'bg-rose-300/30',
+    iconGlow: 'bg-rose-200/35',
+    panelGlow: 'bg-rose-200/28',
+    title: 'text-slate-900',
+    body: 'text-slate-600',
+    closeIcon: 'text-slate-400',
+    closeButton: 'hover:bg-rose-50 hover:text-rose-700',
+  },
+};
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const { currentUser, users, logout, hasPermission } = useAuth();
@@ -43,9 +100,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ledgerModal, setLedgerModal] = useState<{ isOpen: boolean; type?: LedgerEntryType; mode?: 'STANDARD' | 'RECORD_CASH' }>({ isOpen: false });
+  const [layoutToast, setLayoutToast] = useState<LayoutToast | null>(null);
 
   // Track expanded state of dropdowns - Default collapsed
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+  const showNotificationTester = import.meta.env.DEV
+    || (typeof window !== 'undefined'
+      && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'));
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSection = (id: string) => {
     setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
@@ -74,6 +136,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     return () => clearInterval(timer);
   }, [lastUpdated]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -180,6 +250,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const handleMobileNavClick = () => {
     setIsMobileMenuOpen(false);
+  };
+
+  const showLayoutToast = ({ durationMs = 4000, ...toast }: LayoutToast) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+
+    setLayoutToast({ ...toast, durationMs });
+    toastTimeoutRef.current = setTimeout(() => {
+      setLayoutToast(null);
+      toastTimeoutRef.current = null;
+    }, durationMs);
+  };
+
+  const handleNotificationTest = () => {
+    showLayoutToast({
+      variant: 'success',
+      title: 'Expense Added',
+      message: 'Rs 23 expense saved under Utilities from Company Account.',
+      durationMs: 5000,
+    });
   };
 
   const handleDashboardClick = (e: React.MouseEvent) => {
@@ -426,7 +517,92 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         lockSourceAccount={ledgerModal.mode === 'RECORD_CASH'}
         manualSelectionUntilSingleOption={ledgerModal.mode === 'STANDARD' && ledgerModal.type === 'EXPENSE'}
         useBusinessDayDefaultDate={ledgerModal.mode === 'RECORD_CASH'}
+        showToast={showLayoutToast}
       />
+
+      {layoutToast && (() => {
+        const tone = LAYOUT_TOAST_STYLES[layoutToast.variant];
+        const showSuccessWash = layoutToast.variant === 'success';
+
+        return (
+          <>
+            {showSuccessWash && (
+              <div className="pointer-events-none fixed inset-0 z-[140] overflow-hidden" aria-hidden="true">
+                <div
+                  className="panel-toast-overlay absolute inset-0"
+                  style={{
+                    background: 'radial-gradient(76rem 34rem at calc(100% - 10rem) 7.25rem, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.13) 20%, rgba(16, 185, 129, 0.07) 36%, rgba(16, 185, 129, 0.028) 54%, rgba(16, 185, 129, 0.01) 66%, transparent 78%), linear-gradient(180deg, rgba(16, 185, 129, 0.035) 0%, rgba(16, 185, 129, 0.012) 18%, transparent 36%)',
+                  }}
+                />
+                <div
+                  className="panel-toast-overlay-orb absolute -right-16 top-5 h-[22rem] w-[30rem] blur-3xl"
+                  style={{
+                    background: 'radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 28%, transparent 68%)',
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="pointer-events-none fixed left-4 right-4 top-20 z-[150] md:left-auto md:right-6 md:w-[25rem]">
+              <div
+                className={`panel-toast-enter pointer-events-auto relative isolate overflow-hidden rounded-[20px] border px-5 py-4 shadow-[0_20px_50px_rgba(15,23,42,0.16)] backdrop-blur-xl ${tone.shell} ${tone.border}`}
+              >
+                <div className={`panel-toast-glow absolute -left-6 top-1/2 h-20 w-20 -translate-y-1/2 rounded-full blur-3xl ${tone.panelGlow}`} />
+                <div className="panel-toast-glint absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+                <div className={`absolute inset-0 ${layoutToast.variant === 'success'
+                  ? 'bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_36%)]'
+                  : 'bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(255,255,255,0.6)_42%,rgba(255,255,255,0.14))]'
+                }`} />
+
+                <div className="relative flex items-start gap-3">
+                  <div className="relative flex h-11 w-11 shrink-0 self-center items-center justify-center">
+                    <span className={`panel-toast-icon-ring absolute inset-0 rounded-2xl ${tone.iconRing}`} />
+                    <span className={`absolute inset-1 rounded-2xl blur-xl ${tone.iconGlow}`} />
+                    <div className={`relative flex h-11 w-11 items-center justify-center rounded-2xl ring-1 shadow-[0_10px_25px_rgba(15,23,42,0.06)] ${tone.iconWrap}`}>
+                      {layoutToast.variant === 'success' && <CheckCircle2 size={18} />}
+                      {layoutToast.variant === 'warning' && <WifiOff size={18} />}
+                      {layoutToast.variant === 'error' && <AlertTriangle size={18} />}
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    {layoutToast.title && <p className={`text-[15px] font-semibold tracking-[-0.01em] ${tone.title}`}>{layoutToast.title}</p>}
+                    <p className={layoutToast.title ? `mt-1 text-[15px] leading-6 ${tone.body}` : 'text-[15px] font-medium text-slate-800'}>
+                      {layoutToast.message}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (toastTimeoutRef.current) {
+                        clearTimeout(toastTimeoutRef.current);
+                        toastTimeoutRef.current = null;
+                      }
+                      setLayoutToast(null);
+                    }}
+                    className={`rounded-lg p-1.5 transition-colors ${tone.closeIcon} ${tone.closeButton}`}
+                    aria-label="Dismiss toast"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {showNotificationTester && (
+        <button
+          type="button"
+          onClick={handleNotificationTest}
+          className="fixed bottom-4 right-4 z-[130] inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/95 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-[0_16px_40px_rgba(15,23,42,0.14)] backdrop-blur transition-transform hover:-translate-y-0.5 hover:bg-emerald-50"
+        >
+          <Sparkles size={16} />
+          Test Toast
+        </button>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto w-full bg-[#f9faf7] relative z-0">
