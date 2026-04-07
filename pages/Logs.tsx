@@ -21,6 +21,10 @@ interface GroupedTransaction {
   deletedBy?: string;
 }
 
+type LogFilterType = TransactionType | 'ALL' | 'MISSING_RETURN';
+
+const MISSING_RETURN_FILTER: LogFilterType = 'MISSING_RETURN';
+
 const formatBulkEditText = (items: GroupedTransaction['items']) =>
   items.map(item => `${item.qty} | ${item.skuName}`).join('\n');
 
@@ -28,7 +32,7 @@ const Logs: React.FC = () => {
   const { transactions, deletedTransactions, skus, branches, deleteTransactionBatch, updateTransaction, toggleInconsistentTransaction, getInconsistentInfo } = useStore();
   const { currentUser } = useAuth();
 
-  const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
+  const [filterType, setFilterType] = useState<LogFilterType>('ALL');
   const [viewMode, setViewMode] = useState<'LIST' | 'GALLERY'>('LIST');
   const [galleryBranchFilter, setGalleryBranchFilter] = useState<string>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -58,13 +62,10 @@ const Logs: React.FC = () => {
   const sourceTransactions = dataScope === 'ACTIVE' ? transactions : deletedTransactions;
 
   // Group transactions by batchId
-  const groupedTransactions = useMemo(() => {
+  const allGroupedTransactions = useMemo(() => {
     const groups: Record<string, GroupedTransaction> = {};
 
     sourceTransactions.forEach(t => {
-      // Filter logic
-      if (filterType !== 'ALL' && t.type !== filterType) return;
-
       // Use batchId if available, otherwise fallback to timestamp
       const branchId = t.branchId;
       const key = t.batchId || `${t.timestamp}-${branchId}-${t.type}`;
@@ -126,7 +127,7 @@ const Logs: React.FC = () => {
         return b.timestamp - a.timestamp;
       }
     });
-  }, [sourceTransactions, skus, branches, filterType, sortMode, dataScope]);
+  }, [sourceTransactions, skus, branches, sortMode, dataScope]);
 
   // Create a lookup map for checkout/return status by date+branch
   // Used to determine if a checkout is missing its return
@@ -136,7 +137,7 @@ const Logs: React.FC = () => {
     // Build a map of date+branch -> { hasCheckOut, hasReturn }
     const presenceMap: Record<string, { hasCheckOut: boolean; hasReturn: boolean }> = {};
 
-    groupedTransactions.forEach(t => {
+    sourceTransactions.forEach(t => {
       if (t.type !== TransactionType.CHECK_OUT && t.type !== TransactionType.CHECK_IN) return;
 
       const key = `${t.date}-${t.branchId}`;
@@ -163,7 +164,7 @@ const Logs: React.FC = () => {
     });
 
     return statusMap;
-  }, [groupedTransactions]);
+  }, [sourceTransactions]);
 
   // Helper to get status for a transaction (for checkout/return highlighting)
   const getTransactionStatus = (t: GroupedTransaction): 'complete' | 'missing_return' | 'only_return' | null => {
@@ -171,6 +172,19 @@ const Logs: React.FC = () => {
     const key = `${t.date}-${t.branchId}`;
     return transactionStatusMap[key] || null;
   };
+
+  const groupedTransactions = useMemo(() => {
+    return allGroupedTransactions.filter(group => {
+      if (filterType === 'ALL') return true;
+
+      if (filterType === MISSING_RETURN_FILTER) {
+        const key = `${group.date}-${group.branchId}`;
+        return group.type === TransactionType.CHECK_OUT && transactionStatusMap[key] === 'missing_return';
+      }
+
+      return group.type === filterType;
+    });
+  }, [allGroupedTransactions, filterType, transactionStatusMap]);
 
   // Specific data for Gallery View (Only Wastage with Images)
   const wastageGalleryItems = useMemo(() => {
@@ -583,11 +597,12 @@ const Logs: React.FC = () => {
                 <Filter size={16} className="text-slate-400 mr-2" />
                 <select
                   value={filterType}
-                  onChange={(e) => setFilterType(e.target.value as TransactionType | 'ALL')}
+                  onChange={(e) => setFilterType(e.target.value as LogFilterType)}
                   className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer pr-4"
                 >
                   <option value="ALL">All Types</option>
                   <option value={TransactionType.CHECK_OUT}>Check Outs</option>
+                  <option value={MISSING_RETURN_FILTER}>Check Outs Missing Return</option>
                   <option value={TransactionType.CHECK_IN}>Returns</option>
                   <option value={TransactionType.WASTE}>Wastage</option>
                   <option value={TransactionType.RESTOCK}>Stock In</option>
