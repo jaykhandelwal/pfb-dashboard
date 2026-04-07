@@ -393,6 +393,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         lockedSourceAccountName={ledgerModal.mode === 'RECORD_CASH' ? recordCashAccount?.name : undefined}
         lockSourceAccount={ledgerModal.mode === 'RECORD_CASH'}
         manualSelectionUntilSingleOption={ledgerModal.mode === 'STANDARD' && ledgerModal.type === 'EXPENSE'}
+        useBusinessDayDefaultDate={ledgerModal.mode === 'RECORD_CASH'}
       />
 
       {/* Main Content */}

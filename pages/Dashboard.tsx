@@ -11,6 +11,7 @@ import ReactApexChart from 'react-apexcharts';
 import { ApexOptions } from 'apexcharts';
 import SkuHistoryModal from '../components/SkuHistoryModal';
 import { getOrderTotalAmount } from '../utils/orderUtils';
+import { formatBusinessDayCutoffHour, getDefaultDashboardTimeRange, shouldUsePreviousBusinessDate } from '../utils/businessDay';
 
 // Updated palette for charts to match warm theme
 const COLORS = ['#95a77c', '#eab308', '#ef4444', '#8b5cf6', '#3b82f6', '#d97706'];
@@ -85,14 +86,13 @@ const InventoryTile: React.FC<InventoryTileProps> = ({ skuName, quantity, pieces
 const Dashboard: React.FC = () => {
    const { transactions, skus, branches, orders, todos, addTodo, toggleTodo, appSettings } = useStore();
    const { hasPermission, currentUser, users } = useAuth();
+   const defaultTimeRange = useMemo<TimeRange>(() => getDefaultDashboardTimeRange(appSettings), [appSettings.business_day_cutoff_hour]);
+   const isBeforeBusinessDayCutoff = useMemo(() => shouldUsePreviousBusinessDate(appSettings), [appSettings.business_day_cutoff_hour]);
+   const cutoffHourLabel = useMemo(() => formatBusinessDayCutoffHour(appSettings), [appSettings.business_day_cutoff_hour]);
 
    // Dashboard State
-   const [timeRange, setTimeRange] = useState<TimeRange>(() => {
-      // Smart Logic: If before 3 PM (15:00), default to Yesterday since opening is ~4 PM
-      const hour = new Date().getHours();
-      return hour < 15 ? 'YESTERDAY' : 'TODAY';
-   });
-
+   const [timeRange, setTimeRange] = useState<TimeRange>(() => getDefaultDashboardTimeRange(appSettings));
+   const [hasManualTimeRangeSelection, setHasManualTimeRangeSelection] = useState(false);
    const [dashboardBranch, setDashboardBranch] = useState<string>('ALL');
    const [aiInsight, setAiInsight] = useState<string | null>(null);
    const [loadingAi, setLoadingAi] = useState(false);
@@ -104,15 +104,24 @@ const Dashboard: React.FC = () => {
    const [newTaskText, setNewTaskText] = useState('');
    const [assignedUserId, setAssignedUserId] = useState('');
 
+   useEffect(() => {
+      if (!hasManualTimeRangeSelection) {
+         setTimeRange(defaultTimeRange);
+      }
+   }, [defaultTimeRange, hasManualTimeRangeSelection]);
+
+   const handleTimeRangeChange = (range: TimeRange) => {
+      setHasManualTimeRangeSelection(true);
+      setTimeRange(range);
+   };
+
    // Info message regarding auto-selection
    const autoTimeMessage = useMemo(() => {
-      const hour = new Date().getHours();
-      // If it's before 3PM and user hasn't explicitly changed away from Yesterday (or is looking at Yesterday)
-      if (hour < 15 && timeRange === 'YESTERDAY') {
-         return "Store opens at 3 PM. Displaying yesterday's data.";
+      if (isBeforeBusinessDayCutoff && timeRange === 'YESTERDAY') {
+         return `Before ${cutoffHourLabel}, displaying yesterday's data by default.`;
       }
       return "";
-   }, [timeRange]);
+   }, [cutoffHourLabel, isBeforeBusinessDayCutoff, timeRange]);
 
    // --- 0. Todo Logic (Categorized) ---
    const myTasks = useMemo(() => {
@@ -703,7 +712,7 @@ const Dashboard: React.FC = () => {
                      </div>
                      <div className="flex bg-white border border-slate-200 rounded-lg p-1 shadow-sm overflow-x-auto">
                         {(['TODAY', 'YESTERDAY', '7D', '30D'] as TimeRange[]).map(range => (
-                           <button key={range} onClick={() => setTimeRange(range)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${timeRange === range ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}</button>
+                           <button key={range} onClick={() => handleTimeRangeChange(range)} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${timeRange === range ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}>{range === 'TODAY' ? 'Today' : range === 'YESTERDAY' ? 'Yesterday' : range === '7D' ? 'Last 7 Days' : 'Last 30 Days'}</button>
                         ))}
                      </div>
                   </div>

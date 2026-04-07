@@ -4,12 +4,14 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { getLocalISOString } from '../constants';
 import { LedgerAccount, LedgerEntry, LedgerEntryType } from '../types';
 import { uploadImageToBunny } from '../services/bunnyStorage';
 import { IconRenderer } from '../services/iconLibrary';
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 import { LEDGER_COMPANY_ACCOUNT_NAME, getLedgerAccounts } from '../utils/ledgerAccounts';
 import { findLedgerPaymentMethod, getLedgerPaymentMethods, normalizeLedgerPaymentMethod } from '../utils/ledgerPaymentMethods';
+import { formatBusinessDayCutoffHour, getDefaultBusinessDate, shouldUsePreviousBusinessDate } from '../utils/businessDay';
 
 interface LedgerEntryModalProps {
     isOpen: boolean;
@@ -23,6 +25,7 @@ interface LedgerEntryModalProps {
     lockedSourceAccountName?: string;
     lockSourceAccount?: boolean;
     manualSelectionUntilSingleOption?: boolean;
+    useBusinessDayDefaultDate?: boolean;
 }
 
 const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
@@ -36,20 +39,27 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     lockedSourceAccountId,
     lockedSourceAccountName,
     lockSourceAccount,
-    manualSelectionUntilSingleOption = false
+    manualSelectionUntilSingleOption = false,
+    useBusinessDayDefaultDate = false
 }) => {
     const { addLedgerEntry, updateLedgerEntry, updateLedgerEntryStatus, appSettings } = useStore();
     const { currentUser, users } = useAuth();
-
-    const getLocalDateInputValue = () => {
-        const now = new Date();
-        const offset = now.getTimezoneOffset() * 60000;
-        return new Date(now.getTime() - offset).toISOString().split('T')[0];
-    };
+    const shouldAutoSelectPreviousBusinessDate = useMemo(
+        () => useBusinessDayDefaultDate && shouldUsePreviousBusinessDate(appSettings),
+        [appSettings.business_day_cutoff_hour, useBusinessDayDefaultDate]
+    );
+    const defaultDateInputValue = useMemo(
+        () => useBusinessDayDefaultDate ? getDefaultBusinessDate(appSettings) : getLocalISOString(),
+        [appSettings.business_day_cutoff_hour, useBusinessDayDefaultDate]
+    );
+    const businessDayCutoffLabel = useMemo(
+        () => formatBusinessDayCutoffHour(appSettings),
+        [appSettings.business_day_cutoff_hour]
+    );
 
     // Form State
     const [formData, setFormData] = useState({
-        date: getLocalDateInputValue(),
+        date: defaultDateInputValue,
         entryType: 'EXPENSE' as LedgerEntryType,
         category: '',
         categoryId: '',
@@ -66,6 +76,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     const [newBillPreviews, setNewBillPreviews] = useState<string[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+    const [showBusinessDayAutoMessage, setShowBusinessDayAutoMessage] = useState(false);
 
     const activeCategories = useMemo(
         () => appSettings.ledger_categories?.filter(category => category.isActive) || [],
@@ -235,6 +246,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     useEffect(() => {
         if (isOpen) {
             if (initialData) {
+                setShowBusinessDayAutoMessage(false);
                 setFormData({
                     date: initialData.date,
                     entryType: initialData.entryType,
@@ -254,9 +266,10 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 // Set defaults
                 const defaultCategory = getDefaultCategory();
                 const defaultAccount = getDefaultSourceAccount();
+                setShowBusinessDayAutoMessage(shouldAutoSelectPreviousBusinessDate);
 
                 setFormData({
-                    date: getLocalDateInputValue(),
+                    date: defaultDateInputValue,
                     entryType: forcedType || 'EXPENSE',
                     category: defaultCategory?.name || '',
                     categoryId: defaultCategory?.id || '',
@@ -272,7 +285,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                 setNewBillPreviews([]);
             }
         }
-    }, [isOpen, initialData, forcedType, currentUser, accessibleCategories, sourceAccountOptions, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount]);
+    }, [defaultDateInputValue, isOpen, initialData, forcedType, currentUser, accessibleCategories, sourceAccountOptions, preferredCategoryName, isSourceAccountLocked, lockedSourceAccount, shouldAutoSelectPreviousBusinessDate]);
 
     useEffect(() => {
         if (!isOpen || initialData) return;
@@ -627,7 +640,10 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                 type="date"
                                 required
                                 value={formData.date}
-                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                onChange={(e) => {
+                                    setShowBusinessDayAutoMessage(false);
+                                    setFormData({ ...formData, date: e.target.value });
+                                }}
                                 className="w-full mt-1 px-3 py-2 rounded-lg border border-[#403424]/10 focus:outline-none focus:ring-2 focus:ring-[#95a77c] bg-[#403424]/5 font-medium text-sm text-[#403424]"
                             />
                         </div>
@@ -645,6 +661,15 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                             />
                         </div>
                     </div>
+
+                    {showBusinessDayAutoMessage && (
+                        <div className="flex items-start gap-2 rounded-lg border border-[#95a77c]/25 bg-[#95a77c]/10 px-3 py-2">
+                            <Info size={14} className="mt-0.5 shrink-0 text-[#7e8f68]" />
+                            <p className="text-xs font-medium leading-relaxed text-[#5f513f]">
+                                Before {businessDayCutoffLabel}, yesterday is selected by default.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Category Selection */}
                     {shouldShowCategoryField && CustomDropdown({

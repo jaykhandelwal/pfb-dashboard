@@ -333,6 +333,7 @@ export interface AppSettings {
   };
   enable_attendance_webhook_debug: boolean;
   enable_debug_inventory: boolean;
+  business_day_cutoff_hour?: number;
   stock_ordering_litres_per_packet: number | string;
   deep_freezer_categories: string[];
   ledger_categories?: LedgerCategoryDefinition[];

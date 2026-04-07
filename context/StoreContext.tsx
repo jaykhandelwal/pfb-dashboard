@@ -20,6 +20,7 @@ import { sendLedgerWebhook, LedgerWebhookPayload } from '../services/webhookServ
 import { isLedgerOptionAvailableToUser } from '../utils/ledgerAccess';
 import { buildDefaultLedgerAccounts, getLedgerAccounts, LEDGER_COMPANY_ACCOUNT_NAME } from '../utils/ledgerAccounts';
 import { getOrderTotalAmount, normalizeOrderRecord } from '../utils/orderUtils';
+import { DEFAULT_BUSINESS_DAY_CUTOFF_HOUR } from '../utils/businessDay';
 
 // Helper for date string
 const getLocalISOString = (date: Date = new Date()): string => {
@@ -514,6 +515,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         enable_attendance_webhook_debug: false,
         enable_debug_inventory: false,
+        business_day_cutoff_hour: DEFAULT_BUSINESS_DAY_CUTOFF_HOUR,
         stock_ordering_litres_per_packet: 2.3,
         deep_freezer_categories: [SKUCategory.STEAM, SKUCategory.KURKURE, SKUCategory.ROLL, SKUCategory.WHEAT],
         ledger_categories: Object.values(LedgerCategory).map(cat => ({

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText } from 'lucide-react';
+import { Sliders, Phone, User, Info, FlaskConical, CheckSquare, Loader2, CheckCircle2, MessageSquare, Globe, Lock, Bug, BookOpen, Server, Key, Tag, Zap, Eye, EyeOff, RefreshCw, Camera, BookText, Clock } from 'lucide-react';
 import { triggerCoolifyDeployment, getRecentDeployments } from '../services/coolifyService';
 import { APP_VERSION } from '../version';
+import { DEFAULT_BUSINESS_DAY_CUTOFF_HOUR, formatBusinessDayCutoffHour } from '../utils/businessDay';
 
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 const AUTO_REFRESH_TICK_MS = 200;
@@ -48,6 +49,9 @@ const AppSettings: React.FC = () => {
    const [coolifyUrl, setCoolifyUrl] = useState(appSettings.coolify_instance_url || '');
    const [coolifyToken, setCoolifyToken] = useState(appSettings.coolify_api_token || '');
    const [coolifyTag, setCoolifyTag] = useState(appSettings.coolify_deployment_tag_or_uuid || '');
+   const [businessDayCutoffHourInput, setBusinessDayCutoffHourInput] = useState(
+      String(appSettings.business_day_cutoff_hour ?? DEFAULT_BUSINESS_DAY_CUTOFF_HOUR)
+   );
    const [showToken, setShowToken] = useState(false);
    const [isDeploying, setIsDeploying] = useState(false);
    const [recentDeployments, setRecentDeployments] = useState<any[]>([]);
@@ -65,6 +69,9 @@ const AppSettings: React.FC = () => {
    const autoRefreshProgress = showAutoRefreshProgress && autoRefreshStartedAt !== null
       ? Math.min(100, ((autoRefreshNow - autoRefreshStartedAt) / AUTO_REFRESH_INTERVAL_MS) * 100)
       : 0;
+   const businessDayCutoffPreview = formatBusinessDayCutoffHour({
+      business_day_cutoff_hour: Number(businessDayCutoffHourInput)
+   });
 
    const handleToggle = async (key: string) => {
       // Prevent double clicks
@@ -105,6 +112,26 @@ const AppSettings: React.FC = () => {
       setSavingKeys(prev => prev.filter(k => k !== key));
 
       // Show success toast
+      setToastMsg('Setting saved successfully!');
+      setTimeout(() => setToastMsg(''), 3000);
+   };
+
+   const handleBusinessDayCutoffSave = async () => {
+      const parsedValue = Number(businessDayCutoffHourInput);
+
+      if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue > 23) {
+         setToastMsg('Enter a valid hour from 0 to 23.');
+         setTimeout(() => setToastMsg(''), 3000);
+         return;
+      }
+
+      if ((appSettings.business_day_cutoff_hour ?? DEFAULT_BUSINESS_DAY_CUTOFF_HOUR) === parsedValue) {
+         return;
+      }
+
+      setSavingKeys(prev => [...prev, 'business_day_cutoff_hour']);
+      await updateAppSetting('business_day_cutoff_hour', parsedValue);
+      setSavingKeys(prev => prev.filter(k => k !== 'business_day_cutoff_hour'));
       setToastMsg('Setting saved successfully!');
       setTimeout(() => setToastMsg(''), 3000);
    };
@@ -182,6 +209,10 @@ const AppSettings: React.FC = () => {
       coolifyToken,
       coolifyTag,
    ]);
+
+   useEffect(() => {
+      setBusinessDayCutoffHourInput(String(appSettings.business_day_cutoff_hour ?? DEFAULT_BUSINESS_DAY_CUTOFF_HOUR));
+   }, [appSettings.business_day_cutoff_hour]);
 
    useEffect(() => {
       if (!canCheckDeploymentStatus || hasBootstrappedDeploymentStatus.current) {
@@ -293,71 +324,119 @@ const AppSettings: React.FC = () => {
             <section>
                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3 pl-1">App Configuration</h3>
                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 bg-amber-50">
+                     <h3 className="font-bold text-amber-900">Business Day Defaults</h3>
+                     <p className="text-xs text-amber-700">Control when Dashboard and Record Cash switch from yesterday to today.</p>
+                  </div>
+
+                  <div className="p-6">
+                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div className="flex gap-4">
+                           <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                              <Clock size={20} />
+                           </div>
+                           <div>
+                              <h4 className="font-bold text-slate-700">Business Day Cutoff Hour</h4>
+                              <p className="text-sm text-slate-500">
+                                 Before {businessDayCutoffPreview}, Dashboard defaults to yesterday and Record Cash auto-selects the previous date.
+                              </p>
+                           </div>
+                        </div>
+
+                        <div className="md:w-[240px]">
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Hour (0-23)</label>
+                           <div className="flex gap-2">
+                              <input
+                                 type="number"
+                                 min="0"
+                                 max="23"
+                                 step="1"
+                                 value={businessDayCutoffHourInput}
+                                 onChange={(e) => setBusinessDayCutoffHourInput(e.target.value)}
+                                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none text-slate-700"
+                              />
+                              <button
+                                 onClick={handleBusinessDayCutoffSave}
+                                 disabled={savingKeys.includes('business_day_cutoff_hour')}
+                                 className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors disabled:opacity-50 min-w-[72px]"
+                              >
+                                 {savingKeys.includes('business_day_cutoff_hour') ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Save'}
+                              </button>
+                           </div>
+                           <p className="text-[10px] text-slate-400 mt-2">
+                              Use `15` for 3 PM, `14` for 2 PM, `16` for 4 PM.
+                           </p>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-6 border-b border-slate-100 bg-slate-50">
                      <h3 className="font-bold text-slate-800">Order Requirements</h3>
                      <p className="text-xs text-slate-500">Control mandatory fields during POS order creation.</p>
                   </div>
 
                   <div className="divide-y divide-slate-100">
-                     {/* Setting 1: Require Phone */}
-                     <div className="p-6 flex items-center justify-between">
-                        <div className="flex gap-4">
-                           <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                              <Phone size={20} />
+                        {/* Setting 1: Require Phone */}
+                        <div className="p-6 flex items-center justify-between">
+                           <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                 <Phone size={20} />
+                              </div>
+                              <div>
+                                 <h4 className="font-bold text-slate-700">Require Customer Phone</h4>
+                                 <p className="text-sm text-slate-500">
+                                    Enforces linking a customer (phone number) before an order can be placed.
+                                 </p>
+                              </div>
                            </div>
-                           <div>
-                              <h4 className="font-bold text-slate-700">Require Customer Phone</h4>
-                              <p className="text-sm text-slate-500">
-                                 Enforces linking a customer (phone number) before an order can be placed.
-                              </p>
-                           </div>
+                           {savingKeys.includes('require_customer_phone') ? (
+                              <Loader2 size={24} className="text-indigo-600 animate-spin" />
+                           ) : (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    data-no-preserve
+                                    className="sr-only peer"
+                                    checked={appSettings.require_customer_phone || false}
+                                    onChange={() => handleToggle('require_customer_phone')}
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                              </label>
+                           )}
                         </div>
-                        {savingKeys.includes('require_customer_phone') ? (
-                           <Loader2 size={24} className="text-indigo-600 animate-spin" />
-                        ) : (
-                           <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                 type="checkbox"
-                                 data-no-preserve
-                                 className="sr-only peer"
-                                 checked={appSettings.require_customer_phone || false}
-                                 onChange={() => handleToggle('require_customer_phone')}
-                              />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                           </label>
-                        )}
-                     </div>
 
-                     {/* Setting 2: Require Name */}
-                     <div className="p-6 flex items-center justify-between">
-                        <div className="flex gap-4">
-                           <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                              <User size={20} />
+                        {/* Setting 2: Require Name */}
+                        <div className="p-6 flex items-center justify-between">
+                           <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                 <User size={20} />
+                              </div>
+                              <div>
+                                 <h4 className="font-bold text-slate-700">Require Customer Name</h4>
+                                 <p className="text-sm text-slate-500">
+                                    Ensures that any linked customer must have a name assigned.
+                                 </p>
+                              </div>
                            </div>
-                           <div>
-                              <h4 className="font-bold text-slate-700">Require Customer Name</h4>
-                              <p className="text-sm text-slate-500">
-                                 Ensures that any linked customer must have a name assigned.
-                              </p>
-                           </div>
+                           {savingKeys.includes('require_customer_name') ? (
+                              <Loader2 size={24} className="text-indigo-600 animate-spin" />
+                           ) : (
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    data-no-preserve
+                                    className="sr-only peer"
+                                    checked={appSettings.require_customer_name || false}
+                                    onChange={() => handleToggle('require_customer_name')}
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                              </label>
+                           )}
                         </div>
-                        {savingKeys.includes('require_customer_name') ? (
-                           <Loader2 size={24} className="text-indigo-600 animate-spin" />
-                        ) : (
-                           <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                 type="checkbox"
-                                 data-no-preserve
-                                 className="sr-only peer"
-                                 checked={appSettings.require_customer_name || false}
-                                 onChange={() => handleToggle('require_customer_name')}
-                              />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                           </label>
-                        )}
-                     </div>
 
-                  </div>
+                     </div>
                </div>
             </section>
 
