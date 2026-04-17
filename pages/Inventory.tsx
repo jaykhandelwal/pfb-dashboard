@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { TransactionType, SKUCategory } from '../types';
@@ -21,6 +21,13 @@ const Inventory: React.FC = () => {
   const [isRestockConfirmOpen, setIsRestockConfirmOpen] = useState(false); // Restock
   const [isDebugOpen, setIsDebugOpen] = useState(false); // Debug Stock
   const [ignoreCheckouts, setIgnoreCheckouts] = useState(false); // Toggle for ignoring checkouts
+
+  // Automatically enable ignoreCheckouts if a past date is selected
+  useEffect(() => {
+    if (date !== getLocalISOString()) {
+      setIgnoreCheckouts(true);
+    }
+  }, [date]);
 
   // Calculate Current Stock Levels (Fridge Only)
   const stockLevels = useMemo(() => {
@@ -67,6 +74,38 @@ const Inventory: React.FC = () => {
     });
     return map;
   }, [transactions, date]);
+
+  // Calculate Historical Stock Levels (up to the selected date) for Stocktake
+  const historicalStockLevels = useMemo(() => {
+    const levels: Record<string, { in: number, out: number, balance: number }> = {};
+
+    // Initialize
+    skus.forEach(sku => {
+      levels[sku.id] = { in: 0, out: 0, balance: 0 };
+    });
+
+    // Process transactions up to the selected date
+    transactions.forEach(t => {
+      if (t.date > date) return; // Skip future transactions
+
+      if (!levels[t.skuId]) return;
+
+      if (t.type === TransactionType.RESTOCK || t.type === TransactionType.CHECK_IN || (t.type === TransactionType.ADJUSTMENT && t.quantityPieces > 0)) {
+        levels[t.skuId].in += t.quantityPieces;
+      } else if (t.type === TransactionType.CHECK_OUT || (t.type === TransactionType.ADJUSTMENT && t.quantityPieces < 0)) {
+        levels[t.skuId].out += Math.abs(t.quantityPieces);
+      } else if (t.type === TransactionType.WASTE && t.branchId === 'FRIDGE') {
+        levels[t.skuId].out += t.quantityPieces;
+      }
+    });
+
+    // Calculate Balance
+    Object.keys(levels).forEach(skuId => {
+      levels[skuId].balance = levels[skuId].in - levels[skuId].out;
+    });
+
+    return levels;
+  }, [skus, transactions, date]);
 
   const handleInputChange = (skuId: string, field: 'packets' | 'loose', value: string) => {
     setInputs(prev => ({
@@ -125,7 +164,7 @@ const Inventory: React.FC = () => {
   const calculateDiscrepancies = () => {
     const discrepancies: any[] = [];
     skus.forEach(sku => {
-      let systemStock = stockLevels[sku.id]?.balance || 0;
+      let systemStock = historicalStockLevels[sku.id]?.balance || 0;
 
       if (ignoreCheckouts) {
         systemStock += (checkoutQtyMap[sku.id] || 0);
@@ -440,12 +479,12 @@ const Inventory: React.FC = () => {
               {ignoreCheckouts && (
                 <div className="px-3 py-1.5 bg-amber-100/50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-1.5 animate-fade-in">
                   <AlertTriangle size={12} />
-                  <span>Adding back today's checkout stock</span>
+                  <span>Adding back {date === getLocalISOString() ? "today's" : "selected date's"} checkout stock</span>
                 </div>
               )}
               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200">
                 <label htmlFor="ignoreCheckouts" className="text-xs font-bold text-slate-600 cursor-pointer select-none">
-                  Ignore Today's Checkout
+                  Ignore {date === getLocalISOString() ? "Today's" : "Day's"} Checkout
                 </label>
                 <div
                   onClick={() => setIgnoreCheckouts(!ignoreCheckouts)}
@@ -465,15 +504,22 @@ const Inventory: React.FC = () => {
                 </button>
               )}
 
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-bold text-amber-800 uppercase">Audit Date:</label>
-                <input
-                  type="date"
-                  required
-                  value={date}
-                  onChange={e => setDate(e.target.value)}
-                  className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none bg-white text-slate-700"
-                />
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-amber-800 uppercase">Audit Date:</label>
+                  <input
+                    type="date"
+                    required
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                    className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none bg-white text-slate-700"
+                  />
+                </div>
+                {date !== getLocalISOString() && (
+                  <span className="text-[10px] text-amber-600 max-w-[200px] text-right font-medium leading-tight">
+                    Rewinds stock math to {date}. "Ignore Checkouts" auto-enabled.
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -491,7 +537,7 @@ const Inventory: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {skus.map(sku => {
-                  let systemStock = stockLevels[sku.id]?.balance || 0;
+                  let systemStock = historicalStockLevels[sku.id]?.balance || 0;
 
                   // Adjustment logic for "Ignore Today's Checkout"
                   if (ignoreCheckouts) {
@@ -690,14 +736,14 @@ const Inventory: React.FC = () => {
                 <thead className="bg-slate-100 sticky top-0">
                   <tr>
                     <th className="p-2 border border-slate-200">SKU</th>
-                    <th className="p-2 border border-slate-200 text-right">Base (Live)</th>
+                    <th className="p-2 border border-slate-200 text-right">Base ({date})</th>
                     <th className="p-2 border border-slate-200 text-right">Checkout Addback</th>
                     <th className="p-2 border border-slate-200 text-right font-bold">Adjusted Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {skus.map(sku => {
-                    const base = stockLevels[sku.id]?.balance || 0;
+                    const base = historicalStockLevels[sku.id]?.balance || 0;
                     const checkoutQty = checkoutQtyMap[sku.id] || 0;
 
                     const adjusted = base + (ignoreCheckouts ? checkoutQty : 0);
