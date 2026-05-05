@@ -1754,8 +1754,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             else if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) errors.push('Date must be in YYYY-MM-DD format');
 
             if (!entry.entryType) errors.push('Entry type is required');
-            else if (!['INCOME', 'EXPENSE', 'REIMBURSEMENT'].includes(entry.entryType)) {
-                errors.push('Entry type must be INCOME, EXPENSE, or REIMBURSEMENT');
+            else if (!['INCOME', 'EXPENSE', 'REIMBURSEMENT', 'TRANSFER'].includes(entry.entryType)) {
+                errors.push('Entry type must be INCOME, EXPENSE, REIMBURSEMENT, or TRANSFER');
             }
 
             if (!entry.category) errors.push('Category is required');

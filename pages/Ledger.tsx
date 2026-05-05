@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
     Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, RotateCcw, Filter, Calendar,
     CheckCircle2, XCircle, Clock, History, FileText, UploadCloud, Image as ImageIcon,
-    ChevronLeft, ChevronRight, ChevronDown, Users, Download, AlertCircle, FileUp, Copy, Check, Paperclip
+    ChevronLeft, ChevronRight, ChevronDown, Users, Download, AlertCircle, FileUp, Copy, Check, Paperclip, ArrowRightLeft
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
@@ -67,6 +67,7 @@ const Ledger: React.FC = () => {
 
     // Form state
     const [showForm, setShowForm] = useState(false);
+    const [showTransferForm, setShowTransferForm] = useState(false);
     const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
 
     // Filter state
@@ -230,6 +231,19 @@ const Ledger: React.FC = () => {
                 return;
             }
 
+            if (entry.entryType === 'TRANSFER') {
+                const sourceAccountRow = ensureRow(entry.sourceAccountId, entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME);
+                sourceAccountRow.balance -= amount;
+                sourceAccountRow.hasTransactions = true;
+
+                if (entry.destinationAccountId || entry.destinationAccount) {
+                    const destAccountRow = ensureRow(entry.destinationAccountId, entry.destinationAccount!);
+                    destAccountRow.balance += amount;
+                    destAccountRow.hasTransactions = true;
+                }
+                return;
+            }
+
             const accountRow = ensureRow(entry.sourceAccountId, entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME);
             accountRow.balance += entry.entryType === 'INCOME' ? amount : -amount;
             accountRow.hasTransactions = true;
@@ -344,6 +358,7 @@ const Ledger: React.FC = () => {
             case 'INCOME': return 'text-emerald-600 bg-emerald-50';
             case 'EXPENSE': return 'text-red-600 bg-red-50';
             case 'REIMBURSEMENT': return 'text-purple-600 bg-purple-50';
+            case 'TRANSFER': return 'text-blue-600 bg-blue-50';
         }
     };
 
@@ -352,6 +367,7 @@ const Ledger: React.FC = () => {
             case 'INCOME': return <TrendingUp size={16} />;
             case 'EXPENSE': return <TrendingDown size={16} />;
             case 'REIMBURSEMENT': return <RotateCcw size={16} />;
+            case 'TRANSFER': return <ArrowRightLeft size={16} />;
         }
     };
 
@@ -374,6 +390,13 @@ const Ledger: React.FC = () => {
                     <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Beta</span>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={() => setShowTransferForm(true)}
+                        className="flex items-center gap-2 px-3 py-2.5 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors shadow-sm"
+                        title="Transfer Funds"
+                    >
+                        <ArrowRightLeft size={18} /> <span className="hidden md:inline">Transfer</span>
+                    </button>
                     <button
                         onClick={() => { setViewingLogsFor('ALL'); setReturnToAllLogs(false); }}
                         className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
@@ -562,6 +585,8 @@ const Ledger: React.FC = () => {
                         <option value="ALL">All Types</option>
                         <option value="INCOME">Income</option>
                         <option value="EXPENSE">Expense</option>
+                        <option value="REIMBURSEMENT">Reimbursement</option>
+                        <option value="TRANSFER">Transfer</option>
                     </select>
 
                     <select
@@ -626,10 +651,12 @@ const Ledger: React.FC = () => {
                             ) : (
                                 tableEntries.sort((a, b) => b.timestamp - a.timestamp).map(entry => {
                                     const dotColor = entry.entryType === 'INCOME' ? 'bg-emerald-500' :
-                                        entry.entryType === 'EXPENSE' ? 'bg-red-500' : 'bg-purple-500';
+                                        entry.entryType === 'EXPENSE' ? 'bg-red-500' : 
+                                            entry.entryType === 'TRANSFER' ? 'bg-blue-500' : 'bg-purple-500';
                                     const rowBg = entry.status === 'REJECTED' ? 'bg-red-50/30 opacity-60' :
                                         entry.entryType === 'INCOME' ? 'bg-emerald-50/20' :
-                                            entry.entryType === 'REIMBURSEMENT' ? 'bg-purple-50/20' : '';
+                                            entry.entryType === 'TRANSFER' ? 'bg-blue-50/20' :
+                                                entry.entryType === 'REIMBURSEMENT' ? 'bg-purple-50/20' : '';
                                     return (
                                         <tr key={entry.id} className={`hover:bg-[#403424]/[0.02] ${rowBg}`}>
                                             <td className="px-4 py-3 text-sm">
@@ -705,7 +732,7 @@ const Ledger: React.FC = () => {
                                                             <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded border border-slate-100 font-bold uppercase tracking-tight">
                                                                 {entry.sourceAccount || LEDGER_COMPANY_ACCOUNT_NAME}
                                                             </span>
-                                                            {entry.entryType === 'REIMBURSEMENT' && entry.destinationAccount && (
+                                                            {(entry.entryType === 'REIMBURSEMENT' || entry.entryType === 'TRANSFER') && entry.destinationAccount && (
                                                                 <>
                                                                     <span className="text-[10px] text-slate-300">→</span>
                                                                     <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-0.5 rounded border border-slate-100 font-bold uppercase tracking-tight">
@@ -835,7 +862,8 @@ const Ledger: React.FC = () => {
                                                         <span className="font-bold text-[#403424]">{entry.category}</span>
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entry.entryType === 'INCOME' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                                                             entry.entryType === 'EXPENSE' ? 'bg-red-50 text-red-600 border-red-100' :
-                                                                'bg-purple-50 text-purple-600 border-purple-100'
+                                                                entry.entryType === 'TRANSFER' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                                    'bg-purple-50 text-purple-600 border-purple-100'
                                                             }`}>
                                                             {entry.entryType}
                                                         </span>
@@ -858,7 +886,8 @@ const Ledger: React.FC = () => {
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className={`text-xl font-bold ${entry.entryType === 'INCOME' ? 'text-emerald-600' :
-                                                    entry.entryType === 'REIMBURSEMENT' ? 'text-purple-600' : 'text-red-600'
+                                                    entry.entryType === 'REIMBURSEMENT' ? 'text-purple-600' :
+                                                        entry.entryType === 'TRANSFER' ? 'text-blue-600' : 'text-red-600'
                                                     }`}>
                                                     ₹{entry.amount.toLocaleString()}
                                                 </span>
@@ -905,7 +934,7 @@ const Ledger: React.FC = () => {
                                                 </td>
                                                 <td className="px-4 py-3 text-xs font-mono text-slate-600 max-w-md">
                                                     {/* Simple diff or snapshot summary */}
-                                                    {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category} ${log.snapshot.entryType === 'REIMBURSEMENT' && log.snapshot.destinationAccount ? `(Transfer: ${log.snapshot.sourceAccount?.split(' ')[0]} -> ${log.snapshot.destinationAccount?.split(' ')[0]})` : ''}`}
+                                                    {log.action === 'CREATE' && `Created entries of ${log.snapshot.amount} for ${log.snapshot.category} ${(log.snapshot.entryType === 'REIMBURSEMENT' || log.snapshot.entryType === 'TRANSFER') && log.snapshot.destinationAccount ? `(Transfer: ${log.snapshot.sourceAccount?.split(' ')[0]} -> ${log.snapshot.destinationAccount?.split(' ')[0]})` : ''}`}
                                                     {log.action === 'UPDATE' && `Updated entry. Amount: ${log.snapshot.amount}, Status: ${log.snapshot.status}`}
                                                     {log.action === 'DELETE' && `Deleted ${log.snapshot.category} entry of ${log.snapshot.amount}: ${log.snapshot.description || 'No description'}`}
                                                     {log.action === 'APPROVE' && `Approved entry. Approver: ${log.snapshot.approvedBy}`}
@@ -942,6 +971,14 @@ const Ledger: React.FC = () => {
                 onClose={resetForm}
                 initialData={editingEntry}
             />
+            {showTransferForm && (
+                <LedgerEntryModal
+                    isOpen={showTransferForm}
+                    onClose={() => setShowTransferForm(false)}
+                    forcedType="TRANSFER"
+                    dialogTitle="Transfer Funds"
+                />
+            )}
             {/* Image Carousel Modal */}
             {imageModalUrls.length > 0 && (
                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4" onClick={() => setImageModalUrls([])}>
@@ -1160,6 +1197,7 @@ const Ledger: React.FC = () => {
                                                         <td className="px-2 py-1.5">
                                                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${entry.entryType === 'INCOME' ? 'bg-emerald-100 text-emerald-700' :
                                                                 entry.entryType === 'EXPENSE' ? 'bg-red-100 text-red-700' :
+                                                                    entry.entryType === 'TRANSFER' ? 'bg-blue-100 text-blue-700' :
                                                                     'bg-purple-100 text-purple-700'
                                                                 }`}>
                                                                 {entry.entryType}

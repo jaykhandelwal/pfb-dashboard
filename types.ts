@@ -356,7 +356,7 @@ export interface RewardResult {
 
 // --- LEDGER (BETA) ---
 
-export type LedgerEntryType = 'INCOME' | 'EXPENSE' | 'REIMBURSEMENT';
+export type LedgerEntryType = 'INCOME' | 'EXPENSE' | 'REIMBURSEMENT' | 'TRANSFER';
 
 export enum LedgerCategory {
   RENT = 'Rent',

@@ -148,7 +148,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         return selectedCategory?.description?.trim() || '';
     }, [appSettings.ledger_categories, formData.category, formData.categoryId]);
 
-    const shouldShowCategoryField = formData.entryType !== 'INCOME';
+    const shouldShowCategoryField = formData.entryType !== 'INCOME' && formData.entryType !== 'TRANSFER';
 
     const sourceAccountOptions = useMemo(() => {
         if (isSourceAccountLocked) {
@@ -227,7 +227,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
     const hasSelectedSourceAccount = isSourceAccountLocked
         ? Boolean(lockedSourceAccount)
         : Boolean(formData.sourceAccountId || formData.sourceAccount);
-    const hasSelectedDestinationAccount = formData.entryType !== 'REIMBURSEMENT'
+    const hasSelectedDestinationAccount = (formData.entryType !== 'REIMBURSEMENT' && formData.entryType !== 'TRANSFER')
         || Boolean(formData.destinationAccountId || formData.destinationAccount);
 
     const validationIssue = useMemo(() => {
@@ -236,7 +236,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
         }
 
         if (!hasSelectedSourceAccount) {
-            return `Select ${formData.entryType === 'REIMBURSEMENT' ? 'the source account' : 'a payment account'} to continue.`;
+            return `Select ${(formData.entryType === 'REIMBURSEMENT' || formData.entryType === 'TRANSFER') ? 'the source account' : 'a payment account'} to continue.`;
         }
 
         if (!hasSelectedDestinationAccount) {
@@ -486,7 +486,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
             timestamp: Date.now(),
             branchId: undefined,
             entryType: formData.entryType,
-            category: formData.category,
+            category: formData.entryType === 'TRANSFER' ? 'Transfer' : formData.category,
             categoryId: formData.categoryId,
             amount: parsedAmount,
             description: formData.description.trim(),
@@ -747,7 +747,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                     {isSourceAccountLocked ? (
                         <div>
                             <label className="text-xs font-medium text-[#403424]/60 uppercase tracking-wide">
-                                {formData.entryType === 'REIMBURSEMENT' ? 'Paid From' : 'Payment Account'}
+                                {(formData.entryType === 'REIMBURSEMENT' || formData.entryType === 'TRANSFER') ? 'Paid From' : 'Payment Account'}
                             </label>
                             <div className="mt-1 flex items-center gap-3 rounded-lg border border-[#403424]/10 bg-[#403424]/5 px-3 py-3">
                                 <div
@@ -767,7 +767,7 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                             </div>
                         </div>
                     ) : CustomDropdown({
-                        label: formData.entryType === 'REIMBURSEMENT' ? 'Paid From' : 'Payment Account',
+                        label: (formData.entryType === 'REIMBURSEMENT' || formData.entryType === 'TRANSFER') ? 'Paid From' : 'Payment Account',
                         value: formData.sourceAccountId || formData.sourceAccount,
                         options: sourceAccountOptions,
                         onSelect: (opt: LedgerAccount) => {
@@ -811,10 +811,12 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                         );
                     })()}
 
-                    {/* Destination Account (For Reimbursements) */}
-                    {formData.entryType === 'REIMBURSEMENT' && (
-                        <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                            <label className="text-xs font-bold text-purple-700 uppercase tracking-wide">Reimbursing To (Beneficiary)</label>
+                    {/* Destination Account (For Reimbursements and Transfers) */}
+                    {(formData.entryType === 'REIMBURSEMENT' || formData.entryType === 'TRANSFER') && (
+                        <div className={`${formData.entryType === 'TRANSFER' ? 'bg-blue-50 border-blue-100' : 'bg-purple-50 border-purple-100'} p-3 rounded-lg border`}>
+                            <label className={`text-xs font-bold ${formData.entryType === 'TRANSFER' ? 'text-blue-700' : 'text-purple-700'} uppercase tracking-wide`}>
+                                {formData.entryType === 'TRANSFER' ? 'Transfer To (Destination)' : 'Reimbursing To (Beneficiary)'}
+                            </label>
                             <select
                                 value={formData.destinationAccountId || formData.destinationAccount}
                                 onChange={(e) => {
@@ -825,9 +827,9 @@ const LedgerEntryModal: React.FC<LedgerEntryModalProps> = ({
                                         destinationAccountId: selected?.id || '',
                                     });
                                 }}
-                                className="w-full mt-1 px-3 py-2 rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white text-sm font-bold text-purple-900"
+                                className={`w-full mt-1 px-3 py-2 rounded-lg border ${formData.entryType === 'TRANSFER' ? 'border-blue-200 focus:ring-blue-500 text-blue-900' : 'border-purple-200 focus:ring-purple-500 text-purple-900'} focus:outline-none focus:ring-2 bg-white text-sm font-bold`}
                             >
-                                <option value="">Select Beneficiary</option>
+                                <option value="">Select Account</option>
                                 {destinationAccountOptions.map(account => (
                                     <option key={account.id} value={account.id}>{account.name}</option>
                                 ))}
